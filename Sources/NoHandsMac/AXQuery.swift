@@ -12,17 +12,83 @@ import NoHandsCore
 public final class AXQuery: @unchecked Sendable {
     private let lock = NSLock()
     private var elements: [Int: AXUIElement] = [:]
+    private var exposedPids: Set<pid_t> = []
 
-    static let maxDepth = 12
-    static let maxNodes = 2000
-    static let budget: Duration = .milliseconds(150)
+    static let maxDepth = 30   // YouTube links sit ~23 levels below the window
+    public static let defaultMaxNodes = 2000
+    public static let defaultBudget: Duration = .milliseconds(150)
+    private let maxNodes: Int
+    private let budget: Duration
     static let actionableRoles: Set<String> = [
         "AXButton", "AXLink", "AXTextField", "AXTextArea", "AXCheckBox", "AXRadioButton",
         "AXPopUpButton", "AXMenuItem", "AXMenuBarItem", "AXTab", "AXSlider", "AXComboBox",
         "AXCell", "AXRow", "AXDisclosureTriangle", "AXIncrementor", "AXDecrementor",
     ]
 
-    public init() {}
+    static let chromiumBundleIDs: Set<String> = [
+        "com.google.Chrome", "com.google.Chrome.canary", "com.brave.Browser",
+        "com.microsoft.edgemac", "com.vivaldi.Vivaldi", "company.thebrowser.Browser",
+    ]
+
+    /// The defaults keep voice commands snappy; the task loop's observations can afford a larger walk
+    /// (web pages hold ~1000 nodes behind a busy browser toolbar).
+    public init(budget: Duration = AXQuery.defaultBudget, maxNodes: Int = AXQuery.defaultMaxNodes) {
+        self.budget = budget
+        self.maxNodes = maxNodes
+    }
+
+    /// Chromium builds the page's accessibility tree lazily; flag it once per pid.
+    private func exposeChromiumTree(_ app: NSRunningApplication, _ appEl: AXUIElement) {
+        guard let id = app.bundleIdentifier, Self.chromiumBundleIDs.contains(id) else { return }
+        let pid = app.processIdentifier
+        let first = lock.withLock { exposedPids.insert(pid).inserted }
+        guard first else { return }
+        // Chrome answers with an error code but does start building the tree; it needs a moment
+        // before the page's nodes appear, so wait once on first exposure.
+        AXUIElementSetAttributeValue(appEl, "AXManualAccessibility" as CFString, kCFBooleanTrue)
+        Thread.sleep(forTimeInterval: 0.6)
+    }
+
+    private func focusedWindow() -> (app: NSRunningApplication, appEl: AXUIElement, window: AXUIElement)? {
+        guard let app = NSWorkspace.shared.frontmostApplication else { return nil }
+        let appEl = AXUIElementCreateApplication(app.processIdentifier)
+        AXUIElementSetMessagingTimeout(appEl, 0.05)
+        guard let w = Self.element(appEl, kAXFocusedWindowAttribute) else { return nil }
+        return (app, appEl, w)
+    }
+
+    public func focusedWindowTitle() -> String? {
+        guard let f = focusedWindow() else { return nil }
+        return Self.string(f.window, kAXTitleAttribute)
+    }
+
+    /// URL of the first web area in the focused window, else the window's AXDocument.
+    public func webURL() -> String? {
+        guard let f = focusedWindow() else { return nil }
+        exposeChromiumTree(f.app, f.appEl)
+        var visited = 0
+        func find(_ el: AXUIElement, depth: Int) -> String? {
+            guard depth <= Self.maxDepth, visited < maxNodes else { return nil }
+            visited += 1
+            AXUIElementSetMessagingTimeout(el, 0.05)
+            if Self.string(el, kAXRoleAttribute) == "AXWebArea" {
+                return Self.urlString(Self.attr(el, "AXURL"))
+            }
+            for c in Self.elements(el, kAXChildrenAttribute) {
+                if let u = find(c, depth: depth + 1) { return u }
+            }
+            return nil
+        }
+        if let u = find(f.window, depth: 1) { return u }
+        return Self.urlString(Self.attr(f.window, "AXDocument"))
+    }
+
+    static func urlString(_ v: CFTypeRef?) -> String? {
+        guard let v else { return nil }
+        if CFGetTypeID(v) == CFURLGetTypeID() { return (v as! URL).absoluteString }
+        if let s = v as? String, !s.isEmpty { return s }
+        return nil
+    }
 
     public func frontmostAppName() -> String? {
         NSWorkspace.shared.frontmostApplication?.localizedName
@@ -37,10 +103,11 @@ public final class AXQuery: @unchecked Sendable {
             lock.withLock { elements = [:] }
             return []
         }
-        let screens = Self.screenRectsCG()
-        var walker = Walker(screens: screens, deadline: ContinuousClock.now.advanced(by: Self.budget))
         let appEl = AXUIElementCreateApplication(app.processIdentifier)
         AXUIElementSetMessagingTimeout(appEl, 0.05)
+        exposeChromiumTree(app, appEl)   // may block briefly; must precede the walk deadline
+        let screens = Self.screenRectsCG()
+        var walker = Walker(screens: screens, maxNodes: maxNodes, deadline: ContinuousClock.now.advanced(by: budget))
 
         // Menu bar first (cheap, always present), then windows (sheets/popovers), then plain children.
         if let bar = Self.element(appEl, kAXMenuBarAttribute) {
@@ -149,17 +216,19 @@ public final class AXQuery: @unchecked Sendable {
 
     struct Walker {
         let screens: [CGRect]
+        let maxNodes: Int
         let deadline: ContinuousClock.Instant
         var found: [Found] = []
         var visited = 0
         var seen: [CFHashCode: [AXUIElement]] = [:]
 
-        init(screens: [CGRect], deadline: ContinuousClock.Instant) {
+        init(screens: [CGRect], maxNodes: Int, deadline: ContinuousClock.Instant) {
             self.screens = screens
+            self.maxNodes = maxNodes
             self.deadline = deadline
         }
 
-        var exhausted: Bool { visited >= AXQuery.maxNodes || ContinuousClock.now >= deadline }
+        var exhausted: Bool { visited >= maxNodes || ContinuousClock.now >= deadline }
 
         mutating func firstVisit(_ el: AXUIElement) -> Bool {
             let h = CFHash(el)

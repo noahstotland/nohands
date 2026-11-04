@@ -25,6 +25,10 @@ final class FakeElements: ElementProviding, @unchecked Sendable {
     var elements: [UIElementInfo] = []
     var apps: Set<String> = []
     var front: String? = nil
+    var windowTitle: String? = nil
+    var url: String? = nil
+    func focusedWindowTitle() -> String? { windowTitle }
+    func webURL() -> String? { url }
     func frontmostAppName() -> String? { front }
     func actionableElements() -> [UIElementInfo] { elements }
     func screenRectsCG() -> [CGRect] { [CGRect(x: 0, y: 0, width: 1000, height: 800)] }

@@ -22,6 +22,7 @@ func usage() -> Never {
       nohands-cli click "<name>"     (waits 3 s, clicks the named element's center)
       nohands-cli grid               (10x8 grid 4 s, zoom into cell 35 for 4 s, HUD "done")
       nohands-cli labels             (waits 3 s, badges for frontmost app's elements for 5 s)
+      nohands-cli observe            (waits 3 s, prints the task-loop observation of the frontmost app)
       nohands-cli parse "<text>"     (dry run: prints the grammar's actions, or "no match -> LLM"; executes nothing)
       nohands-cli run "<phrase>"...  (waits 2 s, executes each phrase in order, 0.8 s apart)
       nohands-cli resolve "<text>"   (waits 3 s, sends text + frontmost app's labels to the configured backend)
@@ -141,6 +142,14 @@ do {
             try? await Task.sleep(for: .seconds(5))
             overlay.hide()
         }
+    case "observe":
+        guard Permissions.accessibilityGranted(prompt: false) else {
+            fail("Accessibility permission is not granted to this process (or its terminal). Enable it in System Settings > Privacy & Security > Accessibility, then rerun.")
+        }
+        try await Task.sleep(for: .seconds(3))
+        let (obs, _) = ScreenObserver(ax: AXQuery(budget: .milliseconds(1000), maxNodes: 6000), maxElements: AppConfig().maxObservedElements)
+            .observe(mode: .command, overlay: .none)
+        print(ClaudeRequestBuilder.userMessage(request: StepRequest(goal: "-", step: 1, maxSteps: 12, history: [], observation: obs)))
     case "parse":
         guard rest.count == 1 else { usage() }
         if let actions = CommandGrammar().parse(rest[0]) {

@@ -70,6 +70,7 @@ public actor ClaudeIntentResolver: IntentResolving {
 public struct IntentContextBundle: Sendable {
     public var context: IntentContext
     public var labels: [Int: UIElementInfo]
+    public var observation: ScreenObservation
 }
 
 public enum IntentContextBuilder {
@@ -81,18 +82,11 @@ public enum IntentContextBuilder {
     /// `labels` holds only the elements actually listed in the context (titled, within `maxElements`).
     public static func makeBundle(elements: ElementProviding, mode: Mode, maxElements: Int = 60,
                                   overlay: OverlayState = .none) -> IntentContextBundle {
-        let all = LabelAssigner.assign(elements.actionableElements())
-        var out: [(number: Int, title: String)] = []
-        var snapshot: [Int: UIElementInfo] = [:]
-        for n in all.keys.sorted() {
-            guard let e = all[n],
-                  !e.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { continue }
-            if out.count >= maxElements { break }
-            out.append((number: n, title: e.title))
-            snapshot[n] = e
-        }
-        let context = IntentContext(frontmostApp: elements.frontmostAppName() ?? "", mode: mode,
-                                    labeledElements: out, overlay: overlay.kindName)
-        return IntentContextBundle(context: context, labels: snapshot)
+        let (observation, snapshot) = ScreenObserver(ax: elements, maxElements: maxElements)
+            .observe(mode: mode, overlay: overlay)
+        let context = IntentContext(frontmostApp: observation.app, mode: mode,
+                                    labeledElements: observation.elements.map { (number: $0.number, title: $0.title) },
+                                    overlay: observation.overlay)
+        return IntentContextBundle(context: context, labels: snapshot, observation: observation)
     }
 }

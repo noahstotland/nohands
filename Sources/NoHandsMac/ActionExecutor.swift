@@ -8,6 +8,13 @@ public protocol ElementProviding: Sendable {
     func screenRectsCG() -> [CGRect]
     func activate(appNamed: String) -> Bool
     func frontmostAppName() -> String?
+    func focusedWindowTitle() -> String?
+    func webURL() -> String?
+}
+
+extension ElementProviding {
+    public func focusedWindowTitle() -> String? { nil }
+    public func webURL() -> String? { nil }
 }
 
 extension AXQuery: ElementProviding {
