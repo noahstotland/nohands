@@ -126,7 +126,9 @@ In dictation mode, say `period`, `comma`, `question mark`, `new line`, `new para
 | `labels` | Shows numbered badges on the frontmost app's elements |
 | `parse "<text>"` | Dry run: prints the actions the grammar produces (or "no match -> LLM"); executes nothing |
 | `run "<phrase>"...` | Executes grammar phrases in order |
-| `resolve "<text>"` | Sends text and the frontmost app's labels to Claude (spends API credit) |
+| `observe` | Prints what the task loop sends the model about the frontmost app: window title, URL and numbered elements with roles |
+| `resolve "<text>"` | Dry run: sends text and the frontmost app's labels to the configured backend and prints the step (`intent`, `status`, actions); executes nothing (Claude spends API credit) |
+| `task "<goal>"` | Waits 3 s, then runs the goal as a multi-step task on the frontmost app for real, printing each step's intent, actions and settle time, then the outcome; Ctrl-C stops it like "stop" |
 | `listen` | Microphone to VAD to speech recognition, printing transcripts |
 
 ## Configuration
@@ -161,6 +163,16 @@ Optional file at `~/.config/nohands/config.json`. Every key may be omitted. For 
 **Pausing mid-command.** You do not have to say a command in one breath. `silenceMs` is how long you can go quiet before the recognizer closes an utterance (1 s by default). After that, a transcript the fast grammar does not already understand is held for `mergeWindowMs` (longer, `mergeWindowUnfinishedMs`, when it ends on a word like "the" or "click" that leaves the command hanging); the HUD shows it with a trailing "…". If you start speaking again inside that window, the next piece is appended and the whole thing is treated as one request, so "click the … uh, the back button" reaches the model as a single sentence. Set both windows to 0 to act on every utterance at once.
 
 **How the model reads a request.** The transcript comes from speech recognition, so the model is told to first write a one-sentence `intent` (what you meant, with recognition errors, filler and self-corrections resolved) and only then the actions that carry it out. `intentEffort` (`low` … `max`) sets how hard Claude thinks before answering; `medium` is the default, `low` is fastest.
+
+## Multi-step tasks
+
+A request the fast grammar does not understand runs as a task: NoHands looks at the frontmost app (window title, URL and up to `maxObservedElements` numbered on-screen elements), asks the model for the next step, runs that step's actions, waits up to `settleMs` for the screen to stop changing, and looks again. Each step's answer is a one-sentence `intent`, a `status` (`continue`, `done`, `stuck` or `ignore`) and a few actions; the HUD shows `step n · <intent>`. "Open Veritasium's latest video" becomes: open Chrome and go to the channel's Videos tab, then (after seeing the page) click the first video. The task ends when the model says `done`, says `stuck` (the HUD shows why), reaches `maxTaskSteps`, or proposes the same actions three times in a row; any held mouse button is released when a task does not finish `done`.
+
+**Stopping a task.** Say "stop" (or "cancel", "never mind", "abort", "stop the task"). It aborts the request or action in flight and the HUD shows "stopped". Anything else you say while a task runs is held and handled once the task ends. From the CLI, Ctrl-C stops `nohands-cli task` the same way.
+
+**Config.** `maxTaskSteps` (default 12), `llmDeadlineMs` (12000, per model call), `settleMs` (3000) and `maxObservedElements` (120); see [Configuration](#configuration).
+
+**Claude vs. the local model.** Claude is far more reliable on web pages: it reads the element list and recovers from a step that did not work. Qwen 2.5 7B through Ollama works for short tasks (open an app and go somewhere, one or two clicks) at about 2 to 3 s per step, but on busy pages it can misread the element list, pick the wrong shortcut, or end with `stuck`. The first request after Ollama loads (or after a long prompt it has not seen) can hit `llmDeadlineMs`; raise it if tasks often end with "timed out".
 
 ## Privacy
 

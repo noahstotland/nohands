@@ -30,6 +30,9 @@ public enum TaskOutcome: Equatable, Sendable {
     public private(set) var stepsRun = 0
     /// The in-flight resolve or execute; `cancel()` cancels it so an HTTP request or `wait` aborts.
     private var inFlight: Task<Void, Never>?
+    /// Diagnostics hook (the CLI prints steps with it; the app leaves it nil). Called after each executed step with
+    /// the step number, the step, how long the settle before it took, and the executor's failure (nil on success).
+    public var onStep: ((_ n: Int, _ step: IntentStep, _ settle: Duration, _ failure: String?) -> Void)?
 
     public init(config: AppConfig, resolver: any IntentResolving, executor: ActionExecutor,
                 observer: ScreenObserver, overlay: any OverlayPresenting,
@@ -57,7 +60,9 @@ public enum TaskOutcome: Equatable, Sendable {
         var history: [StepRecord] = []
         var repeats = RepeatDetector(limit: 3)
         // Settle first too: Chromium exposes its page tree shortly after AXManualAccessibility is set.
+        var settleStart = ContinuousClock.now
         var (observation, labels) = await settle(mode: mode)
+        var settled = settleStart.duration(to: .now)
 
         for n in 1...maxSteps {
             if isCancelled { return finish(.stopped) }
@@ -78,12 +83,17 @@ public enum TaskOutcome: Equatable, Sendable {
             overlay.showHUD("step \(n) · \(step.intent)", duration: .seconds(4))
             let failure = await executeCancellable(step.actions, labels: labels)
             stepsRun = n
+            onStep?(n, step, settled, failure)
             if isCancelled { return finish(.stopped) }
             // A `done` whose actions failed did not achieve the goal: record the failure and let the model react
             // (repeat detection above covers both `continue` and `done`, so a stubborn failing batch ends as stuck).
             if step.status == .done && failure == nil { return finish(.done(step.intent)) }
             history.append(StepRecord(intent: step.intent, actions: step.actions, failure: failure))
-            if n < maxSteps { (observation, labels) = await settle(mode: mode) }
+            if n < maxSteps {
+                settleStart = ContinuousClock.now
+                (observation, labels) = await settle(mode: mode)
+                settled = settleStart.duration(to: .now)
+            }
         }
         return finish(.stuck(Self.stepLimit))
     }

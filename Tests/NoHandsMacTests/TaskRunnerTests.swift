@@ -254,3 +254,15 @@ private actor SleepCounter {
     #expect(r.releaseAllCalls == 1)
     #expect(r.overlay.huds.last == "stuck: repeating the same action")
 }
+
+@MainActor @Test func onStepReportsEachExecutedStepWithFailure() async {
+    let r = rig(FakeResolver([step("open it", .continue, [.openApp("Nope")]),
+                              step("type hi", .done, [.typeText("hi")])]))
+    var seen: [String] = []
+    r.runner.onStep = { n, s, settle, failure in
+        #expect(settle >= .zero)
+        seen.append("\(n) \(s.intent) \(failure ?? "ok")")
+    }
+    #expect(await r.runner.run(goal: "x", mode: .command) == .done("type hi"))
+    #expect(seen == ["1 open it no app named Nope", "2 type hi ok"])
+}
