@@ -29,3 +29,12 @@ import Testing
     #expect(LocalModelMenu.approxDownloadGB(model: "qwen2.5:3b-instruct") == "1.9")
     #expect(LocalModelMenu.approxDownloadGB(model: "other") == "?")
 }
+
+@Test func warmScheduleOnlyWhileListening() {
+    let t0 = ContinuousClock.now
+    #expect(WarmPolicy.shouldWarm(now: t0, last: nil, listening: true, status: .ready))
+    #expect(!WarmPolicy.shouldWarm(now: t0 + .seconds(600), last: t0, listening: true, status: .ready))
+    #expect(WarmPolicy.shouldWarm(now: t0 + .seconds(1200), last: t0, listening: true, status: .ready))
+    #expect(!WarmPolicy.shouldWarm(now: t0 + .seconds(5000), last: t0, listening: false, status: .ready))
+    #expect(!WarmPolicy.shouldWarm(now: t0, last: nil, listening: true, status: .modelMissing))
+}

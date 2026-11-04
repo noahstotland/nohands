@@ -24,7 +24,7 @@ func usage() -> Never {
       nohands-cli labels             (waits 3 s, badges for frontmost app's elements for 5 s)
       nohands-cli parse "<text>"     (dry run: prints the grammar's actions, or "no match -> LLM"; executes nothing)
       nohands-cli run "<phrase>"...  (waits 2 s, executes each phrase in order, 0.8 s apart)
-      nohands-cli resolve "<text>"   (waits 3 s, sends text + frontmost app's labels to Claude; spends API credit)
+      nohands-cli resolve "<text>"   (waits 3 s, sends text + frontmost app's labels to the configured backend)
       nohands-cli listen             (mic -> VAD -> ASR; Ctrl-C to quit)
     """)
 }
@@ -171,13 +171,17 @@ do {
         guard rest.count == 1 else { usage() }
         let cfgURL = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".config/nohands/config.json")
         let config = try AppConfig.load(from: try? Data(contentsOf: cfgURL), environment: ProcessInfo.processInfo.environment)
-        guard config.anthropicAPIKey?.isEmpty == false else { fail("error: noAPIKey") }
+        let resolver: any IntentResolving
+        switch config.effectiveBackend {
+        case .claude: resolver = ClaudeIntentResolver(config: config)
+        case .local: resolver = OllamaIntentResolver(config: config)
+        case .off: fail("error: LLM off")
+        }
         guard Permissions.accessibilityGranted(prompt: false) else {
             fail("Accessibility permission is not granted to this process (or its terminal).")
         }
         try await Task.sleep(for: .seconds(3))
         let context = IntentContextBuilder.make(elements: AXQuery(), mode: .command)
-        let resolver = ClaudeIntentResolver(config: config)
         let t0 = ContinuousClock.now
         do {
             let actions = try await resolver.resolve(rest[0], context: context)

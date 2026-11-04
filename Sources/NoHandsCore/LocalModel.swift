@@ -50,3 +50,14 @@ public enum LocalModelMenu {
         }
     }
 }
+
+public enum WarmPolicy {
+    public static let interval: Duration = .seconds(1200)
+
+    public static func shouldWarm(now: ContinuousClock.Instant, last: ContinuousClock.Instant?,
+                                  listening: Bool, status: LocalModelStatus) -> Bool {
+        guard listening, status == .ready else { return false }
+        guard let last else { return true }
+        return last.duration(to: now) >= interval
+    }
+}

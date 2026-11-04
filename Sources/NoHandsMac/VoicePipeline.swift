@@ -245,7 +245,7 @@ import NoHandsCore
                 overlay.showHUD(PipelineText.didntCatch)
             } else {
                 llmOffShown = true
-                overlay.showHUD(PipelineText.llmOff)
+                overlay.showHUD(config.intentBackend == .off ? PipelineText.llmDisabled : PipelineText.llmOff)
             }
             return (" (no resolver)", " (no resolver)")
         }

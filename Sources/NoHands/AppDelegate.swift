@@ -9,6 +9,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let stateItem = NSMenuItem(title: MenuState.loading.text, action: nil, keyEquivalent: "")
     private let configItem = NSMenuItem(title: "config.json invalid: using defaults", action: nil, keyEquivalent: "")
     private let transcriptItem = NSMenuItem(title: "No speech yet", action: nil, keyEquivalent: "")
+    private let localModelItem = NSMenuItem(title: "", action: #selector(localModelClicked), keyEquivalent: "")
     private let pauseItem = NSMenuItem(title: "Pause Listening", action: #selector(togglePause), keyEquivalent: "")
     private let retryItem = NSMenuItem(title: "Retry", action: #selector(retry), keyEquivalent: "")
     private let accessibilityItem = NSMenuItem(title: "Grant Accessibility…", action: #selector(grantAccessibility), keyEquivalent: "")
@@ -25,6 +26,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var errorText: String?        // shown as "Error: …" with a Retry item
     private var mode: Mode = .command
     private var pollTimer: Timer?
+    private var localStatus: LocalModelStatus = .notRunning
+    private var pullTask: Task<Void, Never>?
+    private var pullFailed = false
+    private var statusInFlight = false
+    private var launchedOllama = false
+    private var lastWarm: ContinuousClock.Instant?
+    private var warming = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         buildMenu()
@@ -46,14 +54,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         stateItem.isEnabled = false
         configItem.isEnabled = false
         transcriptItem.isEnabled = false
-        for item in [pauseItem, retryItem, accessibilityItem, micItem] { item.target = self }
+        for item in [localModelItem, pauseItem, retryItem, accessibilityItem, micItem] { item.target = self }
         let title = NSMutableAttributedString(string: "● ", attributes: [.foregroundColor: NSColor.systemRed])
         title.append(NSAttributedString(string: "Grant Accessibility…"))
         accessibilityItem.attributedTitle = title
         let quit = NSMenuItem(title: "Quit NoHands", action: #selector(quit), keyEquivalent: "q")
         quit.target = self
 
-        for item in [stateItem, configItem, NSMenuItem.separator(), transcriptItem, NSMenuItem.separator(),
+        for item in [stateItem, configItem, NSMenuItem.separator(), transcriptItem, localModelItem, NSMenuItem.separator(),
                      pauseItem, retryItem, accessibilityItem, micItem, NSMenuItem.separator(), quit] {
             menu.addItem(item)
         }
@@ -73,6 +81,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         accessibilityItem.isHidden = axGranted
         micItem.isHidden = !micDenied
         pauseItem.isHidden = pipeline == nil
+        let isLocal = config.effectiveBackend == .local
+        localModelItem.isHidden = !isLocal
+        if isLocal {
+            localModelItem.title = LocalModelMenu.text(localStatus, model: config.resolvedLocalModel,
+                                                       ollamaInstalled: OllamaClient.installedAppURL() != nil)
+            localModelItem.isEnabled = LocalModelMenu.actionable(localStatus)
+        }
         pauseItem.title = userPaused ? "Resume Listening" : "Pause Listening"
         statusItem.button?.title = " " + MenuState.title(mode: mode, paused: state == .paused)
     }
@@ -121,6 +136,90 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         refresh()
     }
 
+    // MARK: - local model
+
+    private var ollama: OllamaClient { OllamaClient(baseURL: config.ollamaBaseURL) }
+
+    /// Re-checks Ollama (never while a pull runs), launches it once if installed, and keeps the model warm.
+    private func refreshLocalModel() {
+        guard config.effectiveBackend == .local, pullTask == nil, !statusInFlight else { return }
+        statusInFlight = true
+        let model = config.resolvedLocalModel
+        Task {
+            let status = await ollama.status(model: model)
+            statusInFlight = false
+            guard pullTask == nil else { return }
+            // A failed download stays visible until the user retries or the model turns up.
+            localStatus = (pullFailed && status == .modelMissing) ? .downloadFailed : status
+            if status == .ready { pullFailed = false }
+            if status == .notRunning, !launchedOllama, let app = OllamaClient.installedAppURL() {
+                launchedOllama = true
+                NSWorkspace.shared.open(app)
+            }
+            warmIfDue(model: model)
+            refresh()
+        }
+    }
+
+    private func warmIfDue(model: String) {
+        let listening = pipeline != nil && !userPaused && !axPaused
+        let now = ContinuousClock.now
+        guard !warming, WarmPolicy.shouldWarm(now: now, last: lastWarm, listening: listening, status: localStatus) else { return }
+        warming = true
+        lastWarm = now
+        Task {
+            defer { warming = false }
+            do { try await ollama.warm(model: model) } catch {
+                PipelineLog.warning("local model warm-up failed")
+            }
+        }
+    }
+
+    @objc private func localModelClicked() {
+        switch localStatus {
+        case .notRunning:
+            if let app = OllamaClient.installedAppURL() {
+                NSWorkspace.shared.open(app)
+            } else if let url = URL(string: "https://ollama.com/download") {
+                NSWorkspace.shared.open(url)
+            }
+        case .modelMissing, .downloadFailed:
+            startPull()
+        case .downloading, .ready:
+            break
+        }
+    }
+
+    private func startPull() {
+        guard pullTask == nil else { return }
+        let model = config.resolvedLocalModel
+        pullFailed = false
+        localStatus = .downloading(nil)
+        refresh()
+        pullTask = Task {
+            let client = ollama
+            let last = PercentThrottle()
+            do {
+                try await client.pull(model: model) { [weak self] p in
+                    guard last.shouldReport(p) else { return }
+                    Task { @MainActor in
+                        guard let self, self.pullTask != nil else { return }
+                        self.localStatus = .downloading(p)
+                        self.refresh()
+                    }
+                }
+                pullTask = nil
+                localStatus = await client.status(model: model)
+            } catch {
+                pullTask = nil
+                pullFailed = true
+                localStatus = .downloadFailed
+                PipelineLog.warning("local model download failed")
+            }
+            refresh()
+        }
+    }
+
     @objc private func grantAccessibility() { Permissions.openAccessibilitySettings() }
 
     @objc private func openMicrophoneSettings() {
@@ -162,6 +261,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Shown after the permission prompts so it is not buried; it also stays in the menu.
         if configInvalid { overlay.showHUD("config.json invalid: using defaults", duration: .seconds(4)) }
         refresh()
+        refreshLocalModel()
         startPipelineIfReady()
         schedulePoll(every: 2)
     }
@@ -196,6 +296,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         } else {
             startPipelineIfReady()
         }
+        refreshLocalModel()
         refresh()
     }
 
@@ -208,8 +309,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             defer { pipelineStarting = false; refresh() }
             do {
                 let transcriber = try await ParakeetTranscriber(version: config.asrModelVersion)
-                let key = config.anthropicAPIKey ?? ""
-                let resolver: (any IntentResolving)? = key.isEmpty ? nil : ClaudeIntentResolver(config: config)
+                let resolver: (any IntentResolving)?
+                switch config.effectiveBackend {
+                case .claude: resolver = ClaudeIntentResolver(config: config)
+                case .local: resolver = OllamaIntentResolver(config: config)
+                case .off: resolver = nil
+                }
                 let ax = AXQuery()
                 let executor = ActionExecutor(input: CGEventInputSynthesizer(), ax: ax, overlay: overlay, config: config)
                 let p = VoicePipeline(config: config, transcriber: transcriber, resolver: resolver,
@@ -227,5 +332,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 overlay.showHUD("failed to start: \(error.localizedDescription)", duration: .seconds(5))
             }
         }
+    }
+}
+
+/// Reports a pull progress value only when the whole percent changes.
+private final class PercentThrottle: @unchecked Sendable {
+    private let lock = NSLock()
+    private var lastPercent = -1
+    func shouldReport(_ p: Double?) -> Bool {
+        let pct = p.map { Int(($0 * 100).rounded()) } ?? -1
+        lock.lock(); defer { lock.unlock() }
+        guard pct != lastPercent else { return false }
+        lastPercent = pct
+        return true
     }
 }
