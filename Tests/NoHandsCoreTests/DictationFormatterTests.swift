@@ -37,3 +37,8 @@ import Testing
 @Test func grammarTypeUsesFormatter() {
     #expect(CommandGrammar().parse("type hello comma world") == [.typeText("Hello, world")])
 }
+
+@Test func noDoubledPunctuation() {
+    #expect(DictationFormatter.format("hello, comma there") == "Hello, there")
+    #expect(DictationFormatter.format("Hello world. Period") == "Hello world.")
+}

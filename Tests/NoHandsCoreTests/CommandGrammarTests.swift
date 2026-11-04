@@ -104,3 +104,10 @@ let g = CommandGrammar()
     #expect(g.parse("scroll left") == [.scroll(.left, amount: 5)])
     #expect(g.parse("scroll right 7") == [.scroll(.right, amount: 7)])
 }
+
+@Test func typePayloadKeepsRawCasing() {
+    #expect(g.parse("type send it to NASA") == [.typeText("Send it to NASA")])
+    #expect(g.parse("Type Hello, I'm Noah.") == [.typeText("Hello, I'm Noah.")])
+    #expect(g.parse("type hello comma world") == [.typeText("Hello, world")])
+    #expect(g.parse("type") == nil)
+}

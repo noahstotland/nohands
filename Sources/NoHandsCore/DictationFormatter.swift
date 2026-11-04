@@ -56,7 +56,7 @@ public enum DictationFormatter {
             }
             switch kind {
             case .attach(let s):
-                out += s
+                if !out.hasSuffix(s) { out += s }
                 noSpace = false
                 if s != ":" && s != ";" && s != "," { capNext = true }
             case .closer(let s):

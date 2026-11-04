@@ -96,8 +96,10 @@ public struct CommandGrammar: Sendable {
             let rest = tokens.dropFirst()
             return rest.isEmpty ? nil : [.openApp(rest.joined(separator: " "))]
         case "type":
-            let rest = tokens.dropFirst()
-            return rest.isEmpty ? nil : [.typeText(DictationFormatter.format(rest.joined(separator: " ")))]
+            guard tokens.count > 1 else { return nil }
+            // Payload comes from the raw transcript so ASR casing/punctuation survives.
+            let raw = transcript.split(whereSeparator: { $0.isWhitespace }).dropFirst().joined(separator: " ")
+            return [.typeText(DictationFormatter.format(raw))]
         default: break
         }
 
