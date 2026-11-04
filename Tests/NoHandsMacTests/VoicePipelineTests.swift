@@ -260,3 +260,41 @@ private func step(_ intent: String, _ status: StepStatus, _ actions: [Action] = 
     #expect(r.overlay.huds.isEmpty)
     #expect(r.input.calls.isEmpty)
 }
+
+@MainActor @Test func jobHeldAfterStopNeverReplaysInNextTask() async {
+    let r = rig()
+    let entered = Gate(), release = Gate()
+    r.resolver?.scripted = [step("type a", .continue, [.typeText("a")]), step("type b", .done, [.typeText("b")]),
+                            step("type c", .done, [.typeText("c")])]
+    // Step 2 blocks in a detached task, so cancelling the runner does not unblock it: the task is still unwinding.
+    r.resolver?.onResolve = { n in if n == 2 { entered.open(); await Task.detached { await release.wait() }.value } }
+    await r.pipeline.handle(transcript: "find the newest video", trace: trace())
+    await entered.wait()
+    await r.pipeline.handle(transcript: "stop", trace: trace())
+    await r.pipeline.handle(transcript: "click", trace: trace())   // held while the stopped task unwinds
+    #expect(r.pipeline.isTaskActive)
+    release.open()
+    await r.pipeline.waitForTask()
+    #expect(r.pipeline.lastTaskOutcome == .stopped)
+    await r.pipeline.handle(transcript: "find the next video", trace: trace())
+    await r.pipeline.waitForTask()
+    #expect(r.pipeline.lastTaskOutcome == .done("type c"))
+    #expect(r.typed == ["type:a", "type:c"])
+    #expect(!r.input.calls.contains { $0.hasPrefix("click") })    // the held click never ran
+}
+
+@MainActor @Test func heldJobOlderThan60sIsSkipped() async {
+    for (age, runs) in [(Duration.seconds(30), true), (.seconds(61), false)] {
+        let r = rig()
+        let entered = Gate(), release = Gate()
+        r.resolver?.scripted = [step("type a", .done, [.typeText("a")])]
+        r.resolver?.onResolve = { _ in entered.open(); await release.wait() }
+        await r.pipeline.handle(transcript: "find the newest video", trace: trace())
+        await entered.wait()
+        await r.pipeline.handle(transcript: "click", trace: trace(age: age))   // held regardless of age
+        release.open()
+        await r.pipeline.waitForTask()
+        #expect(r.input.calls.contains("click:10,20") == runs)
+        #expect(r.overlay.huds.contains("skipped (busy)") == !runs)
+    }
+}

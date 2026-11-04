@@ -55,6 +55,8 @@ import NoHandsCore
     private var activeTask: Task<Void, Never>?
     /// The newest utterance heard while a task ran; handled after the task ends.
     private var heldJob: Job?
+    /// A held job is replayed after the task only if it was spoken within this window.
+    static let heldJobMaxAge: Duration = .seconds(60)
 
     /// The outcome of the most recent task (for tests and diagnostics).
     private(set) var lastTaskOutcome: TaskOutcome?
@@ -103,7 +105,8 @@ import NoHandsCore
         // execution stays strictly serialized across pause/resume.
         await consumer?.value
         consumer = nil
-        await activeTask?.value   // stop() cancelled it; it ends promptly
+        // stop() always cancels activeTask, so the old task's held-job loop sees Task.isCancelled and ends promptly.
+        await activeTask?.value
 
         if vad == nil { vad = try await VoiceActivity(silenceMs: config.silenceMs) }
         let vad = self.vad!
@@ -269,7 +272,7 @@ import NoHandsCore
     func handle(transcript text: String, trace: LatencyTrace) async {
         let job = Job(transcript: text, trace: trace)
         if activeTask != nil { busy(job); return }
-        if let pending = await process(job, checkStale: true) { startTask(pending) }
+        if let pending = await process(job, maxAge: StaleJobPolicy.defaultMaxAge) { startTask(pending) }
     }
 
     /// Waits until no task is running (including held jobs handled after it). For tests.
@@ -294,11 +297,11 @@ import NoHandsCore
     }
 
     /// Routes and executes one job. Returns the task to run when it routed to the LLM (logged when the task ends).
-    private func process(_ job: Job, checkStale: Bool) async -> PendingTask? {
+    private func process(_ job: Job, maxAge: Duration) async -> PendingTask? {
         let text = job.transcript
         var trace = job.trace
-        if checkStale, let spoke = trace.speechEnd, StaleJobPolicy.isStale(age: spoke.duration(to: .now)) {
-            PipelineLog.warning("busy: skipped stale utterance (older than 8 s)")
+        if let spoke = trace.speechEnd, StaleJobPolicy.isStale(age: spoke.duration(to: .now), maxAge: maxAge) {
+            PipelineLog.warning("busy: skipped (stale) utterance (older than \(maxAge))")
             overlay.showHUD("skipped (busy)")
             return nil
         }
@@ -348,9 +351,10 @@ import NoHandsCore
                 await runTask(pending, runner: runner)
                 while next == nil, canExecute, let held = heldJob {
                     heldJob = nil
-                    next = await process(held, checkStale: false)   // already waited; don't drop it as stale
+                    next = await process(held, maxAge: Self.heldJobMaxAge)   // it waited on purpose: longer limit
                 }
             }
+            heldJob = nil   // still held here means the task was cancelled: it must never run (e.g. in the next task)
             activeTask = nil
         }
     }
