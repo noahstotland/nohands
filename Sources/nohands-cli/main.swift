@@ -23,6 +23,7 @@ func usage() -> Never {
       nohands-cli grid               (10x8 grid 4 s, zoom into cell 35 for 4 s, HUD "done")
       nohands-cli labels             (waits 3 s, badges for frontmost app's elements for 5 s)
       nohands-cli run "<phrase>"...  (waits 2 s, executes each phrase in order, 0.8 s apart)
+      nohands-cli resolve "<text>"   (waits 3 s, sends text + frontmost app's labels to Claude; spends API credit)
       nohands-cli listen             (mic -> VAD -> ASR; Ctrl-C to quit)
     """)
 }
@@ -157,6 +158,26 @@ do {
                 if let failure = await executor.execute(actions) { print("failed: \(failure)"); break }
             }
             try? await Task.sleep(for: .milliseconds(1800))   // let the HUD show
+        }
+    case "resolve":
+        guard rest.count == 1 else { usage() }
+        let cfgURL = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".config/nohands/config.json")
+        let config = try AppConfig.load(from: try? Data(contentsOf: cfgURL), environment: ProcessInfo.processInfo.environment)
+        guard config.anthropicAPIKey?.isEmpty == false else { fail("error: noAPIKey") }
+        guard Permissions.accessibilityGranted(prompt: false) else {
+            fail("Accessibility permission is not granted to this process (or its terminal).")
+        }
+        try await Task.sleep(for: .seconds(3))
+        let context = IntentContextBuilder.make(elements: AXQuery(), mode: .command)
+        let resolver = ClaudeIntentResolver(config: config)
+        let t0 = ContinuousClock.now
+        do {
+            let actions = try await resolver.resolve(rest[0], context: context)
+            print("\(actions)")
+            print("elapsed: \(Int(t0.duration(to: .now) / .milliseconds(1))) ms")
+        } catch let e as IntentError {
+            // Never print request details; IntentError carries no key material.
+            fail("error: \(e)")
         }
     case "listen":
         try await listen()
