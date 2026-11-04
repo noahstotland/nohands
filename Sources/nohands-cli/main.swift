@@ -22,6 +22,7 @@ func usage() -> Never {
       nohands-cli click "<name>"     (waits 3 s, clicks the named element's center)
       nohands-cli grid               (10x8 grid 4 s, zoom into cell 35 for 4 s, HUD "done")
       nohands-cli labels             (waits 3 s, badges for frontmost app's elements for 5 s)
+      nohands-cli parse "<text>"     (dry run: prints the grammar's actions, or "no match -> LLM"; executes nothing)
       nohands-cli run "<phrase>"...  (waits 2 s, executes each phrase in order, 0.8 s apart)
       nohands-cli resolve "<text>"   (waits 3 s, sends text + frontmost app's labels to Claude; spends API credit)
       nohands-cli listen             (mic -> VAD -> ASR; Ctrl-C to quit)
@@ -69,13 +70,13 @@ do {
         print("load=\(Int(t0.duration(to: .now) / .milliseconds(1)))ms")
         var times: [Int] = []
         var text = ""
-        for _ in 1...(Int(ProcessInfo.processInfo.environment["NH_RUNS"] ?? "") ?? 8) {
+        for _ in 1...max(1, Int(ProcessInfo.processInfo.environment["NH_RUNS"] ?? "") ?? 8) {
             let t = ContinuousClock.now
             text = try await asr.transcribe(samples)
             times.append(Int(t.duration(to: .now) / .milliseconds(1)))
         }
         print("last breakdown: \(await asr.lastBreakdown)")
-        let warm = times.dropFirst(2).sorted()
+        let warm = (times.count > 2 ? Array(times.dropFirst(2)) : times).sorted()
         print("runs=\(times) warm-median=\(warm[warm.count / 2])ms audio=\(samples.count * 1000 / 16000)ms text=\(text)")
     case "vad-test":
         // vad-test <wav> [silenceMs] [speechThreshold] [negativeThreshold]
@@ -138,6 +139,13 @@ do {
             overlay.showLabels(ax.labels)
             try? await Task.sleep(for: .seconds(5))
             overlay.hide()
+        }
+    case "parse":
+        guard rest.count == 1 else { usage() }
+        if let actions = CommandGrammar().parse(rest[0]) {
+            print("\(actions)")
+        } else {
+            print("no match -> LLM")
         }
     case "run":
         guard !rest.isEmpty else { usage() }

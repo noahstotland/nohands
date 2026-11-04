@@ -29,7 +29,10 @@ public enum DictationFormatter {
         "semicolon": .attach(";"),
         "dash": .word("-"),
         "hyphen": .joiner("-"),
+        "dot": .joiner("."),
     ]
+
+    static let punctuation: Set<Character> = [".", ",", "!", "?", ":", ";"]
 
     /// Spoken punctuation → characters, spacing, sentence capitalization. Pure function of one utterance.
     /// `capitalizeStart: false` leaves the first word's case alone (used mid-sentence by DictationSession).
@@ -56,7 +59,9 @@ public enum DictationFormatter {
             }
             switch kind {
             case .attach(let s):
-                if !out.hasSuffix(s) { out += s }
+                // The recognizer often already punctuated ("world, period."): replace its punctuation.
+                while let c = out.last, Self.punctuation.contains(c) { out.removeLast() }
+                out += s
                 noSpace = false
                 if s != ":" && s != ";" && s != "," { capNext = true }
             case .closer(let s):
@@ -104,7 +109,14 @@ public struct DictationSession: Sendable {
             guard let c = last.last else { return true }
             return c.isNewline || ".?!".contains(c)
         }()
-        let formatted = DictationFormatter.format(transcript, capitalizeStart: atSentenceStart)
+        var formatted = DictationFormatter.format(transcript, capitalizeStart: atSentenceStart)
+        // The previous insertion already ended in punctuation and this one starts with the same (or, after a
+        // sentence end, any) punctuation, e.g. "Hello world." then "period" -> drop the duplicate leading run.
+        if let prev = last.last, DictationFormatter.punctuation.contains(prev),
+           let lead = formatted.first, DictationFormatter.punctuation.contains(lead),
+           lead == prev || ".!?".contains(prev) {
+            formatted = String(formatted.drop(while: { DictationFormatter.punctuation.contains($0) }))
+        }
         guard let first = formatted.first else { return "" }
         var result = formatted
         if let prev = last.last, !prev.isWhitespace, prev != "(",

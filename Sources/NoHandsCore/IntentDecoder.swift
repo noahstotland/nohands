@@ -117,7 +117,8 @@ public enum IntentDecoder {
     private static func clickTarget(_ o: [String: Any]) -> ClickTarget? {
         switch o["target_kind"] as? String {
         case "cursor": return .cursor
-        case "grid_cell", "label": return number(o["target_number"]).map(ClickTarget.numbered)
+        case "grid_cell": return number(o["target_number"]).map(ClickTarget.numbered)
+        case "label": return number(o["target_number"]).map(ClickTarget.label)
         case "element": return nonBlank(o["target_name"]).map { .element(named: $0) }
         case "point":
             return point(o).map { .point($0) }
@@ -127,7 +128,8 @@ public enum IntentDecoder {
 
     private static func moveTarget(_ o: [String: Any]) -> MoveTarget? {
         switch o["target_kind"] as? String {
-        case "grid_cell", "label": return number(o["target_number"]).map(MoveTarget.numbered)
+        case "grid_cell": return number(o["target_number"]).map(MoveTarget.numbered)
+        case "label": return number(o["target_number"]).map(MoveTarget.label)
         case "element": return nonBlank(o["target_name"]).map { .element(named: $0) }
         case "point":
             return point(o).map { .point($0) }

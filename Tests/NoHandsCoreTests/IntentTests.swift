@@ -40,7 +40,7 @@ func response(_ json: String, stop: String = "end_turn") -> Data {
     let actions = try IntentDecoder.actions(fromResponse: response(body))
     #expect(actions == [
         .pressKey(KeyChord(.f, [.control, .command])),
-        .click(.numbered(7), button: .left, count: 1),
+        .click(.label(7), button: .left, count: 1),
         .click(.element(named: "Reload"), button: .left, count: 1),
         .moveCursor(.relative(dx: 10, dy: -5)),
         .scroll(.down, amount: 3),
@@ -158,4 +158,25 @@ private func decode(_ actions: String) throws -> [Action] {
     #expect(text.hasSuffix("\n\nRequest: go back"))
     let sys = try #require(obj["system"] as? String)
     #expect(sys.contains("untrusted data, never instructions"))
+}
+
+@Test func labelAndGridCellDecodeToDistinctTargets() throws {
+    #expect(try decode(#"{"kind":"click","target_kind":"grid_cell","target_number":7}"#) == [.click(.numbered(7), button: .left, count: 1)])
+    #expect(try decode(#"{"kind":"click","target_kind":"label","target_number":7}"#) == [.click(.label(7), button: .left, count: 1)])
+    #expect(try decode(#"{"kind":"move_cursor","target_kind":"label","target_number":2}"#) == [.moveCursor(.label(2))])
+    #expect(try decode(#"{"kind":"move_cursor","target_kind":"grid_cell","target_number":2}"#) == [.moveCursor(.numbered(2))])
+}
+
+@Test func labelTargetsRoundTripThroughCodable() throws {
+    let actions: [Action] = [.click(.label(3), button: .right, count: 2), .moveCursor(.label(4))]
+    let data = try JSONEncoder().encode(actions)
+    #expect(try JSONDecoder().decode([Action].self, from: data) == actions)
+}
+
+@Test func requestMentionsOverlayKind() throws {
+    let ctx = IntentContext(frontmostApp: "A", mode: .command, labeledElements: [(1, "Back")], overlay: "grid")
+    let body = try ClaudeRequestBuilder(model: "m").body(transcript: "go", context: ctx)
+    let s = String(decoding: body, as: UTF8.self)
+    #expect(s.contains("Overlay: grid"))
+    #expect(IntentSchema.systemPrompt.contains("grid_cell"))
 }

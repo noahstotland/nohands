@@ -2,13 +2,16 @@ import Foundation
 import CoreGraphics
 
 public enum TitleSource {
-    static let editableRoles: Set<String> = ["AXTextField", "AXTextArea", "AXComboBox"]
+    static let valueFallbackRoles: Set<String> = [
+        "AXPopUpButton", "AXCheckBox", "AXRadioButton", "AXSlider", "AXMenuItem", "AXTab",
+    ]
 
-    /// Whether AXValue may be used as a title fallback. Editable text roles hold user content
-    /// (and titles are sent to an LLM), so they never fall back to the value.
+    /// Whether AXValue may be used as a title fallback: only for control roles whose value is a short
+    /// state/selection label. Editable text, cells, rows and other content hold user data (and titles are
+    /// sent to an LLM), so they never fall back to the value.
     public static func allowsValueFallback(role: String, subrole: String?) -> Bool {
         if subrole == "AXSecureTextField" || role == "AXSecureTextField" { return false }
-        return !editableRoles.contains(role)
+        return valueFallbackRoles.contains(role)
     }
 
     public static let secureFieldTitle = "password field"
@@ -16,11 +19,12 @@ public enum TitleSource {
 
 public enum AppNameMatcher {
     /// Case-insensitive: exact, then prefix, then contains. Returns the first matching candidate's id.
-    public static func best<ID>(for query: String, in candidates: [(name: String, id: ID)]) -> ID? {
+    /// `allowContains: false` (installed apps that are not running) limits matching to exact, then prefix.
+    public static func best<ID>(for query: String, in candidates: [(name: String, id: ID)], allowContains: Bool = true) -> ID? {
         let q = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard !q.isEmpty else { return nil }
         let c = candidates.map { ($0.id, $0.name.lowercased()) }
-        return (c.first { $0.1 == q } ?? c.first { $0.1.hasPrefix(q) } ?? c.first { $0.1.contains(q) })?.0
+        return (c.first { $0.1 == q } ?? c.first { $0.1.hasPrefix(q) } ?? (allowContains ? c.first { $0.1.contains(q) } : nil))?.0
     }
 }
 

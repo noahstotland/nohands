@@ -8,9 +8,12 @@ import CoreGraphics
         #expect(!TitleSource.allowsValueFallback(role: "AXTextField", subrole: nil))
         #expect(!TitleSource.allowsValueFallback(role: "AXTextArea", subrole: nil))
         #expect(!TitleSource.allowsValueFallback(role: "AXComboBox", subrole: nil))
-        #expect(TitleSource.allowsValueFallback(role: "AXButton", subrole: nil))
-        #expect(TitleSource.allowsValueFallback(role: "AXCell", subrole: nil))
-        #expect(TitleSource.allowsValueFallback(role: "AXRow", subrole: nil))
+        for role in ["AXPopUpButton", "AXCheckBox", "AXRadioButton", "AXSlider", "AXMenuItem", "AXTab"] {
+            #expect(TitleSource.allowsValueFallback(role: role, subrole: nil))
+        }
+        for role in ["AXButton", "AXCell", "AXRow", "AXStaticText", "AXLink"] {
+            #expect(!TitleSource.allowsValueFallback(role: role, subrole: nil))
+        }
     }
 
     @Test func appMatching() {
@@ -19,6 +22,13 @@ import CoreGraphics
         #expect(AppNameMatcher.best(for: "safari tech", in: c) == 1)
         #expect(AppNameMatcher.best(for: "code", in: c) == 3)
         #expect(AppNameMatcher.best(for: "nothing", in: c) == nil)
+    }
+
+    @Test func installedAppMatchingHasNoContains() {
+        let c = [(name: "Visual Studio Code", id: 3), (name: "Safari", id: 2)]
+        #expect(AppNameMatcher.best(for: "code", in: c, allowContains: false) == nil)
+        #expect(AppNameMatcher.best(for: "visual", in: c, allowContains: false) == 3)
+        #expect(AppNameMatcher.best(for: "SAFARI", in: c, allowContains: false) == 2)
     }
 
     @Test func clickPointClipsToScreen() {

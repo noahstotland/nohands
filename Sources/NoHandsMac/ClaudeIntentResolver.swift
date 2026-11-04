@@ -107,16 +107,34 @@ public actor ClaudeIntentResolver: IntentResolving {
     }
 }
 
+/// The request context plus the exact label snapshot it numbered, so `.label(n)` actions can be resolved
+/// against what the model was shown.
+public struct IntentContextBundle: Sendable {
+    public var context: IntentContext
+    public var labels: [Int: UIElementInfo]
+}
+
 public enum IntentContextBuilder {
-    public static func make(elements: ElementProviding, mode: Mode, maxElements: Int = 60) -> IntentContext {
-        let labels = LabelAssigner.assign(elements.actionableElements())
+    public static func make(elements: ElementProviding, mode: Mode, maxElements: Int = 60,
+                            overlay: OverlayState = .none) -> IntentContext {
+        makeBundle(elements: elements, mode: mode, maxElements: maxElements, overlay: overlay).context
+    }
+
+    /// `labels` holds only the elements actually listed in the context (titled, within `maxElements`).
+    public static func makeBundle(elements: ElementProviding, mode: Mode, maxElements: Int = 60,
+                                  overlay: OverlayState = .none) -> IntentContextBundle {
+        let all = LabelAssigner.assign(elements.actionableElements())
         var out: [(number: Int, title: String)] = []
-        for n in labels.keys.sorted() {
-            guard let title = labels[n]?.title,
-                  !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { continue }
+        var snapshot: [Int: UIElementInfo] = [:]
+        for n in all.keys.sorted() {
+            guard let e = all[n],
+                  !e.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { continue }
             if out.count >= maxElements { break }
-            out.append((number: n, title: title))
+            out.append((number: n, title: e.title))
+            snapshot[n] = e
         }
-        return IntentContext(frontmostApp: elements.frontmostAppName() ?? "", mode: mode, labeledElements: out)
+        let context = IntentContext(frontmostApp: elements.frontmostAppName() ?? "", mode: mode,
+                                    labeledElements: out, overlay: overlay.kindName)
+        return IntentContextBundle(context: context, labels: snapshot)
     }
 }

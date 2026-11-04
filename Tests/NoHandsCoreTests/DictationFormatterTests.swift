@@ -42,3 +42,30 @@ import Testing
     #expect(DictationFormatter.format("hello, comma there") == "Hello, there")
     #expect(DictationFormatter.format("Hello world. Period") == "Hello world.")
 }
+
+@Test func spokenPunctuationReplacesRecognizerPunctuation() {
+    #expect(DictationFormatter.format("Hello world, period. This is a test, exclamation mark.") == "Hello world. This is a test!")
+    #expect(DictationFormatter.format("test, exclamation mark.") == "Test!")
+    #expect(DictationFormatter.format("Well, comma okay") == "Well, okay")
+}
+
+@Test func sessionDropsDuplicateLeadingPunctuation() {
+    var s = DictationSession()
+    #expect(s.next("Hello world.") == "Hello world.")
+    #expect(s.next("period") == "")                       // nothing typed: "." is already there
+    #expect(s.next("This is fine") == " This is fine")    // session state unchanged by the dropped token
+    #expect(s.next("comma") == ",")                       // different punctuation after a non-sentence end is kept
+    #expect(s.next("comma") == "")                        // same punctuation again is dropped
+    #expect(s.next("and more") == " and more")
+}
+
+@Test func sessionDropsAnySentenceEndPunctuationAfterSentenceEnd() {
+    var s = DictationSession()
+    _ = s.next("Done.")
+    #expect(s.next("question mark") == "")
+}
+
+@Test func dotJoinsWithoutSpaces() {
+    #expect(DictationFormatter.format("news dot ycombinator dot com", capitalizeStart: false) == "news.ycombinator.com")
+    #expect(CommandGrammar().parse("type example dot com") == [.typeText("Example.com")])
+}

@@ -4,47 +4,6 @@ import Foundation
 import NoHandsCore
 @testable import NoHandsMac
 
-private struct Boom: Error {}
-
-private final class FakeInput: InputSynthesizing, @unchecked Sendable {
-    var calls: [String] = []
-    var location = CGPoint(x: 10, y: 20)
-    var throwOnType = false
-    func type(_ text: String) throws { if throwOnType { throw Boom() }; calls.append("type:\(text)") }
-    func press(_ chord: KeyChord) throws { calls.append("press") }
-    func moveMouse(to point: CGPoint) throws { calls.append("move:\(Int(point.x)),\(Int(point.y))") }
-    func click(at point: CGPoint, button: MouseButton, count: Int) throws { calls.append("click:\(Int(point.x)),\(Int(point.y))") }
-    func mouseDown(_ button: MouseButton, at point: CGPoint) throws { calls.append("down") }
-    func mouseUp(_ button: MouseButton, at point: CGPoint) throws { calls.append("up") }
-    func scroll(_ direction: Direction, lines: Int) throws { calls.append("scroll") }
-    func currentMouseLocation() -> CGPoint { location }
-}
-
-private final class FakeElements: ElementProviding, @unchecked Sendable {
-    var elements: [UIElementInfo] = []
-    var apps: Set<String> = []
-    var front: String? = nil
-    func frontmostAppName() -> String? { front }
-    func actionableElements() -> [UIElementInfo] { elements }
-    func screenRectsCG() -> [CGRect] { [CGRect(x: 0, y: 0, width: 1000, height: 800)] }
-    func activate(appNamed: String) -> Bool { apps.contains(appNamed) }
-}
-
-@MainActor private final class FakeOverlay: OverlayPresenting {
-    var state: OverlayState = .none
-    var huds: [String] = []
-    func showGrid(_ grid: GridModel) { state = .grid(grid) }
-    func showLabels(_ labels: [Int: UIElementInfo]) { state = .labels(labels) }
-    func hide() { state = .none }
-    func showHUD(_ text: String, duration: Duration) { huds.append(text) }
-    func screenBoundsCG(containing point: CGPoint) -> CGRect { CGRect(x: 0, y: 0, width: 1000, height: 800) }
-}
-
-@MainActor private func make() -> (ActionExecutor, FakeInput, FakeElements, FakeOverlay) {
-    let i = FakeInput(), e = FakeElements(), o = FakeOverlay()
-    return (ActionExecutor(input: i, ax: e, overlay: o, config: AppConfig(), frontTimeout: .milliseconds(150)), i, e, o)
-}
-
 @MainActor @Test func stopsAtFirstFailureAndShowsHUD() async {
     let (x, i, _, o) = make()
     let r = await x.execute([.typeText("a"), .zoomGrid(3), .typeText("b")])
@@ -129,7 +88,7 @@ private final class FakeElements: ElementProviding, @unchecked Sendable {
     let (x, i, _, _) = make()
     let r = await x.execute([.pressMouse(.left), .moveCursor(.numbered(1))])
     #expect(r == "no grid or labels shown")
-    #expect(i.calls == ["down", "up"])
+    #expect(i.calls == ["down", "releaseAll"])
 }
 
 @MainActor @Test func releasedButtonIsNotReleasedAgain() async {
@@ -196,5 +155,40 @@ private final class FakeElements: ElementProviding, @unchecked Sendable {
     let (x, _, e, o) = make()
     e.apps = ["Safari"]; e.front = "Safari"
     _ = await x.execute([.showGrid, .openApp("Safari")])
+    #expect(o.state == .none)
+}
+
+private let reload = UIElementInfo(id: 1, frame: CGRect(x: 100, y: 100, width: 80, height: 30), title: "Reload", role: "AXButton")
+
+@MainActor @Test func llmLabelClickHitsElementCentreWithNoOverlay() async {
+    let (x, i, _, _) = make()
+    #expect(await x.execute([.click(.label(7), button: .left, count: 1)], labels: [7: reload]) == nil)
+    #expect(i.calls == ["click:140,115"])
+}
+
+@MainActor @Test func llmLabelClickIgnoresGridCellOfSameNumber() async {
+    let (x, i, _, o) = make()
+    _ = await x.execute([.showGrid])
+    #expect(await x.execute([.click(.label(7), button: .left, count: 1)], labels: [7: reload]) == nil)
+    #expect(i.calls == ["click:140,115"])                  // not grid cell 7
+    if case .grid = o.state {} else { Issue.record("grid should still be showing") }
+    #expect(await x.execute([.click(.label(7), button: .left, count: 1)]) == "no label 7")   // no snapshot -> fails
+}
+
+@MainActor @Test func pointerUnknownFailsCursorDependentActions() async {
+    let (x, i, _, _) = make()
+    i.location = nil
+    #expect(await x.execute([.click(.cursor, button: .left, count: 1)]) == "pointer position unknown")
+    #expect(await x.execute([.moveCursor(.relative(dx: 1, dy: 1))]) == "pointer position unknown")
+    #expect(await x.execute([.pressMouse(.left)]) == "pointer position unknown")
+    #expect(await x.execute([.showGrid]) == "pointer position unknown")
+    #expect(await x.execute([.click(.point(CGPoint(x: 5, y: 5)), button: .left, count: 1)]) == nil)
+}
+
+@MainActor @Test func releaseAllReleasesInputAndHidesOverlay() async {
+    let (x, i, _, o) = make()
+    _ = await x.execute([.showGrid])
+    x.releaseAll()
+    #expect(i.calls == ["releaseAll"])
     #expect(o.state == .none)
 }

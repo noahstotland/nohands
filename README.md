@@ -105,6 +105,7 @@ In dictation mode, say `period`, `comma`, `question mark`, `new line`, `new para
 | `click "<name>"` | Clicks the named element |
 | `grid` | Shows the 10×8 grid, zooms into cell 35 |
 | `labels` | Shows numbered badges on the frontmost app's elements |
+| `parse "<text>"` | Dry run: prints the actions the grammar produces (or "no match -> LLM"); executes nothing |
 | `run "<phrase>"...` | Executes grammar phrases in order |
 | `resolve "<text>"` | Sends text and the frontmost app's labels to Claude (spends API credit) |
 | `listen` | Microphone to VAD to speech recognition, printing transcripts |
@@ -128,7 +129,9 @@ Optional file at `~/.config/nohands/config.json`. Every key may be omitted. For 
 
 ## Privacy
 
-Audio never leaves your machine. Only commands the grammar can't match are sent to Claude, as text: your transcript, the frontmost app's name and the titles of its visible controls.
+Audio never leaves your machine. Only commands the grammar can't match are sent to Claude, as text: your transcript, the frontmost app's name and the titles of its visible controls. Without an API key nothing is ever sent.
+
+**There is no wake word and no echo cancellation.** Any audio the microphone hears (calls, videos, other people talking, your own speakers) is transcribed and acted on, and in dictation mode it is typed into the focused app. With an API key, phrases the grammar doesn't match are also sent to Claude as text. Say "go to sleep" before leaving the desk or when playing audio; only "wake up" is honored while asleep.
 
 ## Layout
 

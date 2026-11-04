@@ -98,7 +98,7 @@ public final class AXQuery: @unchecked Sendable {
             }
         }
         let flat = installed.flatMap { e in e.names.map { (name: $0, id: e.url) } }
-        guard let url = AppNameMatcher.best(for: q, in: flat) else { return false }
+        guard let url = AppNameMatcher.best(for: q, in: flat, allowContains: false) else { return false }
         NSWorkspace.shared.openApplication(at: url, configuration: config) { _, _ in }
         return true
     }

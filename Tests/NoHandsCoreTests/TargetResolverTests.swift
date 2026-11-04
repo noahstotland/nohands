@@ -39,3 +39,18 @@ private let save = UIElementInfo(id: 1, frame: CGRect(x: 100, y: 100, width: 80,
     #expect(TargetResolver.resolveClick(.numbered(1), overlay: .labels([1: edge]), cursor: .zero, elements: [], screens: [screen]) == .point(CGPoint(x: 975, y: 120)))
     #expect(TargetResolver.resolveClick(.element(named: "edge"), overlay: .none, cursor: .zero, elements: [edge], screens: [screen]) == .point(CGPoint(x: 975, y: 120)))
 }
+
+@Test func labelResolvesOnlyAgainstExplicitSnapshot() {
+    let snap: [Int: UIElementInfo] = [7: save]
+    // Even with a grid showing, .label(7) must not become grid cell 7.
+    #expect(TargetResolver.resolveClick(.label(7), overlay: .grid(grid), cursor: .zero, elements: [], labels: snap) == .point(CGPoint(x: 140, y: 115)))
+    #expect(TargetResolver.resolveClick(.label(7), overlay: .none, cursor: .zero, elements: [], labels: snap) == .point(CGPoint(x: 140, y: 115)))
+    #expect(TargetResolver.resolveMove(.label(7), overlay: .none, cursor: .zero, elements: [], labels: snap) == .point(CGPoint(x: 140, y: 115)))
+}
+
+@Test func labelNeverFallsBackToGridOrOverlay() {
+    #expect(TargetResolver.resolveClick(.label(1), overlay: .grid(grid), cursor: .zero, elements: []) == .failure("no label 1"))
+    #expect(TargetResolver.resolveClick(.label(1), overlay: .labels([1: save]), cursor: .zero, elements: []) == .failure("no label 1"))
+    #expect(TargetResolver.resolveClick(.label(2), overlay: .none, cursor: .zero, elements: [], labels: [7: save]) == .failure("no label 2"))
+    #expect(TargetResolver.resolveMove(.label(1), overlay: .grid(grid), cursor: .zero, elements: []) == .failure("no label 1"))
+}

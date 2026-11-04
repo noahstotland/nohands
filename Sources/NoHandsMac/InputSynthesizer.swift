@@ -22,7 +22,10 @@ public protocol InputSynthesizing: Sendable {
     func mouseDown(_ button: MouseButton, at point: CGPoint) throws
     func mouseUp(_ button: MouseButton, at point: CGPoint) throws
     func scroll(_ direction: Direction, lines: Int) throws
-    func currentMouseLocation() -> CGPoint
+    /// nil when the pointer position cannot be read.
+    func currentMouseLocation() -> CGPoint?
+    /// Releases any mouse button this synthesizer is still holding down (safety net on pause/quit).
+    func releaseAll()
 }
 
 public struct CGEventInputSynthesizer: InputSynthesizing {
@@ -126,8 +129,17 @@ public struct CGEventInputSynthesizer: InputSynthesizing {
         e.post(tap: .cghidEventTap)
     }
 
-    public func currentMouseLocation() -> CGPoint {
-        CGEvent(source: nil)?.location ?? .zero
+    public func currentMouseLocation() -> CGPoint? {
+        CGEvent(source: nil)?.location
+    }
+
+    public func releaseAll() {
+        guard let held = buttons.withLock({ state -> MouseButton? in
+            let h = state.heldButton
+            state = MouseButtonState()
+            return h
+        }) else { return }
+        try? post(held, down: false, at: currentMouseLocation() ?? .zero, clickState: 1)
     }
 
     private func post(_ button: MouseButton, down: Bool, at point: CGPoint, clickState: Int) throws {

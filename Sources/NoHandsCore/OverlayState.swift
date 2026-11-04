@@ -6,6 +6,15 @@ public enum OverlayState: Equatable, Sendable {
     case none
     case grid(GridModel)
     case labels([Int: UIElementInfo])
+
+    /// "none" | "grid" | "labels" (sent to the LLM so it only uses grid_cell when a grid is shown).
+    public var kindName: String {
+        switch self {
+        case .none: "none"
+        case .grid: "grid"
+        case .labels: "labels"
+        }
+    }
 }
 
 /// Pure drawing math for the overlay (all in CG, top-left-origin space).

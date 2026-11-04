@@ -24,6 +24,10 @@ extension AXQuery: ElementProviding {
     func screenBoundsCG(containing point: CGPoint) -> CGRect
 }
 
+extension OverlayPresenting {
+    public func showHUD(_ text: String) { showHUD(text, duration: .seconds(1.5)) }
+}
+
 extension OverlayController: OverlayPresenting {
     public func screenBoundsCG(containing point: CGPoint) -> CGRect { OverlayController.screenBoundsCG(containing: point) }
 }
@@ -31,6 +35,7 @@ extension OverlayController: OverlayPresenting {
 @MainActor public final class ActionExecutor {
     /// Guards against runaway LLM output being typed into the focused app.
     public static let maxTypedCharacters = 2000
+    static let pointerUnknown = "pointer position unknown"
 
     private let input: any InputSynthesizing
     private let ax: any ElementProviding
@@ -39,6 +44,8 @@ extension OverlayController: OverlayPresenting {
     public var onModeChange: ((Mode) -> Void)?
     private let frontTimeout: Duration
     private var pressed: Set<MouseButton> = []
+    /// Label snapshot of the current LLM-derived batch; `.label(n)` resolves only against this.
+    private var labelSnapshot: [Int: UIElementInfo]?
 
     public init(input: any InputSynthesizing, ax: any ElementProviding, overlay: any OverlayPresenting,
                 config: AppConfig, frontTimeout: Duration = .seconds(1.5)) {
@@ -52,13 +59,13 @@ extension OverlayController: OverlayPresenting {
     /// Executes in order; stops at the first failure and shows it in the HUD. Returns the failure message if any.
     /// Any mouse button pressed by this call is released before a failure is returned.
     @discardableResult
-    public func execute(_ actions: [Action]) async -> String? {
+    public func execute(_ actions: [Action], labels: [Int: UIElementInfo]? = nil) async -> String? {
         pressed = []
+        labelSnapshot = labels
+        defer { labelSnapshot = nil }
         for (i, action) in actions.enumerated() {
             if let message = await run(action, isLast: i == actions.count - 1) {
-                for b in pressed.sorted(by: { $0.rawValue < $1.rawValue }) {
-                    try? input.mouseUp(b, at: input.currentMouseLocation())
-                }
+                if !pressed.isEmpty { input.releaseAll() }
                 pressed = []
                 overlay.showHUD(message, duration: .seconds(1.5))
                 return message
@@ -88,10 +95,12 @@ extension OverlayController: OverlayPresenting {
                     if usedOverlay { overlay.hide() }
                 }
             case .pressMouse(let b):
-                try input.mouseDown(b, at: input.currentMouseLocation())
+                guard let at = input.currentMouseLocation() else { return Self.pointerUnknown }
+                try input.mouseDown(b, at: at)
                 pressed.insert(b)
             case .releaseMouse(let b):
-                try input.mouseUp(b, at: input.currentMouseLocation())
+                guard let at = input.currentMouseLocation() else { return Self.pointerUnknown }
+                try input.mouseUp(b, at: at)
                 pressed.remove(b)
             case .moveCursor(let target):
                 switch resolveMove(target) {
@@ -103,7 +112,8 @@ extension OverlayController: OverlayPresenting {
                 try input.scroll(direction, lines: amount)
                 hideStaleOverlay()
             case .showGrid:
-                let bounds = overlay.screenBoundsCG(containing: input.currentMouseLocation())
+                guard let at = input.currentMouseLocation() else { return Self.pointerUnknown }
+                let bounds = overlay.screenBoundsCG(containing: at)
                 overlay.showGrid(GridModel(bounds: bounds, columns: config.gridColumns, rows: config.gridRows))
             case .zoomGrid(let n):
                 guard case .grid(let g) = overlay.state else { return "no grid shown" }
@@ -159,17 +169,28 @@ extension OverlayController: OverlayPresenting {
         var needsElements = false, direct = false
         if case .element = t { needsElements = true }
         if case .point = t { direct = true }
-        return checkOnScreen(TargetResolver.resolveClick(t, overlay: overlay.state, cursor: input.currentMouseLocation(),
+        let cursor = input.currentMouseLocation()
+        if case .cursor = t, cursor == nil { return .failure(Self.pointerUnknown) }
+        return checkOnScreen(TargetResolver.resolveClick(t, overlay: overlay.state, cursor: cursor ?? .zero,
                                            elements: elementsIfNeeded(named: needsElements),
-                                           screens: ax.screenRectsCG()), checked: direct)
+                                           screens: ax.screenRectsCG(), labels: labelSnapshot), checked: direct)
     }
 
     private func resolveMove(_ t: MoveTarget) -> TargetResolution {
         var needsElements = false, direct = false
         if case .element = t { needsElements = true }
         switch t { case .point, .relative: direct = true; default: break }
-        return checkOnScreen(TargetResolver.resolveMove(t, overlay: overlay.state, cursor: input.currentMouseLocation(),
+        let cursor = input.currentMouseLocation()
+        if case .relative = t, cursor == nil { return .failure(Self.pointerUnknown) }
+        return checkOnScreen(TargetResolver.resolveMove(t, overlay: overlay.state, cursor: cursor ?? .zero,
                                           elements: elementsIfNeeded(named: needsElements),
-                                          screens: ax.screenRectsCG()), checked: direct)
+                                          screens: ax.screenRectsCG(), labels: labelSnapshot), checked: direct)
+    }
+
+    /// Safety net for pause/quit: release any held mouse button and drop any grid/labels overlay.
+    public func releaseAll() {
+        input.releaseAll()
+        pressed = []
+        overlay.hide()
     }
 }

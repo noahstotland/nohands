@@ -21,7 +21,7 @@ import NoHandsCore
     private let transcriber: any Transcribing
     private let resolver: (any IntentResolving)?
     private let executor: ActionExecutor
-    private let overlay: OverlayController
+    private let overlay: any OverlayPresenting
     private let ax: any ElementProviding
 
     private var modeMachine: ModeMachine
@@ -32,6 +32,8 @@ import NoHandsCore
     /// Bumped by every stop(). start() compares it after its last await so a stop() requested while start()
     /// was suspended (VAD load, warm-up) wins and the mic is never started.
     private var stopGeneration = 0
+    /// True between stop()/pause() and the next start(); a job in flight at that moment must not execute.
+    private var stopped = false
     private var starting = false
     private var warmedUp = false
     private var llmOffShown = false
@@ -41,7 +43,7 @@ import NoHandsCore
     public var mode: Mode { modeMachine.mode }
 
     public init(config: AppConfig, transcriber: any Transcribing, resolver: (any IntentResolving)?,
-                executor: ActionExecutor, overlay: OverlayController, ax: any ElementProviding = AXQuery()) {
+                executor: ActionExecutor, overlay: any OverlayPresenting, ax: any ElementProviding = AXQuery()) {
         self.config = config
         self.transcriber = transcriber
         self.resolver = resolver
@@ -62,6 +64,7 @@ import NoHandsCore
         starting = true
         defer { starting = false }
         let requested = stopGeneration
+        stopped = false
 
         // A consumer from a previous session may still be executing an utterance; let it finish first so
         // execution stays strictly serialized across pause/resume.
@@ -97,7 +100,6 @@ import NoHandsCore
         }
 
         let transcriber = self.transcriber
-        let overlay = self.overlay
 
         let vadTask = Task.detached {
             var assembler = UtteranceAssembler()
@@ -127,7 +129,7 @@ import NoHandsCore
                     if !text.isEmpty {
                         if case .dropped = jobCont.yield(Job(transcript: text, trace: trace)) {
                             PipelineLog.warning("busy: dropped oldest queued utterance")
-                            await MainActor.run { overlay.showHUD("skipped (busy)") }
+                            Task { @MainActor [weak self] in self?.overlay.showHUD("skipped (busy)") }
                         }
                     }
                 } catch {
@@ -140,7 +142,7 @@ import NoHandsCore
         let execTask = Task { @MainActor [weak self] in
             for await job in jobs {
                 guard !Task.isCancelled, let self else { break }
-                await self.handle(job)
+                await self.handle(transcript: job.transcript, trace: job.trace)
             }
         }
         consumer = execTask
@@ -162,10 +164,12 @@ import NoHandsCore
     /// Stops the microphone and drops any queued audio. Safe to call repeatedly.
     public func stop() {
         stopGeneration += 1
+        stopped = true
         mic?.stop()
         mic = nil
         for t in tasks { t.cancel() }
         tasks = []
+        executor.releaseAll()   // release a held mouse button and drop any grid/labels overlay
         consumer?.cancel()   // kept (not nil-ed) so start() can await an in-flight utterance
     }
 
@@ -194,11 +198,14 @@ import NoHandsCore
         return true
     }
 
+    /// Checked immediately before every executor call: a job in flight at Pause must never execute afterwards.
+    private var canExecute: Bool { !Task.isCancelled && !stopped }
+
     private func publishStatus() { onStatus?(modeMachine.mode, lastTranscript) }
 
-    private func handle(_ job: Job) async {
-        var trace = job.trace
-        let text = job.transcript
+    /// Routes one transcript and executes it. Internal so tests can drive the pipeline without audio.
+    func handle(transcript text: String, trace initialTrace: LatencyTrace) async {
+        var trace = initialTrace
         if let spoke = trace.speechEnd, StaleJobPolicy.isStale(age: spoke.duration(to: .now)) {
             PipelineLog.warning("busy: skipped stale utterance (older than 8 s)")
             overlay.showHUD("skipped (busy)")
@@ -214,6 +221,7 @@ import NoHandsCore
             break   // nothing on the HUD (this also keeps sleep silent)
         case .execute(let actions):
             overlay.showHUD(text)
+            guard canExecute else { outcome += " (cancelled)"; detail += " (cancelled)"; break }
             if let failure = await executor.execute(actions) {
                 outcome += " FAILED"
                 detail += " FAILED(\(failure))"
@@ -241,16 +249,17 @@ import NoHandsCore
             }
             return (" (no resolver)", " (no resolver)")
         }
-        let context = IntentContextBuilder.make(elements: ax, mode: modeMachine.mode)
+        let bundle = IntentContextBuilder.makeBundle(elements: ax, mode: modeMachine.mode, overlay: overlay.state)
         do {
-            let actions = try await resolver.resolve(phrase, context: context)
+            let actions = try await resolver.resolve(phrase, context: bundle.context)
             guard !actions.isEmpty else {
                 overlay.showHUD(PipelineText.didntCatch)
                 return (" -> no actions", " -> no actions")
             }
             var pub = " -> \(ActionSummary.kinds(actions))"
             var priv = " -> \(PipelineText.describe(actions))"
-            if let failure = await executor.execute(actions) {
+            guard canExecute else { return (pub + " (cancelled)", priv + " (cancelled)") }
+            if let failure = await executor.execute(actions, labels: bundle.labels) {
                 pub += " FAILED"
                 priv += " FAILED(\(failure))"
             }

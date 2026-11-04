@@ -5,7 +5,7 @@ public struct ClaudeRequestBuilder: Sendable {
     public init(model: String) { self.model = model }
 
     public func body(transcript: String, context: IntentContext) throws -> Data {
-        var user = "App: \(Self.sanitize(context.frontmostApp))\nMode: \(context.mode.rawValue)\nVisible elements:\n"
+        var user = "App: \(Self.sanitize(context.frontmostApp))\nMode: \(context.mode.rawValue)\nOverlay: \(Self.sanitize(context.overlay))\nVisible elements:\n"
         for e in context.labeledElements { user += "\(e.number): \(Self.sanitize(e.title))\n" }
         user += "\nRequest: \(transcript)"
         let obj: [String: Any] = [

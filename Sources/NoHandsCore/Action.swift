@@ -7,13 +7,15 @@ public enum Direction: String, Codable, Sendable { case up, down, left, right }
 
 public enum ClickTarget: Equatable, Codable, Sendable {
     case cursor
-    case numbered(Int)                       // grid cell or label; executor decides
+    case numbered(Int)                       // grid cell, or label of the overlay currently shown; executor decides
+    case label(Int)                          // label from an LLM request's element snapshot (never a grid cell)
     case element(named: String)
     case point(CGPoint)
 }
 
 public enum MoveTarget: Equatable, Codable, Sendable {
     case numbered(Int)
+    case label(Int)
     case element(named: String)
     case point(CGPoint)
     case relative(dx: Int, dy: Int)
