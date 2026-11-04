@@ -29,4 +29,21 @@ import CoreGraphics
         #expect(mid == 10)
         #expect(OverlayMath.fontSize(forCell: CGSize(width: 5, height: 5)) == 9)
     }
+
+    @Test func hudTextCollapsesAndTruncates() {
+        #expect(OverlayMath.hudText("  a \n\t b  ") == "a b")
+        #expect(OverlayMath.hudText(" \n ") == nil)
+        #expect(OverlayMath.hudText("") == nil)
+        let long = String(repeating: "x", count: 200)
+        let out = OverlayMath.hudText(long)!
+        #expect(out.count == 80)
+        #expect(out.hasSuffix("\u{2026}"))
+        #expect(OverlayMath.hudText(String(repeating: "y", count: 80))!.count == 80)
+    }
+    @Test func screenIndexSelection() {
+        let screens = [CGRect(x: 0, y: 0, width: 100, height: 100), CGRect(x: 100, y: 0, width: 100, height: 100)]
+        #expect(OverlayMath.screenIndex(for: CGRect(x: 150, y: 10, width: 10, height: 10), in: screens) == 1)
+        #expect(OverlayMath.screenIndex(for: CGRect(x: -5, y: 10, width: 20, height: 10), in: screens) == 0)
+        #expect(OverlayMath.screenIndex(for: CGRect(x: 500, y: 500, width: 10, height: 10), in: screens) == nil)
+    }
 }

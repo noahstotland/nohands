@@ -26,4 +26,20 @@ public enum OverlayMath {
         let fitH = cell.height / 1.6
         return max(9, min(14, fitW, fitH))
     }
+
+    /// Index of the screen that owns an element: the one containing its top-left corner,
+    /// else the first one it intersects; nil when it is entirely off every screen.
+    public static func screenIndex(for frame: CGRect, in screens: [CGRect]) -> Int? {
+        if let i = screens.firstIndex(where: { $0.contains(frame.origin) }) { return i }
+        return screens.firstIndex(where: { $0.intersects(frame) })
+    }
+
+    /// Collapses all whitespace runs to single spaces; nil if nothing is left.
+    /// Truncates to `maxChars` characters including a trailing ellipsis.
+    public static func hudText(_ text: String, maxChars: Int = 80) -> String? {
+        let collapsed = text.split(whereSeparator: { $0.isWhitespace || $0.isNewline }).joined(separator: " ")
+        guard !collapsed.isEmpty else { return nil }
+        guard collapsed.count > maxChars else { return collapsed }
+        return String(collapsed.prefix(max(0, maxChars - 1))) + "\u{2026}"
+    }
 }

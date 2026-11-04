@@ -6,7 +6,7 @@ public final class OverlayController {
     public private(set) var state: OverlayState = .none
 
     private var gridPanel: NSPanel?
-    private var labelsPanel: NSPanel?
+    private var labelsPanels: [NSPanel] = []
     private var hudPanel: NSPanel?
     private var hudGeneration = 0
     private var hudTask: Task<Void, Never>?
@@ -16,7 +16,7 @@ public final class OverlayController {
     // MARK: Public API
 
     public func showGrid(_ grid: GridModel) {
-        removeLabelsPanel()
+        removeLabelsPanels()
         let panel = gridPanel ?? Self.makePanel()
         gridPanel = panel
         let h = Self.primaryHeight
@@ -29,23 +29,28 @@ public final class OverlayController {
 
     public func showLabels(_ labels: [Int: UIElementInfo]) {
         removeGridPanel()
-        let panel = labelsPanel ?? Self.makePanel()
-        labelsPanel = panel
-        // Cover the union of all screens so badges can sit anywhere.
-        let h = Self.primaryHeight
+        removeLabelsPanels()
         let screensCG = Self.allScreensCG()
-        let unionCG = screensCG.dropFirst().reduce(screensCG.first ?? .zero) { $0.union($1) }
-        let frame = CoordinateMapper.toAppKit(unionCG, primaryScreenHeight: h)
-        panel.setFrame(frame, display: false)
-        panel.contentView = LabelsView(frame: CGRect(origin: .zero, size: frame.size),
-                                       labels: labels, originCG: unionCG.origin, screensCG: screensCG)
-        panel.orderFrontRegardless()
+        let h = Self.primaryHeight
+        var perScreen = [[Int: UIElementInfo]](repeating: [:], count: screensCG.count)
+        for (n, e) in labels {
+            if let i = OverlayMath.screenIndex(for: e.frame, in: screensCG) { perScreen[i][n] = e }
+        }
+        for (i, screen) in screensCG.enumerated() where !perScreen[i].isEmpty {
+            let panel = Self.makePanel()
+            let frame = CoordinateMapper.toAppKit(screen, primaryScreenHeight: h)
+            panel.setFrame(frame, display: false)
+            panel.contentView = LabelsView(frame: CGRect(origin: .zero, size: frame.size),
+                                           labels: perScreen[i], screenCG: screen)
+            panel.orderFrontRegardless()
+            labelsPanels.append(panel)
+        }
         state = .labels(labels)
     }
 
     public func hide() {
         removeGridPanel()
-        removeLabelsPanel()
+        removeLabelsPanels()
         state = .none
     }
 
@@ -53,15 +58,18 @@ public final class OverlayController {
         hudTask?.cancel()
         hudGeneration += 1
         let generation = hudGeneration
-        let shown = text.count > 80 ? String(text.prefix(79)) + "…" : text
+        guard let shown = OverlayMath.hudText(text, maxChars: 80) else {
+            hudPanel?.orderOut(nil)
+            return
+        }
 
         let font = NSFont.systemFont(ofSize: 18, weight: .medium)
         let attrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: NSColor.white]
         let textSize = (shown as NSString).size(withAttributes: attrs)
         let size = CGSize(width: ceil(textSize.width) + 36, height: ceil(textSize.height) + 18)
 
-        let screenCG = Self.screenBoundsCG(containing: Self.pointerCG())
-        let originCG = CGPoint(x: screenCG.midX - size.width / 2, y: screenCG.maxY - size.height - 60)
+        let screenCG = Self.visibleBoundsCG(containing: Self.pointerCG())
+        let originCG = CGPoint(x: screenCG.midX - size.width / 2, y: screenCG.maxY - size.height - 40)
         let frame = CoordinateMapper.toAppKit(CGRect(origin: originCG, size: size),
                                               primaryScreenHeight: Self.primaryHeight)
         let panel = hudPanel ?? Self.makePanel()
@@ -83,6 +91,15 @@ public final class OverlayController {
         return rects.first(where: { $0.contains(point) }) ?? rects.first ?? .zero
     }
 
+    /// Like `screenBoundsCG` but excludes the menu bar and Dock.
+    private static func visibleBoundsCG(containing point: CGPoint) -> CGRect {
+        let h = primaryHeight
+        let screens = NSScreen.screens
+        let screen = screens.first(where: { CoordinateMapper.toAppKit($0.frame, primaryScreenHeight: h).contains(point) }) ?? screens.first
+        guard let screen else { return .zero }
+        return CoordinateMapper.toAppKit(screen.visibleFrame, primaryScreenHeight: h)
+    }
+
     // MARK: Helpers
 
     private static var primaryHeight: CGFloat { NSScreen.screens.first?.frame.height ?? 0 }
@@ -97,7 +114,7 @@ public final class OverlayController {
     }
 
     private func removeGridPanel() { gridPanel?.orderOut(nil); gridPanel = nil }
-    private func removeLabelsPanel() { labelsPanel?.orderOut(nil); labelsPanel = nil }
+    private func removeLabelsPanels() { labelsPanels.forEach { $0.orderOut(nil) }; labelsPanels = [] }
 
     private static func makePanel() -> NSPanel {
         let p = OverlayPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel],
@@ -139,14 +156,23 @@ private final class GridView: NSView {
             .font: font, .foregroundColor: NSColor.white, .shadow: shadow,
             .strokeColor: NSColor.black, .strokeWidth: -2.0,
         ]
+        let lines = NSBezierPath()
+        let w = grid.bounds.width, hgt = grid.bounds.height
+        for c in 0...grid.columns {
+            let x = min(CGFloat(c) * cw, w - 0.5) + (c == 0 ? 0.5 : 0)
+            lines.move(to: CGPoint(x: x, y: 0)); lines.line(to: CGPoint(x: x, y: hgt))
+        }
+        for r in 0...grid.rows {
+            let y = min(CGFloat(r) * ch, hgt - 0.5) + (r == 0 ? 0.5 : 0)
+            lines.move(to: CGPoint(x: 0, y: y)); lines.line(to: CGPoint(x: w, y: y))
+        }
+        NSColor(white: 0, alpha: 0.35).setStroke()
+        lines.lineWidth = 2; lines.stroke()
+        NSColor(white: 1, alpha: 0.25).setStroke()
+        lines.lineWidth = 1; lines.stroke()
         for n in 1...grid.cellCount {
             guard let f = grid.frame(of: n) else { continue }
             let r = CGRect(x: f.minX - grid.bounds.minX, y: f.minY - grid.bounds.minY, width: f.width, height: f.height)
-            // Thin dark outline underneath, 25% white on top.
-            NSColor(white: 0, alpha: 0.35).setStroke()
-            let outer = NSBezierPath(rect: r.insetBy(dx: 0.5, dy: 0.5)); outer.lineWidth = 2; outer.stroke()
-            NSColor(white: 1, alpha: 0.25).setStroke()
-            let inner = NSBezierPath(rect: r.insetBy(dx: 0.5, dy: 0.5)); inner.lineWidth = 1; inner.stroke()
             let s = NSAttributedString(string: String(n), attributes: attrs)
             let sz = s.size()
             s.draw(at: CGPoint(x: r.midX - sz.width / 2, y: r.midY - sz.height / 2))
@@ -156,10 +182,9 @@ private final class GridView: NSView {
 
 private final class LabelsView: NSView {
     let labels: [Int: UIElementInfo]
-    let originCG: CGPoint
-    let screensCG: [CGRect]
-    init(frame: CGRect, labels: [Int: UIElementInfo], originCG: CGPoint, screensCG: [CGRect]) {
-        self.labels = labels; self.originCG = originCG; self.screensCG = screensCG
+    let screenCG: CGRect
+    init(frame: CGRect, labels: [Int: UIElementInfo], screenCG: CGRect) {
+        self.labels = labels; self.screenCG = screenCG
         super.init(frame: frame)
     }
     required init?(coder: NSCoder) { fatalError() }
@@ -175,10 +200,8 @@ private final class LabelsView: NSView {
             let s = NSAttributedString(string: String(n), attributes: attrs)
             let ts = s.size()
             let size = CGSize(width: ceil(ts.width) + 8, height: ceil(ts.height) + 2)
-            let screen = screensCG.first(where: { $0.contains(e.frame.origin) })
-                ?? screensCG.first(where: { $0.intersects(e.frame) }) ?? screensCG.first ?? .infinite
-            let o = OverlayMath.badgeOrigin(for: e.frame, badgeSize: size, in: screen)
-            let r = CGRect(x: o.x - originCG.x, y: o.y - originCG.y, width: size.width, height: size.height)
+            let o = OverlayMath.badgeOrigin(for: e.frame, badgeSize: size, in: screenCG)
+            let r = CGRect(x: o.x - screenCG.minX, y: o.y - screenCG.minY, width: size.width, height: size.height)
             let path = NSBezierPath(roundedRect: r, xRadius: 4, yRadius: 4)
             bg.setFill(); path.fill()
             border.setStroke(); path.lineWidth = 1; path.stroke()
