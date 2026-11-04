@@ -8,16 +8,8 @@ public enum IntentError: Error {
     case decode(IntentDecodeError)
     case timeout
     case cancelled
-}
-
-/// Refuses every redirect so the x-api-key header can never be forwarded to another host.
-final class NoRedirectDelegate: NSObject, URLSessionTaskDelegate, Sendable {
-    func urlSession(_ session: URLSession, task: URLSessionTask,
-                    willPerformHTTPRedirection response: HTTPURLResponse,
-                    newRequest request: URLRequest,
-                    completionHandler: @escaping @Sendable (URLRequest?) -> Void) {
-        completionHandler(nil)
-    }
+    case localUnavailable
+    case modelMissing
 }
 
 public protocol IntentResolving: Sendable {
@@ -60,22 +52,8 @@ public actor ClaudeIntentResolver: IntentResolving {
             throw IntentError.decode(.malformed("could not encode request"))
         }
 
-        let (data, response): (Data, URLResponse)
-        do {
-            (data, response) = try await send(request)
-        } catch let e as IntentError {
-            throw e
-        } catch is CancellationError {
-            throw IntentError.cancelled
-        } catch let e as URLError where e.code == .cancelled {
-            throw IntentError.cancelled
-        } catch let e as URLError where e.code == .timedOut {
-            throw IntentError.timeout
-        } catch {
-            throw IntentError.network(Self.scrubbed(error))
-        }
-
-        if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
+        let (data, http) = try await IntentHTTP.send(request, session: session, deadline: deadline)
+        if !(200..<300).contains(http.statusCode) {
             let text = String(decoding: data.prefix(Self.bodyPrefixLimit * 4), as: UTF8.self)
             throw IntentError.http(http.statusCode, String(text.prefix(Self.bodyPrefixLimit)))
         }
@@ -84,26 +62,6 @@ public actor ClaudeIntentResolver: IntentResolving {
         } catch let e as IntentDecodeError {
             throw IntentError.decode(e)
         }
-    }
-
-    /// Races the request against a hard deadline; the loser is cancelled.
-    private func send(_ request: URLRequest) async throws -> (Data, URLResponse) {
-        let session = self.session
-        let deadline = self.deadline
-        return try await withThrowingTaskGroup(of: (Data, URLResponse)?.self) { group in
-            group.addTask { try await session.data(for: request, delegate: NoRedirectDelegate()) }
-            group.addTask { try await Task.sleep(for: deadline); return nil }
-            defer { group.cancelAll() }
-            guard let first = try await group.next() else { throw IntentError.timeout }
-            guard let result = first else { throw IntentError.timeout }
-            return result
-        }
-    }
-
-    /// Keep only domain/code of the underlying error so no request details can leak.
-    private static func scrubbed(_ error: Error) -> Error {
-        let ns = error as NSError
-        return NSError(domain: ns.domain, code: ns.code)
     }
 }
 

@@ -283,6 +283,8 @@ import NoHandsCore
         case .decode: "decode"
         case .timeout: "timeout"
         case .cancelled: "cancelled"
+        case .localUnavailable: "localUnavailable"
+        case .modelMissing: "modelMissing"
         }
     }
 }

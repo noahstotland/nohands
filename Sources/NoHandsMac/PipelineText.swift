@@ -4,6 +4,9 @@ import NoHandsCore
 /// Pure text helpers for the voice pipeline (HUD messages and the per-utterance log summary).
 public enum PipelineText {
     public static let didntCatch = "didn't catch that"
+    public static let localNotRunning = "local model not running: start Ollama"
+    public static let localNotDownloaded = "local model not downloaded: see the NoHands menu"
+    public static let llmDisabled = "LLM off (intentBackend is off)"
     public static let llmOff = "LLM off: add anthropicAPIKey to ~/.config/nohands/config.json"
 
     /// HUD text for a failed intent resolution; nil means show nothing (the request was cancelled).
@@ -15,6 +18,8 @@ public enum PipelineText {
         case .timeout: "timed out"
         case .http(let code, _): "LLM error (\(code))"
         case .decode: didntCatch
+        case .localUnavailable: localNotRunning
+        case .modelMissing: localNotDownloaded
         }
     }
 

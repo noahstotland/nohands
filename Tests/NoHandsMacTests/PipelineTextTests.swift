@@ -33,3 +33,11 @@ import NoHandsCore
     #expect(PipelineText.truncated(long).hasSuffix("…"))
     #expect(PipelineText.truncated(String(repeating: "b", count: 60)).count == 60)
 }
+
+@Test func newErrorsHaveHudText() {
+    #expect(PipelineText.hud(for: .localUnavailable) == PipelineText.localNotRunning)
+    #expect(PipelineText.hud(for: .modelMissing) == PipelineText.localNotDownloaded)
+    #expect(PipelineText.localNotRunning == "local model not running: start Ollama")
+    #expect(PipelineText.localNotDownloaded == "local model not downloaded: see the NoHands menu")
+    #expect(PipelineText.llmDisabled == "LLM off (intentBackend is off)")
+}
