@@ -75,3 +75,32 @@ let g = CommandGrammar()
     #expect(g.parse("press") == nil)
     #expect(g.parse("press foo enter") == nil)
 }
+
+@Test func editingShortcutsAndDeletes() {
+    #expect(g.parse("copy") == [.pressKey(KeyChord(.c, [.command]))])
+    #expect(g.parse("paste") == [.pressKey(KeyChord(.v, [.command]))])
+    #expect(g.parse("cut") == [.pressKey(KeyChord(.x, [.command]))])
+    #expect(g.parse("save") == [.pressKey(KeyChord(.s, [.command]))])
+    #expect(g.parse("find") == [.pressKey(KeyChord(.f, [.command]))])
+    #expect(g.parse("new tab") == [.pressKey(KeyChord(.t, [.command]))])
+    #expect(g.parse("close tab") == [.pressKey(KeyChord(.w, [.command]))])
+    #expect(g.parse("close window") == [.pressKey(KeyChord(.w, [.command, .shift]))])
+    #expect(g.parse("quit app") == [.pressKey(KeyChord(.q, [.command]))])
+    #expect(g.parse("delete") == [.pressKey(KeyChord(.delete))])
+    #expect(g.parse("forward delete") == [.pressKey(KeyChord(.forwardDelete))])
+}
+
+@Test func overlayAliases() {
+    #expect(g.parse("show labels") == [.showLabels])
+    #expect(g.parse("hide grid") == [.hideOverlay])
+    #expect(g.parse("hide numbers") == [.hideOverlay])
+}
+
+@Test func extraClicksPressAliasesAndScroll() {
+    #expect(g.parse("triple click") == [.click(.cursor, button: .left, count: 3)])
+    #expect(g.parse("middle click") == [.click(.cursor, button: .middle, count: 1)])
+    #expect(g.parse("press cmd alt ctrl t") == [.pressKey(KeyChord(.t, [.command, .option, .control]))])
+    #expect(g.parse("press command shift") == nil)
+    #expect(g.parse("scroll left") == [.scroll(.left, amount: 5)])
+    #expect(g.parse("scroll right 7") == [.scroll(.right, amount: 7)])
+}

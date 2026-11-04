@@ -36,6 +36,13 @@ public struct CommandGrammar: Sendable {
             "left": chord(.left), "right": chord(.right), "up": chord(.up), "down": chord(.down),
             "home": chord(.home), "end": chord(.end),
             "page up": chord(.pageUp), "page down": chord(.pageDown),
+            "delete": chord(.delete), "forward delete": chord(.forwardDelete),
+            "copy": chord(.c, [.command]), "paste": chord(.v, [.command]),
+            "cut": chord(.x, [.command]), "save": chord(.s, [.command]),
+            "find": chord(.f, [.command]), "new tab": chord(.t, [.command]),
+            "close tab": chord(.w, [.command]),
+            "close window": chord(.w, [.command, .shift]),
+            "quit app": chord(.q, [.command]),
             "undo": chord(.z, [.command]),
             "redo": chord(.z, [.command, .shift]),
             "select all": chord(.a, [.command]),
@@ -45,7 +52,8 @@ public struct CommandGrammar: Sendable {
             "delete line": chord(.delete, [.command]),
 
             "grid": [.showGrid], "show grid": [.showGrid],
-            "show numbers": [.showLabels], "numbers": [.showLabels],
+            "show numbers": [.showLabels], "show labels": [.showLabels],
+            "hide grid": [.hideOverlay], "hide numbers": [.hideOverlay], "numbers": [.showLabels],
             "hide": [.hideOverlay], "cancel": [.hideOverlay],
 
             "click": [.click(.cursor, button: .left, count: 1)],
