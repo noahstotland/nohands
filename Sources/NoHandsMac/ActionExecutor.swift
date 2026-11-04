@@ -5,6 +5,8 @@ import NoHandsCore
 /// What the executor needs from the accessibility layer (AXQuery conforms).
 public protocol ElementProviding: Sendable {
     func actionableElements() -> [UIElementInfo]
+    /// The same walk with screen rects read by the caller (on the main actor), for walks run off it.
+    func actionableElements(screens: [CGRect]) -> [UIElementInfo]
     func screenRectsCG() -> [CGRect]
     func activate(appNamed: String) -> Bool
     func frontmostAppName() -> String?
@@ -19,6 +21,7 @@ extension ElementProviding {
     public func focusedWindowTitle() -> String? { nil }
     public func webURL() -> String? { nil }
     public func didJustExpose() -> Bool { false }
+    public func actionableElements(screens: [CGRect]) -> [UIElementInfo] { actionableElements() }
 }
 
 extension AXQuery: ElementProviding {

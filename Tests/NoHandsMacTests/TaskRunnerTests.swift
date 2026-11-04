@@ -281,12 +281,12 @@ private actor SleepCounter {
 // MARK: - first observation, badge numbers, mid-task ignore, exit status
 
 @MainActor private func countingRunner(_ resolver: FakeResolver, ax: FakeElements, overlay: FakeOverlay = FakeOverlay(),
-                                       sleeps: SleepCounter) -> TaskRunner {
+                                       sleeps: SleepCounter, clock: FakeClock = FakeClock()) -> TaskRunner {
     var config = AppConfig(); config.settleMs = 3000
     let executor = ActionExecutor(input: FakeInput(), ax: ax, overlay: overlay, config: config)
     return TaskRunner(config: config, resolver: resolver, executor: executor,
                       observer: ScreenObserver(ax: ax, maxElements: 120), overlay: overlay,
-                      sleep: { _ in await sleeps.tick { _ in } })
+                      sleep: { _ in await sleeps.tick { _ in } }, now: { clock.now() })   // walks take no time
 }
 
 @MainActor @Test func firstStepObservesOnceWhenNothingWasJustExposed() async {
@@ -355,16 +355,46 @@ private actor WalkLog {
 
 @MainActor @Test func settleObservesOffTheMainActorAndCountsWalkTime() async {
     let ax = FakeElements()
-    ax.walkDelay = 0.3
+    let clock = FakeClock()
+    ax.onWalk = { clock.advance(.milliseconds(300)) }                     // each walk "takes" 300 ms
     let counter = SleepCounter()
     var config = AppConfig(); config.settleMs = 1000
     let overlay = FakeOverlay()
     let executor = ActionExecutor(input: FakeInput(), ax: ax, overlay: overlay, config: config)
     let runner = TaskRunner(config: config, resolver: FakeResolver([step("", .done)]), executor: executor,
                             observer: ScreenObserver(ax: ax, maxElements: 120), overlay: overlay,
-                            sleep: { _ in await counter.tick { n in ax.elements = [el(1, "t\(n)")] } })   // never settles
+                            sleep: { _ in await counter.tick { n in ax.elements = [el(1, "t\(n)")] } },   // never settles
+                            now: { clock.now() })
     _ = await runner.settle(mode: .command)
     // 300 (walk) + 250 (sleep) + 300 (walk) = 850; then a 150 ms sleep reaches 1000: 2 sleeps, not 4.
     #expect(await counter.count == 2)
     #expect(ax.walkedOnMainThread == [false, false, false])
+    #expect(ax.walkScreens.allSatisfy { $0 == [CGRect(x: 0, y: 0, width: 1000, height: 800)] })   // read on main, passed in
+}
+
+@MainActor @Test func badgesAreHiddenAfterAStepSoTheNextObservationWalksAfresh() async {
+    let ax = FakeElements()
+    ax.elements = [el(1, "Reload")]
+    let overlay = FakeOverlay()
+    overlay.state = .labels([9: el(9, "Open", x: 500)])
+    let input = FakeInput()
+    var config = AppConfig(); config.settleMs = 0
+    let executor = ActionExecutor(input: input, ax: ax, overlay: overlay, config: config)
+    let resolver = FakeResolver([step("click open", .continue, [.click(.label(9), button: .left, count: 1)]),
+                                 step("finished", .done)])
+    resolver.onResolve = { n in if n == 1 { ax.elements = [el(1, "Reload"), el(2, "Opened page", x: 300)] } }
+    let runner = TaskRunner(config: config, resolver: resolver, executor: executor,
+                            observer: ScreenObserver(ax: ax, maxElements: 120), overlay: overlay, sleep: { _ in })
+    #expect(await runner.run(goal: "open it", mode: .command) == .done("finished"))
+    #expect(input.calls == ["click:540,375"])                     // step 1 used badge 9
+    #expect(overlay.state == .none)                               // hidden after step 1 acted
+    let second = resolver.requests[1].observation
+    #expect(second.overlay == "none")
+    #expect(second.elements.map(\.title) == ["Reload", "Opened page"])   // a fresh walk, not the old badge map
+}
+
+@MainActor @Test func overlayDrawnByTheStepItselfStaysUp() async {
+    let r = rig(FakeResolver([step("show numbers", .continue, [.showLabels]), step("finished", .done)]), settleMs: 0)
+    #expect(await r.runner.run(goal: "show the numbers", mode: .command) == .done("finished"))
+    if case .labels = r.overlay.state {} else { Issue.record("labels were hidden: \(r.overlay.state)") }
 }

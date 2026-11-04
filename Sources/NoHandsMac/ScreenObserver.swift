@@ -1,4 +1,5 @@
 import Foundation
+import CoreGraphics
 import NoHandsCore
 
 /// Builds a `ScreenObservation` of the frontmost app. Only collects; titles/URLs are untrusted and
@@ -14,10 +15,13 @@ public struct ScreenObserver: Sendable {
 
     /// `labels` holds exactly the elements listed in the observation (titled, first `maxElements` by number).
     /// While number badges are shown (`overlay` is `.labels`), the badges' own elements and numbers are used, so a
-    /// number the model picks is the one the user sees. Safe to call off the main actor (`ax` is thread-safe).
-    public func observe(mode: Mode, overlay: OverlayState) -> (observation: ScreenObservation, labels: [Int: UIElementInfo]) {
+    /// number the model picks is the one the user sees. Off the main actor, pass `screens` (from `screenRects()`,
+    /// read on the main actor); nil reads them here.
+    public func observe(mode: Mode, overlay: OverlayState,
+                        screens: [CGRect]? = nil) -> (observation: ScreenObservation, labels: [Int: UIElementInfo]) {
         let all: [Int: UIElementInfo]
-        if case .labels(let badges) = overlay { all = badges } else { all = LabelAssigner.assign(ax.actionableElements()) }
+        if case .labels(let badges) = overlay { all = badges }
+        else { all = LabelAssigner.assign(screens.map { ax.actionableElements(screens: $0) } ?? ax.actionableElements()) }
         var listed: [ObservedElement] = []
         var snapshot: [Int: UIElementInfo] = [:]
         for n in all.keys.sorted() {
@@ -36,4 +40,7 @@ public struct ScreenObserver: Sendable {
 
     /// True once right after an observation first exposed a Chromium page tree: observe again before trusting it.
     public func didJustExpose() -> Bool { ax.didJustExpose() }
+
+    /// Screen rects in CG coordinates. Call on the main actor (reads NSScreen).
+    public func screenRects() -> [CGRect] { ax.screenRectsCG() }
 }

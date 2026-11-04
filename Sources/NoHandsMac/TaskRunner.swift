@@ -32,6 +32,8 @@ public enum TaskOutcome: Equatable, Sendable {
     private let observer: ScreenObserver
     private let overlay: any OverlayPresenting
     private let sleep: @Sendable (Duration) async -> Void
+    /// Measures observation time (injected so tests are deterministic).
+    private let now: @Sendable () -> ContinuousClock.Instant
 
     private var cancelled = false
     /// Steps whose actions were executed in the current (or last) `run`.
@@ -44,13 +46,15 @@ public enum TaskOutcome: Equatable, Sendable {
 
     public init(config: AppConfig, resolver: any IntentResolving, executor: ActionExecutor,
                 observer: ScreenObserver, overlay: any OverlayPresenting,
-                sleep: @escaping @Sendable (Duration) async -> Void = { try? await Task.sleep(for: $0) }) {
+                sleep: @escaping @Sendable (Duration) async -> Void = { try? await Task.sleep(for: $0) },
+                now: @escaping @Sendable () -> ContinuousClock.Instant = { .now }) {
         self.config = config
         self.resolver = resolver
         self.executor = executor
         self.observer = observer
         self.overlay = overlay
         self.sleep = sleep
+        self.now = now
     }
 
     /// Stops the running task at the next check (before a resolve or execute) and aborts the in-flight one.
@@ -98,7 +102,15 @@ public enum TaskOutcome: Equatable, Sendable {
             // A blocked step runs nothing and is recorded as a failed step so the model can react.
             let failure: String?
             if let blocked = ShortcutGuard.blocked(step.actions, goal: goal) { failure = blocked }
-            else { failure = await executeCancellable(step.actions, labels: labels) }
+            else {
+                let shown = overlay.state
+                failure = await executeCancellable(step.actions, labels: labels)
+                // Badges or a grid are only valid for the screen they were drawn on: once a step has acted, hide
+                // them so the next observation walks the screen afresh (a `.label` click leaves them up, and the
+                // badge map would otherwise be reused). One this step just drew (e.g. "show numbers") stays, and a step
+                // with no actions changed nothing.
+                if !step.actions.isEmpty && shown != .none && overlay.state == shown { overlay.hide() }
+            }
             stepsRun = n
             onStep?(n, step, settled, failure)
             if isCancelled { return finish(.stopped) }
@@ -141,13 +153,14 @@ public enum TaskOutcome: Equatable, Sendable {
     }
 
     /// One observation, run off the main actor (an AX walk can take up to its budget, ~1-2 s on a busy page),
-    /// and how long it took in milliseconds. The overlay state is read here, on the main actor.
+    /// and how long it took in milliseconds. The overlay state and screen rects are read here, on the main actor.
     private func observeTimed(mode: Mode) async -> (result: Observed, ms: Int) {
         let observer = self.observer
         let state = overlay.state
-        let start = ContinuousClock.now
-        let result = await Task.detached { observer.observe(mode: mode, overlay: state) }.value
-        return (result, Int(start.duration(to: .now) / .milliseconds(1)))
+        let screens = observer.screenRects()
+        let start = now()
+        let result = await Task.detached { observer.observe(mode: mode, overlay: state, screens: screens) }.value
+        return (result, Int(start.duration(to: now()) / .milliseconds(1)))
     }
 
     private enum Resolved { case step(IntentStep), end(TaskOutcome) }

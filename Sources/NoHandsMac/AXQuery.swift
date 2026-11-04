@@ -114,7 +114,11 @@ public final class AXQuery: @unchecked Sendable {
         lock.withLock { elements[id] }
     }
 
-    public func actionableElements() -> [UIElementInfo] {
+    public func actionableElements() -> [UIElementInfo] { actionableElements(screens: Self.screenRectsCG()) }
+
+    /// `screens` (CG rects, see `screenRectsCG()`) is read by the caller on the main actor, so this walk can run
+    /// on any thread without touching NSScreen.
+    public func actionableElements(screens: [CGRect]) -> [UIElementInfo] {
         guard let app = NSWorkspace.shared.frontmostApplication else {
             lock.withLock { elements = [:] }
             return []
@@ -122,7 +126,6 @@ public final class AXQuery: @unchecked Sendable {
         let appEl = AXUIElementCreateApplication(app.processIdentifier)
         AXUIElementSetMessagingTimeout(appEl, 0.05)
         exposeChromiumTree(app, appEl)   // may block briefly; must precede the walk deadline
-        let screens = Self.screenRectsCG()
         var walker = Walker(screens: screens, maxNodes: maxNodes, deadline: ContinuousClock.now.advanced(by: budget))
 
         // Menu bar first (cheap, always present), then windows (sheets/popovers), then plain children.

@@ -32,16 +32,21 @@ final class FakeElements: ElementProviding, @unchecked Sendable {
     private var justExposed = false
     /// Number of `actionableElements()` walks.
     var walks = 0
-    /// Simulated walk time (blocks the calling thread like a real AX walk) and where each walk ran.
-    var walkDelay: TimeInterval = 0
+    /// Called on every walk (e.g. to advance a fake clock), and where each walk ran.
+    var onWalk: (@Sendable () -> Void)?
     var walkedOnMainThread: [Bool] = []
+    /// Screen rects passed in by the caller of `actionableElements(screens:)` (nil entry: read here).
+    var walkScreens: [[CGRect]?] = []
     func focusedWindowTitle() -> String? { windowTitle }
     func webURL() -> String? { url }
     func frontmostAppName() -> String? { front }
-    func actionableElements() -> [UIElementInfo] {
+    func actionableElements() -> [UIElementInfo] { walk(screens: nil) }
+    func actionableElements(screens: [CGRect]) -> [UIElementInfo] { walk(screens: screens) }
+    private func walk(screens: [CGRect]?) -> [UIElementInfo] {
         walks += 1
         walkedOnMainThread.append(Thread.isMainThread)
-        if walkDelay > 0 { Thread.sleep(forTimeInterval: walkDelay) }
+        walkScreens.append(screens)
+        onWalk?()
         if exposeOnNextWalk { exposeOnNextWalk = false; justExposed = true }
         return elements
     }
@@ -65,3 +70,11 @@ final class FakeElements: ElementProviding, @unchecked Sendable {
     return (ActionExecutor(input: i, ax: e, overlay: o, config: AppConfig(), frontTimeout: .milliseconds(150)), i, e, o)
 }
 
+
+/// A manually advanced clock for `TaskRunner(now:)`.
+final class FakeClock: @unchecked Sendable {
+    private let lock = NSLock()
+    private var current = ContinuousClock.now
+    func now() -> ContinuousClock.Instant { lock.withLock { current } }
+    func advance(_ d: Duration) { lock.withLock { current = current.advanced(by: d) } }
+}
