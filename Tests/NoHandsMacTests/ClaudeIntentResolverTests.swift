@@ -7,6 +7,7 @@ import NoHandsCore
 private let secretKey = "sk-ant-SECRET-KEY-123"
 
 private final class StubProtocol: URLProtocol, @unchecked Sendable {
+    nonisolated(unsafe) static var redirectTo: URL?
     nonisolated(unsafe) static var handler: ((URLRequest) -> (Int, Data)?)?   // nil result = never respond
     nonisolated(unsafe) static var requests: [URLRequest] = []
     nonisolated(unsafe) static var bodies: [Data] = []
@@ -23,7 +24,11 @@ private final class StubProtocol: URLProtocol, @unchecked Sendable {
         }
         Self.lock.lock(); Self.requests.append(request); Self.bodies.append(body); let h = Self.handler; Self.lock.unlock()
         guard let (status, data) = h?(request) else { return }
-        let resp = HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: nil, headerFields: nil)!
+        let resp = HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: nil,
+                                   headerFields: Self.redirectTo.map { ["Location": $0.absoluteString] })!
+        if let to = Self.redirectTo {
+            client?.urlProtocol(self, wasRedirectedTo: URLRequest(url: to), redirectResponse: resp)
+        }
         client?.urlProtocol(self, didReceive: resp, cacheStoragePolicy: .notAllowed)
         client?.urlProtocol(self, didLoad: data)
         client?.urlProtocolDidFinishLoading(self)
@@ -31,7 +36,7 @@ private final class StubProtocol: URLProtocol, @unchecked Sendable {
     override func stopLoading() {}
 
     static func reset(_ h: ((URLRequest) -> (Int, Data)?)?) {
-        lock.lock(); handler = h; requests = []; bodies = []; lock.unlock()
+        lock.lock(); handler = h; requests = []; bodies = []; redirectTo = nil; lock.unlock()
     }
 }
 
@@ -54,6 +59,44 @@ private func okBody(_ actionsJSON: String) -> Data {
 }
 
 @Suite(.serialized) struct ClaudeIntentResolverTests {
+    @Test func redirectsAreRefused() async {
+        StubProtocol.reset { _ in (302, Data("moved".utf8)) }
+        StubProtocol.redirectTo = URL(string: "https://evil.example/steal")!
+        let r = ClaudeIntentResolver(config: config(), session: makeSession())
+        do { _ = try await r.resolve("a", context: ctx); Issue.record("expected throw") }
+        catch IntentError.http(let s, _) { #expect(s == 302) }
+        catch { Issue.record("wrong error \(error)") }
+        #expect(StubProtocol.requests.count == 1)
+        #expect(StubProtocol.requests.first?.url?.host == "api.anthropic.com")
+    }
+
+    @Test func callerCancellationThrowsCancelled() async {
+        StubProtocol.reset { _ in nil }
+        let r = ClaudeIntentResolver(config: config(), session: makeSession(), deadline: .seconds(30))
+        let task = Task { try await r.resolve("a", context: ctx) }
+        try? await Task.sleep(for: .milliseconds(150))
+        task.cancel()
+        do { _ = try await task.value; Issue.record("expected throw") }
+        catch IntentError.cancelled {}
+        catch { Issue.record("wrong error \(error)") }
+    }
+
+    @Test func customModelIsSent() async throws {
+        StubProtocol.reset { _ in (200, okBody("[]")) }
+        var c = config(); c.intentModel = "claude-haiku-5-5"
+        _ = try await ClaudeIntentResolver(config: c, session: makeSession()).resolve("a", context: ctx)
+        let obj = try JSONSerialization.jsonObject(with: try #require(StubProtocol.bodies.first)) as? [String: Any]
+        #expect(obj?["model"] as? String == "claude-haiku-5-5")
+    }
+
+    @Test func fastResponseDoesNotWaitForDeadline() async throws {
+        StubProtocol.reset { _ in (200, okBody("[]")) }
+        let r = ClaudeIntentResolver(config: config(), session: makeSession(), deadline: .seconds(30))
+        let t0 = ContinuousClock.now
+        _ = try await r.resolve("a", context: ctx)
+        #expect(t0.duration(to: .now) < .seconds(2))
+    }
+
     @Test func successDecodesAndSendsRightRequest() async throws {
         StubProtocol.reset { _ in (200, okBody(#"[{"kind":"type_text","text":"hi"}]"#)) }
         let r = ClaudeIntentResolver(config: config(), session: makeSession())
@@ -127,7 +170,9 @@ private func okBody(_ actionsJSON: String) -> Data {
         let r = ClaudeIntentResolver(config: config(), session: URLSession(configuration: failing))
         do { _ = try await r.resolve("a", context: ctx); Issue.record("expected throw") }
         catch IntentError.network(let e) {
-            #expect(!String(describing: IntentError.network(e)).contains(secretKey))
+            let d = String(describing: IntentError.network(e)) + "\(e)" + e.localizedDescription + String(describing: (e as NSError).userInfo)
+            #expect(!d.contains(secretKey))
+            #expect(!d.contains("leak.example"))
         } catch { Issue.record("wrong error \(error)") }
     }
 
@@ -155,7 +200,10 @@ private func okBody(_ actionsJSON: String) -> Data {
 private final class FailProtocol: URLProtocol, @unchecked Sendable {
     override class func canInit(with request: URLRequest) -> Bool { true }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
-    override func startLoading() { client?.urlProtocol(self, didFailWithError: URLError(.notConnectedToInternet)) }
+    override func startLoading() { client?.urlProtocol(self, didFailWithError: URLError(.cannotConnectToHost, userInfo: [
+            NSURLErrorFailingURLErrorKey: URL(string: "https://leak.example/?k=\(secretKey)")!,
+            NSURLErrorFailingURLStringErrorKey: "https://leak.example/?k=\(secretKey)",
+            "extra": secretKey])) }
     override func stopLoading() {}
 }
 
@@ -182,6 +230,11 @@ private final class FakeProvider: ElementProviding, @unchecked Sendable {
         #expect(c.labeledElements.count == 60)
         #expect(c.labeledElements.map(\.number) == Array(1...60))
         #expect(c.labeledElements.first?.title == "T0")
+    }
+
+    @Test(arguments: [0, -3]) func nonPositiveCapReturnsNothing(cap: Int) {
+        let p = FakeProvider(); p.elements = [el(0, "A"), el(1, "B")]
+        #expect(IntentContextBuilder.make(elements: p, mode: .command, maxElements: cap).labeledElements.isEmpty)
     }
 
     @Test func skipsEmptyTitlesPreservingNumbers() {

@@ -7,6 +7,17 @@ public enum IntentError: Error {
     case http(Int, String)
     case decode(IntentDecodeError)
     case timeout
+    case cancelled
+}
+
+/// Refuses every redirect so the x-api-key header can never be forwarded to another host.
+final class NoRedirectDelegate: NSObject, URLSessionTaskDelegate, Sendable {
+    func urlSession(_ session: URLSession, task: URLSessionTask,
+                    willPerformHTTPRedirection response: HTTPURLResponse,
+                    newRequest request: URLRequest,
+                    completionHandler: @escaping @Sendable (URLRequest?) -> Void) {
+        completionHandler(nil)
+    }
 }
 
 public protocol IntentResolving: Sendable {
@@ -55,7 +66,9 @@ public actor ClaudeIntentResolver: IntentResolving {
         } catch let e as IntentError {
             throw e
         } catch is CancellationError {
-            throw CancellationError()
+            throw IntentError.cancelled
+        } catch let e as URLError where e.code == .cancelled {
+            throw IntentError.cancelled
         } catch let e as URLError where e.code == .timedOut {
             throw IntentError.timeout
         } catch {
@@ -78,7 +91,7 @@ public actor ClaudeIntentResolver: IntentResolving {
         let session = self.session
         let deadline = self.deadline
         return try await withThrowingTaskGroup(of: (Data, URLResponse)?.self) { group in
-            group.addTask { try await session.data(for: request) }
+            group.addTask { try await session.data(for: request, delegate: NoRedirectDelegate()) }
             group.addTask { try await Task.sleep(for: deadline); return nil }
             defer { group.cancelAll() }
             guard let first = try await group.next() else { throw IntentError.timeout }
@@ -101,8 +114,8 @@ public enum IntentContextBuilder {
         for n in labels.keys.sorted() {
             guard let title = labels[n]?.title,
                   !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { continue }
+            if out.count >= maxElements { break }
             out.append((number: n, title: title))
-            if out.count >= max(0, maxElements) { break }
         }
         return IntentContext(frontmostApp: elements.frontmostAppName() ?? "", mode: mode, labeledElements: out)
     }
