@@ -38,6 +38,7 @@ import NoHandsCore
     private var warmedUp = false
     private var llmOffShown = false
     private var lastTranscript = ""
+    private var merge: MergeBuffer?
 
     public var isRunning: Bool { mic != nil }
     public var mode: Mode { modeMachine.mode }
@@ -56,6 +57,11 @@ import NoHandsCore
             self.modeMachine.apply(mode: mode)
             self.publishStatus()
         }
+    }
+
+    /// Only a complete grammar command in command mode skips the merge window.
+    nonisolated private static func isComplete(_ transcript: String, mode: Mode, grammar: CommandGrammar) -> Bool {
+        mode == .command && grammar.parse(transcript) != nil
     }
 
     /// Loads VAD, warms up ASR (first call only) and starts the microphone.
@@ -84,6 +90,22 @@ import NoHandsCore
             .makeStream(bufferingPolicy: .bufferingNewest(2))
         let (jobs, jobCont) = AsyncStream<Job>.makeStream(bufferingPolicy: .bufferingNewest(2))
 
+        let grammar = CommandGrammar(config: config.grammarConfig)
+        let merge = MergeBuffer(
+            merger: UtteranceMerger(windowMs: config.mergeWindowMs, unfinishedWindowMs: config.mergeWindowUnfinishedMs),
+            isComplete: { Self.isComplete($0, mode: $1, grammar: grammar) },
+            onHold: { [weak self] text in
+                Task { @MainActor in self?.overlay.showHUD(text + " …") }
+            },
+            emit: { text, trace in
+                if case .dropped = jobCont.yield(Job(transcript: text, trace: trace)) {
+                    PipelineLog.warning("busy: dropped oldest queued utterance")
+                    Task { @MainActor [weak self] in self?.overlay.showHUD("skipped (busy)") }
+                }
+            })
+        self.merge = merge
+        await merge.set(mode: modeMachine.mode)
+
         let capture = try MicrophoneCapture()
         capture.onEvent = { [weak self] event in
             if case .failed(let message) = event {
@@ -106,10 +128,13 @@ import NoHandsCore
             for await chunk in chunks {
                 do {
                     let ev = try await vad.process(chunk)
+                    if ev == .speechStart { await merge.speechStarted() }
                     if let utterance = assembler.push(chunk, event: ev) {
                         if case .dropped = uttCont.yield((utterance, .now)) {
                             PipelineLog.warning("asr backlog: dropped oldest pending utterance")
                         }
+                    } else if ev == .speechEnd {
+                        await merge.speechAbandoned()   // too short to transcribe
                     }
                 } catch {
                     PipelineLog.error("vad error (state reset)", detail: "\(error)")
@@ -126,14 +151,14 @@ import NoHandsCore
                 do {
                     let text = try await transcriber.transcribe(utterance.samples)
                     trace.asrDone = .now
-                    if !text.isEmpty {
-                        if case .dropped = jobCont.yield(Job(transcript: text, trace: trace)) {
-                            PipelineLog.warning("busy: dropped oldest queued utterance")
-                            Task { @MainActor [weak self] in self?.overlay.showHUD("skipped (busy)") }
-                        }
+                    if text.isEmpty {
+                        await merge.speechAbandoned()
+                    } else {
+                        await merge.transcript(text, trace: trace)
                     }
                 } catch {
                     PipelineLog.error("asr error (utterance skipped)", detail: "\(error)")
+                    await merge.speechAbandoned()
                 }
             }
             jobCont.finish()
@@ -170,6 +195,8 @@ import NoHandsCore
         for t in tasks { t.cancel() }
         tasks = []
         executor.releaseAll()   // release a held mouse button and drop any grid/labels overlay
+        if let merge { Task { await merge.reset() } }
+        merge = nil
         consumer?.cancel()   // kept (not nil-ed) so start() can await an in-flight utterance
     }
 
@@ -201,7 +228,10 @@ import NoHandsCore
     /// Checked immediately before every executor call: a job in flight at Pause must never execute afterwards.
     private var canExecute: Bool { !Task.isCancelled && !stopped }
 
-    private func publishStatus() { onStatus?(modeMachine.mode, lastTranscript) }
+    private func publishStatus() {
+        onStatus?(modeMachine.mode, lastTranscript)
+        if let merge { let m = modeMachine.mode; Task { await merge.set(mode: m) } }
+    }
 
     /// Routes one transcript and executes it. Internal so tests can drive the pipeline without audio.
     func handle(transcript text: String, trace initialTrace: LatencyTrace) async {

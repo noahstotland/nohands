@@ -2,7 +2,10 @@ import Foundation
 
 public struct ClaudeRequestBuilder: Sendable {
     public let model: String
-    public init(model: String) { self.model = model }
+    /// `output_config.effort`: how much the model thinks before answering. Default "medium" so garbled
+    /// transcripts get reasoned about rather than pattern-matched.
+    public let effort: String
+    public init(model: String, effort: String = "medium") { self.model = model; self.effort = effort }
 
     public func body(transcript: String, context: IntentContext) throws -> Data {
         let user = Self.userMessage(transcript: transcript, context: context)
@@ -12,7 +15,7 @@ public struct ClaudeRequestBuilder: Sendable {
             "fallbacks": "default",
             "system": IntentSchema.systemPrompt,
             "output_config": [
-                "effort": "low",
+                "effort": effort,
                 "format": ["type": "json_schema", "schema": IntentSchema.actionsJSONSchema] as [String: Any],
             ] as [String: Any],
             "messages": [["role": "user", "content": user]],

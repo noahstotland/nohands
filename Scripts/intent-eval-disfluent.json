@@ -1,0 +1,367 @@
+[
+ {
+  "say": "um click the uh the send button",
+  "app": "Mail",
+  "elements": [
+   "Reply",
+   "Send",
+   "Archive"
+  ],
+  "overlay": "labels",
+  "accept": [
+   {
+    "actions": [
+     {
+      "kind": "click",
+      "target_kind": "label",
+      "target_number": 2
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "say": "hit the sand button",
+  "app": "Mail",
+  "elements": [
+   "Reply",
+   "Send",
+   "Archive"
+  ],
+  "overlay": "labels",
+  "accept": [
+   {
+    "actions": [
+     {
+      "kind": "click",
+      "target_kind": "label",
+      "target_number": 2
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "say": "click the, no wait, scroll down a bit",
+  "app": "Notes",
+  "overlay": "none",
+  "accept": [
+   {
+    "actions": [
+     {
+      "kind": "scroll",
+      "direction": "down",
+      "amount": 1
+     }
+    ]
+   },
+   {
+    "actions": [
+     {
+      "kind": "scroll",
+      "direction": "down",
+      "amount": 2
+     }
+    ]
+   },
+   {
+    "actions": [
+     {
+      "kind": "scroll",
+      "direction": "down",
+      "amount": 3
+     }
+    ]
+   },
+   {
+    "actions": [
+     {
+      "kind": "scroll",
+      "direction": "down",
+      "amount": 4
+     }
+    ]
+   },
+   {
+    "actions": [
+     {
+      "kind": "scroll",
+      "direction": "down",
+      "amount": 5
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "say": "open chrome and go to you tube",
+  "app": "Finder",
+  "overlay": "none",
+  "accept": [
+   {
+    "actions": [
+     {
+      "kind": "open_app",
+      "app_name": "Google Chrome"
+     },
+     {
+      "kind": "press_key",
+      "key": "l",
+      "modifiers": [
+       "command"
+      ]
+     },
+     {
+      "kind": "type_text",
+      "text": "youtube.com"
+     },
+     {
+      "kind": "press_key",
+      "key": "return"
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "say": "hit enter er return",
+  "app": "Notes",
+  "overlay": "none",
+  "accept": [
+   {
+    "actions": [
+     {
+      "kind": "press_key",
+      "key": "return"
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "say": "scroll scroll down a lot",
+  "app": "Notes",
+  "overlay": "none",
+  "accept": [
+   {
+    "actions": [
+     {
+      "kind": "scroll",
+      "direction": "down",
+      "amount": 10
+     }
+    ]
+   },
+   {
+    "actions": [
+     {
+      "kind": "scroll",
+      "direction": "down",
+      "amount": 15
+     }
+    ]
+   },
+   {
+    "actions": [
+     {
+      "kind": "scroll",
+      "direction": "down",
+      "amount": 20
+     }
+    ]
+   },
+   {
+    "actions": [
+     {
+      "kind": "scroll",
+      "direction": "down",
+      "amount": 25
+     }
+    ]
+   },
+   {
+    "actions": [
+     {
+      "kind": "scroll",
+      "direction": "down",
+      "amount": 30
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "say": "so like click the back button",
+  "app": "Safari",
+  "elements": [
+   "Back",
+   "Forward",
+   "Reload"
+  ],
+  "overlay": "labels",
+  "accept": [
+   {
+    "actions": [
+     {
+      "kind": "click",
+      "target_kind": "label",
+      "target_number": 1
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "say": "type hello wait no type goodbye",
+  "app": "Notes",
+  "overlay": "none",
+  "accept": [
+   {
+    "actions": [
+     {
+      "kind": "type_text",
+      "text": "goodbye"
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "say": "quit uh quit spotify",
+  "app": "Finder",
+  "overlay": "none",
+  "accept": [
+   {
+    "actions": [
+     {
+      "kind": "open_app",
+      "app_name": "Spotify"
+     },
+     {
+      "kind": "press_key",
+      "key": "q",
+      "modifiers": [
+       "command"
+      ]
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "say": "go to the the downloads folder",
+  "app": "Finder",
+  "elements": [
+   "Desktop",
+   "Documents",
+   "Downloads"
+  ],
+  "overlay": "labels",
+  "accept": [
+   {
+    "actions": [
+     {
+      "kind": "click",
+      "target_kind": "label",
+      "target_number": 3
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "say": "select all and then um delete",
+  "app": "Notes",
+  "overlay": "none",
+  "accept": [
+   {
+    "actions": [
+     {
+      "kind": "press_key",
+      "key": "a",
+      "modifiers": [
+       "command"
+      ]
+     },
+     {
+      "kind": "press_key",
+      "key": "delete"
+     }
+    ]
+   },
+   {
+    "actions": [
+     {
+      "kind": "press_key",
+      "key": "a",
+      "modifiers": [
+       "command"
+      ]
+     },
+     {
+      "kind": "press_key",
+      "key": "forwardDelete"
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "say": "minimise google chrome",
+  "app": "Safari",
+  "overlay": "none",
+  "accept": [
+   {
+    "actions": [
+     {
+      "kind": "open_app",
+      "app_name": "Google Chrome"
+     },
+     {
+      "kind": "press_key",
+      "key": "m",
+      "modifiers": [
+       "command"
+      ]
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "say": "click square for tea two",
+  "app": "Finder",
+  "overlay": "grid",
+  "accept": [
+   {
+    "actions": [
+     {
+      "kind": "click",
+      "target_kind": "grid_cell",
+      "target_number": 42
+     }
+    ]
+   }
+  ]
+ },
+ {
+  "say": "press the the save button",
+  "app": "TextEdit",
+  "elements": [
+   "Cancel",
+   "Save"
+  ],
+  "overlay": "labels",
+  "accept": [
+   {
+    "actions": [
+     {
+      "kind": "click",
+      "target_kind": "label",
+      "target_number": 2
+     }
+    ]
+   }
+  ]
+ }
+]

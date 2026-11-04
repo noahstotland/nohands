@@ -6,8 +6,16 @@ public enum EffectiveBackend: Equatable, Sendable { case claude, local, off }
 public struct AppConfig: Codable, Equatable, Sendable {
     public var anthropicAPIKey: String?
     public var intentModel: String = "claude-opus-5-5"
+    /// Claude `output_config.effort`: low | medium | high | xhigh | max.
+    public var intentEffort: String = "medium"
     public var asrModelVersion: String = "v2"
-    public var silenceMs: Int = 350
+    /// Trailing silence (ms) before the VAD ends an utterance. 1000 ms lets the user pause mid-command.
+    public var silenceMs: Int = 1000
+    /// After an utterance is transcribed, wait this long (ms) for speech to resume before acting; if it
+    /// resumes, the two pieces are merged into one request. Grammar commands (e.g. "go back") skip the wait.
+    public var mergeWindowMs: Int = 500
+    /// Same, when the transcript sounds unfinished ("click the", "open").
+    public var mergeWindowUnfinishedMs: Int = 1500
     public var gridColumns: Int = 10
     public var gridRows: Int = 8
     public var moveStepPx: Int = 50
@@ -17,11 +25,12 @@ public struct AppConfig: Codable, Equatable, Sendable {
     public var ollamaURL: String = AppConfig.defaultOllamaURL
 
     public static let defaultOllamaURL = "http://127.0.0.1:11434"
+    public static let efforts = ["low", "medium", "high", "xhigh", "max"]
 
     public init() {}
 
     private enum CodingKeys: String, CodingKey {
-        case anthropicAPIKey, intentModel, asrModelVersion, silenceMs
+        case anthropicAPIKey, intentModel, intentEffort, asrModelVersion, silenceMs, mergeWindowMs, mergeWindowUnfinishedMs
         case gridColumns, gridRows, moveStepPx, scrollStepLines
         case intentBackend, localModel, ollamaURL
     }
@@ -32,7 +41,10 @@ public struct AppConfig: Codable, Equatable, Sendable {
         d.anthropicAPIKey = try c.decodeIfPresent(String.self, forKey: .anthropicAPIKey)
         d.intentModel = try c.decodeIfPresent(String.self, forKey: .intentModel) ?? d.intentModel
         d.asrModelVersion = try c.decodeIfPresent(String.self, forKey: .asrModelVersion) ?? d.asrModelVersion
+        d.intentEffort = try c.decodeIfPresent(String.self, forKey: .intentEffort) ?? d.intentEffort
         d.silenceMs = try c.decodeIfPresent(Int.self, forKey: .silenceMs) ?? d.silenceMs
+        d.mergeWindowMs = try c.decodeIfPresent(Int.self, forKey: .mergeWindowMs) ?? d.mergeWindowMs
+        d.mergeWindowUnfinishedMs = try c.decodeIfPresent(Int.self, forKey: .mergeWindowUnfinishedMs) ?? d.mergeWindowUnfinishedMs
         d.gridColumns = try c.decodeIfPresent(Int.self, forKey: .gridColumns) ?? d.gridColumns
         d.gridRows = try c.decodeIfPresent(Int.self, forKey: .gridRows) ?? d.gridRows
         d.moveStepPx = try c.decodeIfPresent(Int.self, forKey: .moveStepPx) ?? d.moveStepPx
@@ -56,6 +68,9 @@ public struct AppConfig: Codable, Equatable, Sendable {
         config.moveStepPx = min(max(config.moveStepPx, 1), 2000)
         config.scrollStepLines = min(max(config.scrollStepLines, 1), 50)
         config.silenceMs = min(max(config.silenceMs, 100), 3000)
+        config.mergeWindowMs = min(max(config.mergeWindowMs, 0), 5000)
+        config.mergeWindowUnfinishedMs = min(max(config.mergeWindowUnfinishedMs, config.mergeWindowMs), 5000)
+        if !AppConfig.efforts.contains(config.intentEffort) { config.intentEffort = AppConfig().intentEffort }
         if let key = environment["ANTHROPIC_API_KEY"], !key.isEmpty {
             config.anthropicAPIKey = key
         }

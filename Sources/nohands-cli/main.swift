@@ -94,7 +94,7 @@ do {
         }
         samples += [Float](repeating: 0, count: 24_000)   // trailing silence so speechEnd can fire
         let vad = try await VoiceActivity(
-            silenceMs: rest.count > 1 ? Int(rest[1]) ?? 350 : 350,
+            silenceMs: rest.count > 1 ? Int(rest[1]) ?? 1000 : 1000,
             speechThreshold: rest.count > 2 ? Float(rest[2]) ?? 0.85 : 0.85,
             negativeThreshold: rest.count > 3 ? Float(rest[3]) : nil)
         var i = 0

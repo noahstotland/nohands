@@ -137,17 +137,24 @@ Optional file at `~/.config/nohands/config.json`. Every key may be omitted. For 
 {
   "anthropicAPIKey": "sk-ant-...",
   "intentModel": "claude-opus-5-5",
+  "intentEffort": "medium",
   "intentBackend": "auto",
   "localModel": "qwen2.5:7b-instruct",
   "ollamaURL": "http://127.0.0.1:11434",
   "asrModelVersion": "v2",
-  "silenceMs": 350,
+  "silenceMs": 1000,
+  "mergeWindowMs": 500,
+  "mergeWindowUnfinishedMs": 1500,
   "gridColumns": 10,
   "gridRows": 8,
   "moveStepPx": 50,
   "scrollStepLines": 5
 }
 ```
+
+**Pausing mid-command.** You do not have to say a command in one breath. `silenceMs` is how long you can go quiet before the recognizer closes an utterance (1 s by default). After that, a transcript the fast grammar does not already understand is held for `mergeWindowMs` (longer, `mergeWindowUnfinishedMs`, when it ends on a word like "the" or "click" that leaves the command hanging); the HUD shows it with a trailing "…". If you start speaking again inside that window, the next piece is appended and the whole thing is treated as one request, so "click the … uh, the back button" reaches the model as a single sentence. Set both windows to 0 to act on every utterance at once.
+
+**How the model reads a request.** The transcript comes from speech recognition, so the model is told to first write a one-sentence `intent` (what you meant, with recognition errors, filler and self-corrections resolved) and only then the actions that carry it out. `intentEffort` (`low` … `max`) sets how hard Claude thinks before answering; `medium` is the default, `low` is fastest.
 
 ## Privacy
 

@@ -9,7 +9,7 @@ public actor VoiceActivity {
     private var state: VadStreamState
 
     /// silenceMs: trailing silence before speechEnd fires.
-    public init(silenceMs: Int = 350, speechThreshold: Float = 0.85, negativeThreshold: Float? = nil) async throws {
+    public init(silenceMs: Int = 1000, speechThreshold: Float = 0.85, negativeThreshold: Float? = nil) async throws {
         let m = try await VadManager(config: VadConfig(defaultThreshold: speechThreshold))
         manager = m
         var cfg = VadSegmentationConfig.default

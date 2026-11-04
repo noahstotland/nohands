@@ -4,7 +4,7 @@ import Foundation
 
 @Test func configDefaultsAndEnvOverride() throws {
     let c = try AppConfig.load(from: nil, environment: [:])
-    #expect(c.intentModel == "claude-opus-5-5"); #expect(c.silenceMs == 350); #expect(c.anthropicAPIKey == nil)
+    #expect(c.intentModel == "claude-opus-5-5"); #expect(c.silenceMs == 1000); #expect(c.intentEffort == "medium"); #expect(c.mergeWindowMs == 500); #expect(c.anthropicAPIKey == nil)
     let json = #"{"anthropicAPIKey":"file-key","silenceMs":500,"unknownKey":1}"#.data(using: .utf8)
     let d = try AppConfig.load(from: json, environment: ["ANTHROPIC_API_KEY": "env-key"])
     #expect(d.anthropicAPIKey == "env-key"); #expect(d.silenceMs == 500)
