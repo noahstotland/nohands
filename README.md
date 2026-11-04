@@ -148,9 +148,15 @@ Optional file at `~/.config/nohands/config.json`. Every key may be omitted. For 
   "gridColumns": 10,
   "gridRows": 8,
   "moveStepPx": 50,
-  "scrollStepLines": 5
+  "scrollStepLines": 5,
+  "maxTaskSteps": 12,
+  "llmDeadlineMs": 12000,
+  "settleMs": 3000,
+  "maxObservedElements": 120
 }
 ```
+
+**Task loop keys.** `maxTaskSteps` (1 to 30) is how many observe-and-act steps a multi-step request may take. `llmDeadlineMs` (2000 to 60000) is how long each model call may take. `settleMs` (0 to 10000) is how long to wait for the screen to stop changing after an action. `maxObservedElements` (10 to 300) caps how many on-screen elements are sent to the model.
 
 **Pausing mid-command.** You do not have to say a command in one breath. `silenceMs` is how long you can go quiet before the recognizer closes an utterance (1 s by default). After that, a transcript the fast grammar does not already understand is held for `mergeWindowMs` (longer, `mergeWindowUnfinishedMs`, when it ends on a word like "the" or "click" that leaves the command hanging); the HUD shows it with a trailing "…". If you start speaking again inside that window, the next piece is appended and the whole thing is treated as one request, so "click the … uh, the back button" reaches the model as a single sentence. Set both windows to 0 to act on every utterance at once.
 

@@ -23,6 +23,14 @@ public struct AppConfig: Codable, Equatable, Sendable {
     public var intentBackend: IntentBackend = .auto
     public var localModel: String?
     public var ollamaURL: String = AppConfig.defaultOllamaURL
+    /// Task loop: maximum observe→act steps per task.
+    public var maxTaskSteps: Int = 12
+    /// Task loop: per-step model deadline (ms).
+    public var llmDeadlineMs: Int = 12000
+    /// Task loop: how long (ms) to wait for the screen to settle after acting.
+    public var settleMs: Int = 3000
+    /// Task loop: maximum screen elements sent to the model.
+    public var maxObservedElements: Int = 120
 
     public static let defaultOllamaURL = "http://127.0.0.1:11434"
     public static let efforts = ["low", "medium", "high", "xhigh", "max"]
@@ -33,6 +41,7 @@ public struct AppConfig: Codable, Equatable, Sendable {
         case anthropicAPIKey, intentModel, intentEffort, asrModelVersion, silenceMs, mergeWindowMs, mergeWindowUnfinishedMs
         case gridColumns, gridRows, moveStepPx, scrollStepLines
         case intentBackend, localModel, ollamaURL
+        case maxTaskSteps, llmDeadlineMs, settleMs, maxObservedElements
     }
 
     public init(from decoder: Decoder) throws {
@@ -53,6 +62,10 @@ public struct AppConfig: Codable, Equatable, Sendable {
         d.intentBackend = (try c.decodeIfPresent(String.self, forKey: .intentBackend)).flatMap(IntentBackend.init(rawValue:)) ?? .auto
         d.localModel = try c.decodeIfPresent(String.self, forKey: .localModel)
         d.ollamaURL = try c.decodeIfPresent(String.self, forKey: .ollamaURL) ?? d.ollamaURL
+        d.maxTaskSteps = try c.decodeIfPresent(Int.self, forKey: .maxTaskSteps) ?? d.maxTaskSteps
+        d.llmDeadlineMs = try c.decodeIfPresent(Int.self, forKey: .llmDeadlineMs) ?? d.llmDeadlineMs
+        d.settleMs = try c.decodeIfPresent(Int.self, forKey: .settleMs) ?? d.settleMs
+        d.maxObservedElements = try c.decodeIfPresent(Int.self, forKey: .maxObservedElements) ?? d.maxObservedElements
         self = d
     }
 
@@ -70,6 +83,10 @@ public struct AppConfig: Codable, Equatable, Sendable {
         config.silenceMs = min(max(config.silenceMs, 100), 3000)
         config.mergeWindowMs = min(max(config.mergeWindowMs, 0), 5000)
         config.mergeWindowUnfinishedMs = min(max(config.mergeWindowUnfinishedMs, config.mergeWindowMs), 5000)
+        config.maxTaskSteps = min(max(config.maxTaskSteps, 1), 30)
+        config.llmDeadlineMs = min(max(config.llmDeadlineMs, 2000), 60000)
+        config.settleMs = min(max(config.settleMs, 0), 10000)
+        config.maxObservedElements = min(max(config.maxObservedElements, 10), 300)
         if !AppConfig.efforts.contains(config.intentEffort) { config.intentEffort = AppConfig().intentEffort }
         if let key = environment["ANTHROPIC_API_KEY"], !key.isEmpty {
             config.anthropicAPIKey = key

@@ -56,3 +56,14 @@ import Foundation
     let set = try AppConfig.load(from: Data(#"{"localModel":"llama3.1:8b"}"#.utf8), environment: [:])
     #expect(set.resolvedLocalModel == "llama3.1:8b")
 }
+
+@Test func taskConfigDefaultsAndClamps() throws {
+    let d = try AppConfig.load(from: nil, environment: [:])
+    #expect(d.maxTaskSteps == 12); #expect(d.llmDeadlineMs == 12000); #expect(d.settleMs == 3000); #expect(d.maxObservedElements == 120)
+    let lo = try AppConfig.load(from: Data(#"{"maxTaskSteps":0,"llmDeadlineMs":1,"settleMs":-5,"maxObservedElements":1}"#.utf8), environment: [:])
+    #expect(lo.maxTaskSteps == 1); #expect(lo.llmDeadlineMs == 2000); #expect(lo.settleMs == 0); #expect(lo.maxObservedElements == 10)
+    let hi = try AppConfig.load(from: Data(#"{"maxTaskSteps":99,"llmDeadlineMs":999999,"settleMs":99999,"maxObservedElements":9999}"#.utf8), environment: [:])
+    #expect(hi.maxTaskSteps == 30); #expect(hi.llmDeadlineMs == 60000); #expect(hi.settleMs == 10000); #expect(hi.maxObservedElements == 300)
+    let ok = try AppConfig.load(from: Data(#"{"maxTaskSteps":5}"#.utf8), environment: [:])
+    #expect(ok.maxTaskSteps == 5)
+}
