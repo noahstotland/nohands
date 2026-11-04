@@ -4,7 +4,7 @@ import NoHandsCore
 /// Pure text helpers for the voice pipeline (HUD messages and the per-utterance log summary).
 public enum PipelineText {
     public static let didntCatch = "didn't catch that"
-    public static let llmOff = "LLM off: set ANTHROPIC_API_KEY"
+    public static let llmOff = "LLM off: add anthropicAPIKey to ~/.config/nohands/config.json"
 
     /// HUD text for a failed intent resolution; nil means show nothing (the request was cancelled).
     public static func hud(for error: IntentError) -> String? {

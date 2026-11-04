@@ -63,13 +63,16 @@ public final class MicrophoneCapture: @unchecked Sendable {
             lock.unlock()
             throw error
         }
-        let token = NotificationCenter.default.addObserver(
+        // Register the observer only if stop() has not run meanwhile (checked under the same lock stop() uses).
+        lock.lock()
+        guard running, generation == gen else { lock.unlock(); return }
+        observer = NotificationCenter.default.addObserver(
             forName: .AVAudioEngineConfigurationChange, object: engine, queue: nil
         ) { [weak self] _ in
             guard let self else { return }
             self.queue.async { [weak self] in self?.handleConfigurationChange(generation: gen, failures: 0) }
         }
-        lock.lock(); observer = token; lock.unlock()
+        lock.unlock()
         emit(.started)
     }
 

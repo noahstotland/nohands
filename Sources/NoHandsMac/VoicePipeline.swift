@@ -7,6 +7,10 @@ import NoHandsCore
 /// runs in ONE main-actor consumer task, so utterances are executed strictly one after another.
 @MainActor public final class VoicePipeline {
     public var onStatus: ((Mode, String) -> Void)?
+    /// Non-fatal notices (e.g. slow warm-up).
+    public var onNotice: ((String) -> Void)?
+    /// Errors worth a status-line entry and a Retry (e.g. permanent microphone failure, failed warm-up).
+    public var onError: ((String) -> Void)?
 
     private struct Job: Sendable {
         var transcript: String
@@ -24,6 +28,7 @@ import NoHandsCore
     private var vad: VoiceActivity?
     private var mic: MicrophoneCapture?
     private var tasks: [Task<Void, Never>] = []
+    private var consumer: Task<Void, Never>?
     private var starting = false
     private var warmedUp = false
     private var llmOffShown = false
@@ -54,28 +59,39 @@ import NoHandsCore
         starting = true
         defer { starting = false }
 
+        // A consumer from a previous session may still be executing an utterance; let it finish first so
+        // execution stays strictly serialized across pause/resume.
+        await consumer?.value
+        consumer = nil
+
         if vad == nil { vad = try await VoiceActivity(silenceMs: config.silenceMs) }
         let vad = self.vad!
         await vad.reset()
-        if !warmedUp { await warmUp(); warmedUp = true }
+        if !warmedUp { warmedUp = await warmUp() }
 
         let (chunks, chunkCont) = AsyncStream<[Float]>.makeStream(bufferingPolicy: .unbounded)
         // At most 2 pending utterances; when full the OLDEST is dropped.
         let (utterances, uttCont) = AsyncStream<(samples: [Float], at: ContinuousClock.Instant)>
             .makeStream(bufferingPolicy: .bufferingNewest(2))
-        let (jobs, jobCont) = AsyncStream<Job>.makeStream(bufferingPolicy: .unbounded)
+        let (jobs, jobCont) = AsyncStream<Job>.makeStream(bufferingPolicy: .bufferingNewest(2))
 
         let capture = try MicrophoneCapture()
         capture.onEvent = { [weak self] event in
             if case .failed(let message) = event {
-                print("[mic] \(message)")
-                Task { @MainActor in self?.overlay.showHUD("microphone error") }
+                PipelineLog.error("[mic] \(message)")
+                Task { @MainActor in
+                    guard let self else { return }
+                    self.overlay.showHUD("microphone error")
+                    self.stop()
+                    self.onError?("microphone failed")
+                }
             } else {
-                print("[mic] \(event)")
+                PipelineLog.info("[mic] \(event)")
             }
         }
 
         let transcriber = self.transcriber
+        let overlay = self.overlay
 
         let vadTask = Task.detached {
             var assembler = UtteranceAssembler()
@@ -84,11 +100,11 @@ import NoHandsCore
                     let ev = try await vad.process(chunk)
                     if let utterance = assembler.push(chunk, event: ev) {
                         if case .dropped = uttCont.yield((utterance, .now)) {
-                            print("asr backlog: dropped oldest pending utterance")
+                            PipelineLog.warning("asr backlog: dropped oldest pending utterance")
                         }
                     }
                 } catch {
-                    print("vad error (state reset): \(error)")
+                    PipelineLog.error("vad error (state reset): \(error)")
                     await vad.reset()
                     assembler.reset()
                 }
@@ -102,9 +118,14 @@ import NoHandsCore
                 do {
                     let text = try await transcriber.transcribe(utterance.samples)
                     trace.asrDone = .now
-                    if !text.isEmpty { jobCont.yield(Job(transcript: text, trace: trace)) }
+                    if !text.isEmpty {
+                        if case .dropped = jobCont.yield(Job(transcript: text, trace: trace)) {
+                            PipelineLog.warning("busy: dropped oldest queued utterance")
+                            await MainActor.run { overlay.showHUD("skipped (busy)") }
+                        }
+                    }
                 } catch {
-                    print("asr error (utterance skipped): \(error)")
+                    PipelineLog.error("asr error (utterance skipped): \(error)")
                 }
             }
             jobCont.finish()
@@ -112,11 +133,12 @@ import NoHandsCore
         // The single serial consumer: each job is fully handled (including awaiting the executor) before the next.
         let execTask = Task { @MainActor [weak self] in
             for await job in jobs {
-                guard let self else { break }
+                guard !Task.isCancelled, let self else { break }
                 await self.handle(job)
             }
         }
-        tasks = [vadTask, asrTask, execTask]
+        consumer = execTask
+        tasks = [vadTask, asrTask]
 
         do {
             try capture.start { chunkCont.yield($0) }
@@ -124,6 +146,7 @@ import NoHandsCore
             chunkCont.finish()
             tasks.forEach { $0.cancel() }
             tasks = []
+            consumer?.cancel()
             throw error
         }
         mic = capture
@@ -136,6 +159,7 @@ import NoHandsCore
         mic = nil
         for t in tasks { t.cancel() }
         tasks = []
+        consumer?.cancel()   // kept (not nil-ed) so start() can await an in-flight utterance
     }
 
     public func pause() { stop() }
@@ -143,16 +167,24 @@ import NoHandsCore
 
     // MARK: - private
 
-    private func warmUp() async {
+    /// Returns true when the warm-up transcription succeeded.
+    private func warmUp() async -> Bool {
         let samples = (0..<16_000).map { _ in Float.random(in: -0.002...0.002) }
         let t0 = ContinuousClock.now
-        _ = try? await transcriber.transcribe(samples)
-        let ms = Int(t0.duration(to: .now) / .milliseconds(1))
-        print("[asr] warm-up transcription took \(ms) ms")
-        if ms > 300 {
-            print("[asr] WARNING: warm-up took \(ms) ms (> 300 ms); recognition may be slow")
-            onStatus?(modeMachine.mode, "ASR warm-up slow (\(ms) ms)")
+        do {
+            _ = try await transcriber.transcribe(samples)
+        } catch {
+            PipelineLog.error("[asr] warm-up failed: \(error)")
+            onError?("warm-up failed")
+            return false
         }
+        let ms = Int(t0.duration(to: .now) / .milliseconds(1))
+        PipelineLog.info("[asr] warm-up transcription took \(ms) ms")
+        if ms > 300 {
+            PipelineLog.warning("[asr] warm-up took \(ms) ms (> 300 ms); recognition may be slow")
+            onNotice?("ASR warm-up slow (\(ms) ms)")
+        }
+        return true
     }
 
     private func publishStatus() { onStatus?(modeMachine.mode, lastTranscript) }
@@ -160,6 +192,11 @@ import NoHandsCore
     private func handle(_ job: Job) async {
         var trace = job.trace
         let text = job.transcript
+        if let spoke = trace.speechEnd, StaleJobPolicy.isStale(age: spoke.duration(to: .now)) {
+            PipelineLog.warning("busy: skipped stale utterance (older than 8 s)")
+            overlay.showHUD("skipped (busy)")
+            return
+        }
         lastTranscript = text
         let routing = modeMachine.route(text)
         var outcome = PipelineText.summary(routing)
@@ -176,7 +213,7 @@ import NoHandsCore
         }
 
         trace.actionsDone = .now
-        print(PipelineText.logLine(trace: trace, transcript: text, summary: outcome))
+        PipelineLog.utterance(trace: trace, transcript: text, outcome: outcome)
         publishStatus()
     }
 

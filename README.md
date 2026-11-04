@@ -57,7 +57,15 @@ Scripts/bundle.sh && open build/NoHands.app
 CODESIGN_IDENTITY="Apple Development: Your Name (TEAMID)" Scripts/bundle.sh
 ```
 
-**Logs:** the app prints one line per utterance, `[asr=…ms total=…ms] <transcript> -> <what it did>`, plus warnings. Run `build/NoHands.app/Contents/MacOS/NoHands` from a terminal to see it, or use `log stream --predicate 'process == "NoHands"'`.
+**Logs:** each utterance logs one line, `[asr=…ms total=…ms] <transcript> -> <what it did>`, plus warm-up results, warnings and errors, through the unified log:
+
+```bash
+log stream --predicate 'subsystem == "dev.nohands.app"'
+```
+
+Transcripts are logged as private, so they show as `<private>` unless private data logging is enabled (`sudo log config --mode "private_data:on"`). Running `build/NoHands.app/Contents/MacOS/NoHands` directly from a terminal also prints the full lines to that terminal.
+
+**Claude API key:** shell exports do not reach an app started with `open`. Put the key in `~/.config/nohands/config.json` (see Configuration) and run `chmod 600 ~/.config/nohands/config.json`. Without a key, natural-language commands show "LLM off" and the fast grammar still works.
 
 ## Voice commands
 
@@ -103,7 +111,7 @@ In dictation mode, say `period`, `comma`, `question mark`, `new line`, `new para
 
 ## Configuration
 
-Optional file at `~/.config/nohands/config.json`. Every key may be omitted, and `ANTHROPIC_API_KEY` in the environment overrides the file.
+Optional file at `~/.config/nohands/config.json`. Every key may be omitted. For the bundled app this file is the way to supply the API key: `ANTHROPIC_API_KEY` in the environment overrides the file, but it only reaches the app when you run the binary from a terminal or set it with `launchctl setenv ANTHROPIC_API_KEY ...`. The file holds a secret, so run `chmod 600 ~/.config/nohands/config.json`; NoHands logs a warning at launch if it contains a key and is readable by other users. Invalid JSON falls back to defaults and is flagged in the menu.
 
 ```json
 {
