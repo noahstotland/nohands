@@ -10,10 +10,12 @@ private final class FakeResolver: IntentResolving, @unchecked Sendable {
     var result: Result<[Action], IntentError> = .success([])
     var lastContext: IntentContext?
     var onResolve: (@Sendable () async -> Void)?
-    func resolve(_ transcript: String, context: IntentContext) async throws -> [Action] {
-        lastContext = context
+    func resolve(_ request: StepRequest) async throws -> IntentStep {
+        lastContext = IntentContext(frontmostApp: request.observation.app, mode: request.observation.mode,
+                                    labeledElements: request.observation.elements.map { ($0.number, $0.title) },
+                                    overlay: request.observation.overlay)
         await onResolve?()
-        return try result.get()
+        return IntentStep(intent: "", status: .done, actions: try result.get())
     }
 }
 

@@ -13,14 +13,20 @@ public enum IntentError: Error {
 }
 
 public protocol IntentResolving: Sendable {
-    func resolve(_ transcript: String, context: IntentContext) async throws -> [Action]
+    func resolve(_ request: StepRequest) async throws -> IntentStep
+}
+
+extension IntentResolving {
+    /// One-shot convenience: step 1 of a fresh request, returning just the actions.
+    public func resolve(_ transcript: String, context: IntentContext) async throws -> [Action] {
+        try await resolve(StepRequest(oneShot: transcript, context: context)).actions
+    }
 }
 
 /// Sends one request (no retries) to the Anthropic Messages API and decodes the actions.
 /// The API key lives only in the request header; it is never logged or put in an error.
 public actor ClaudeIntentResolver: IntentResolving {
     public static let endpoint = URL(string: "https://api.anthropic.com/v1/messages")!
-    static let requestTimeout: TimeInterval = 4
     static let bodyPrefixLimit = 200
 
     private let config: AppConfig
@@ -31,23 +37,23 @@ public actor ClaudeIntentResolver: IntentResolving {
     /// `baseURL` and `deadline` exist for tests; production uses the defaults.
     public init(config: AppConfig, session: URLSession = .shared,
                 baseURL: URL = ClaudeIntentResolver.endpoint,
-                deadline: Duration = .milliseconds(4500)) {
+                deadline: Duration? = nil) {
         self.config = config
         self.session = session
         self.baseURL = baseURL
-        self.deadline = deadline
+        self.deadline = deadline ?? .milliseconds(config.llmDeadlineMs)
     }
 
-    public func resolve(_ transcript: String, context: IntentContext) async throws -> [Action] {
+    public func resolve(_ stepRequest: StepRequest) async throws -> IntentStep {
         guard let key = config.anthropicAPIKey, !key.isEmpty else { throw IntentError.noAPIKey }
         let builder = ClaudeRequestBuilder(model: config.intentModel, effort: config.intentEffort)
         var request = URLRequest(url: baseURL)
         request.httpMethod = "POST"
-        request.timeoutInterval = Self.requestTimeout
+        request.timeoutInterval = TimeInterval(deadline.components.seconds) + 2
         for (name, value) in ClaudeRequestBuilder.headers(key) { request.setValue(value, forHTTPHeaderField: name) }
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         do {
-            request.httpBody = try builder.body(transcript: transcript, context: context)
+            request.httpBody = try builder.body(request: stepRequest)
         } catch {
             throw IntentError.decode(.malformed("could not encode request"))
         }
@@ -58,7 +64,7 @@ public actor ClaudeIntentResolver: IntentResolving {
             throw IntentError.http(http.statusCode, String(text.prefix(Self.bodyPrefixLimit)))
         }
         do {
-            return try IntentDecoder.actions(fromResponse: data)
+            return try IntentDecoder.step(fromResponse: data)
         } catch let e as IntentDecodeError {
             throw IntentError.decode(e)
         }

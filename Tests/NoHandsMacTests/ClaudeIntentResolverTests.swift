@@ -13,7 +13,7 @@ private func config(key: String? = secretKey) -> AppConfig {
 private let ctx = IntentContext(frontmostApp: "Safari", mode: .command, labeledElements: [(1, "Back")])
 
 private func okBody(_ actionsJSON: String) -> Data {
-    let text = "{\"actions\":\(actionsJSON)}"
+    let text = "{\"status\":\"done\",\"actions\":\(actionsJSON)}"
     let obj: [String: Any] = ["stop_reason": "end_turn", "content": [["type": "text", "text": text]]]
     return try! JSONSerialization.data(withJSONObject: obj)
 }
@@ -41,6 +41,15 @@ private func okBody(_ actionsJSON: String) -> Data {
         catch { Issue.record("wrong error \(error)") }
     }
 
+    @Test func continueStepIsReturnedWithIntentAndActions() async throws {
+        let text = #"{"intent":"open menu","status":"continue","actions":[{"kind":"type_text","text":"hi"}]}"#
+        let obj: [String: Any] = ["stop_reason": "end_turn", "content": [["type": "text", "text": text]]]
+        StubProtocol.reset { _ in (200, try! JSONSerialization.data(withJSONObject: obj)) }
+        let r = ClaudeIntentResolver(config: config(), session: makeSession())
+        let step = try await r.resolve(StepRequest(oneShot: "go", context: ctx))
+        #expect(step == IntentStep(intent: "open menu", status: .continue, actions: [.typeText("hi")]))
+    }
+
     @Test func customModelIsSent() async throws {
         StubProtocol.reset { _ in (200, okBody("[]")) }
         var c = config(); c.intentModel = "claude-haiku-5-5"
@@ -65,11 +74,11 @@ private func okBody(_ actionsJSON: String) -> Data {
         let req = try #require(StubProtocol.requests.first)
         #expect(req.url?.absoluteString == "https://api.anthropic.com/v1/messages")
         #expect(req.httpMethod == "POST")
-        #expect(req.timeoutInterval == 4)
+        #expect(req.timeoutInterval == 14)
         #expect(req.value(forHTTPHeaderField: "x-api-key") == secretKey)
         #expect(req.value(forHTTPHeaderField: "anthropic-version") == "2026-10-21")
         #expect(req.value(forHTTPHeaderField: "Content-Type") == "application/json")
-        let expected = try ClaudeRequestBuilder(model: AppConfig().intentModel).body(transcript: "say hi", context: ctx)
+        let expected = try ClaudeRequestBuilder(model: AppConfig().intentModel).body(request: StepRequest(oneShot: "say hi", context: ctx))
         let sent = try JSONSerialization.jsonObject(with: try #require(StubProtocol.bodies.first)) as? NSDictionary
         let want = try JSONSerialization.jsonObject(with: expected) as? NSDictionary
         #expect(sent != nil && sent == want)

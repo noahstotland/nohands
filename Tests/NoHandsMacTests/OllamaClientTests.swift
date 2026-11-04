@@ -14,6 +14,16 @@ private let base = URL(string: "http://127.0.0.1:11434")!
 
 // Extends the Claude suite (serialized) so all HTTP-stub tests share StubProtocol's static state without racing.
 extension ClaudeIntentResolverTests {
+    @Test func ollamaResolverReturnsContinueStep() async throws {
+        let content = #"{"intent":"open menu","status":"continue","actions":[{"kind":"type_text","text":"hi"}]}"#
+        let obj: [String: Any] = ["message": ["role": "assistant", "content": content]]
+        StubProtocol.reset { _ in (200, try! JSONSerialization.data(withJSONObject: obj)) }
+        let r = OllamaIntentResolver(config: AppConfig(), session: makeSession())
+        let ctx = IntentContext(frontmostApp: "Safari", mode: .command, labeledElements: [(1, "Back")])
+        let step = try await r.resolve(StepRequest(oneShot: "go", context: ctx))
+        #expect(step == IntentStep(intent: "open menu", status: .continue, actions: [.typeText("hi")]))
+    }
+
     @Test func ollamaStatusReflectsTags() async {
         StubProtocol.reset { r in
             #expect(r.url?.path == "/api/tags")

@@ -9,20 +9,20 @@ public actor OllamaIntentResolver: IntentResolving {
     private let session: URLSession
     private let deadline: Duration
 
-    public init(config: AppConfig, session: URLSession = .shared, deadline: Duration = .seconds(8)) {
+    public init(config: AppConfig, session: URLSession = .shared, deadline: Duration? = nil) {
         self.config = config
         self.session = session
-        self.deadline = deadline
+        self.deadline = deadline ?? .milliseconds(config.llmDeadlineMs)
     }
 
-    public func resolve(_ transcript: String, context: IntentContext) async throws -> [Action] {
+    public func resolve(_ stepRequest: StepRequest) async throws -> IntentStep {
         var request = URLRequest(url: config.ollamaBaseURL.appendingPathComponent("api/chat"))
         request.httpMethod = "POST"
         request.timeoutInterval = TimeInterval(deadline.components.seconds) + 2
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         do {
             request.httpBody = try OllamaRequestBuilder(model: config.resolvedLocalModel)
-                .body(transcript: transcript, context: context)
+                .body(request: stepRequest)
         } catch {
             throw IntentError.decode(.malformed("could not encode request"))
         }
@@ -44,7 +44,7 @@ public actor OllamaIntentResolver: IntentResolving {
             throw IntentError.http(http.statusCode, String(text.prefix(Self.bodyPrefixLimit)))
         }
         do {
-            return try IntentDecoder.actions(fromOllamaResponse: data)
+            return try IntentDecoder.step(fromOllamaResponse: data)
         } catch let e as IntentDecodeError {
             throw IntentError.decode(e)
         }
