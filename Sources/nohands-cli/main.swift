@@ -19,7 +19,7 @@ func usage() -> Never {
 }
 
 func point(_ args: [String]) -> CGPoint {
-    guard args.count == 2, let x = Double(args[0]), let y = Double(args[1]) else { usage() }
+    guard args.count == 2, let x = Double(args[0]), let y = Double(args[1]), x.isFinite, y.isFinite else { usage() }
     return CGPoint(x: x, y: y)
 }
 

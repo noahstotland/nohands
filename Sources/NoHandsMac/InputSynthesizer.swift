@@ -1,12 +1,15 @@
 import Foundation
 import CoreGraphics
 import NoHandsCore
+import os
 
 public enum InputSynthesisError: Error, CustomStringConvertible {
     case eventCreationFailed(String)
+    case invalidArgument(String)
     public var description: String {
         switch self {
         case .eventCreationFailed(let what): "Could not create CGEvent: \(what)"
+        case .invalidArgument(let what): "Invalid argument: \(what)"
         }
     }
 }
@@ -25,18 +28,36 @@ public protocol InputSynthesizing: Sendable {
 public struct CGEventInputSynthesizer: InputSynthesizing {
     public init() {}
 
+    private let buttons = OSAllocatedUnfairLock(initialState: MouseButtonState())
+
+    private func postKeyPair(virtualKey: CGKeyCode, flags: CGEventFlags = [], unicode: [UniChar]? = nil, what: String) throws {
+        guard let down = CGEvent(keyboardEventSource: nil, virtualKey: virtualKey, keyDown: true),
+              let up = CGEvent(keyboardEventSource: nil, virtualKey: virtualKey, keyDown: false) else {
+            throw InputSynthesisError.eventCreationFailed(what)
+        }
+        for e in [down, up] {
+            if let unicode { e.keyboardSetUnicodeString(stringLength: unicode.count, unicodeString: unicode) }
+            e.flags = flags
+        }
+        down.post(tap: .cghidEventTap)
+        up.post(tap: .cghidEventTap)
+    }
+
     public func type(_ text: String) throws {
-        let chunks = TextChunker.chunks(text)
-        for (i, chunk) in chunks.enumerated() {
-            let units = Array(chunk.utf16)
-            for down in [true, false] {
-                guard let e = CGEvent(keyboardEventSource: nil, virtualKey: 0, keyDown: down) else {
-                    throw InputSynthesisError.eventCreationFailed("keyboard event for text chunk")
+        var needsPause = false
+        for segment in TextSegmenter.segments(text) {
+            switch segment {
+            case .key(let key):
+                if needsPause { Thread.sleep(forTimeInterval: 0.001) }
+                try postKeyPair(virtualKey: key.keyCode, what: "key event for \(key)")
+                needsPause = true
+            case .text(let str):
+                for chunk in TextChunker.deliveryChunks(str) {
+                    if needsPause { Thread.sleep(forTimeInterval: 0.001) }
+                    try postKeyPair(virtualKey: 0, unicode: Array(chunk.utf16), what: "keyboard event for text chunk")
+                    needsPause = true
                 }
-                e.keyboardSetUnicodeString(stringLength: units.count, unicodeString: units)
-                e.post(tap: .cghidEventTap)
             }
-            if i < chunks.count - 1 { Thread.sleep(forTimeInterval: 0.001) }
         }
     }
 
@@ -51,17 +72,19 @@ public struct CGEventInputSynthesizer: InputSynthesizing {
             case .function: flags.insert(.maskSecondaryFn)
             }
         }
-        for down in [true, false] {
-            guard let e = CGEvent(keyboardEventSource: nil, virtualKey: chord.key.keyCode, keyDown: down) else {
-                throw InputSynthesisError.eventCreationFailed("key event for \(chord.key)")
-            }
-            e.flags = flags
-            e.post(tap: .cghidEventTap)
-        }
+        try postKeyPair(virtualKey: chord.key.keyCode, flags: flags, what: "key event for \(chord.key)")
     }
 
     public func moveMouse(to point: CGPoint) throws {
-        guard let e = CGEvent(mouseEventSource: nil, mouseType: .mouseMoved, mouseCursorPosition: point, mouseButton: .left) else {
+        let type: CGEventType
+        let button: CGMouseButton
+        switch buttons.withLock({ $0.moveKind }) {
+        case .moved: type = .mouseMoved; button = .left
+        case .dragged(.left): type = .leftMouseDragged; button = .left
+        case .dragged(.right): type = .rightMouseDragged; button = .right
+        case .dragged(.middle): type = .otherMouseDragged; button = .center
+        }
+        guard let e = CGEvent(mouseEventSource: nil, mouseType: type, mouseCursorPosition: point, mouseButton: button) else {
             throw InputSynthesisError.eventCreationFailed("mouse move")
         }
         e.post(tap: .cghidEventTap)
@@ -77,13 +100,17 @@ public struct CGEventInputSynthesizer: InputSynthesizing {
 
     public func mouseDown(_ button: MouseButton, at point: CGPoint) throws {
         try post(button, down: true, at: point, clickState: 1)
+        buttons.withLock { $0.down(button) }
     }
 
     public func mouseUp(_ button: MouseButton, at point: CGPoint) throws {
         try post(button, down: false, at: point, clickState: 1)
+        buttons.withLock { $0.up(button) }
     }
 
     public func scroll(_ direction: Direction, lines: Int) throws {
+        guard lines >= 0 else { throw InputSynthesisError.invalidArgument("negative scroll amount \(lines)") }
+        guard lines > 0 else { return }
         var v: Int32 = 0, h: Int32 = 0
         let n = Int32(clamping: lines)
         switch direction {
