@@ -5,6 +5,8 @@ import CoreGraphics
 import NoHandsCore
 
 /// Queries the frontmost app's accessibility tree.
+/// Closed menu items are intentionally not collected (menu bar items are): "click edit" then
+/// "click copy" works once the menu is open.
 /// Threading contract: all mutable state (`elements`) is guarded by `lock`; every method may be called
 /// from any thread. Returned ids are only valid until the next `actionableElements()` call.
 public final class AXQuery: @unchecked Sendable {
@@ -60,20 +62,29 @@ public final class AXQuery: @unchecked Sendable {
     // MARK: activation
 
     public func activate(appNamed name: String) -> Bool {
-        let q = name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let q = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !q.isEmpty else { return false }
 
-        let running = NSWorkspace.shared.runningApplications.compactMap { app -> (NSRunningApplication, String)? in
-            guard let n = app.localizedName else { return nil }
-            return (app, n.lowercased())
-        }
-        if let app = Self.bestMatch(q, in: running)?.0 {
-            return app.activate()
+        let config = NSWorkspace.OpenConfiguration()
+        config.activates = true
+
+        let running = NSWorkspace.shared.runningApplications.filter { $0.activationPolicy == .regular }
+        let runningCands = running.enumerated().compactMap { (i, app) in app.localizedName.map { (name: $0, id: i) } }
+        if let i = AppNameMatcher.best(for: q, in: runningCands) {
+            let app = running[i]
+            if app.isHidden { app.unhide() }
+            if let url = app.bundleURL {
+                // openApplication works where a plain activate() can be refused (cooperative activation).
+                NSWorkspace.shared.openApplication(at: url, configuration: config) { _, _ in }
+                return true
+            }
+            if app.activate() { return true }
         }
 
-        var installed: [(URL, [String])] = []
+        var installed: [(url: URL, names: [String])] = []
         let home = FileManager.default.homeDirectoryForCurrentUser.path
-        for dir in ["/Applications", "/System/Applications", "/Applications/Utilities", home + "/Applications"] {
+        for dir in ["/Applications", "/System/Applications", "/Applications/Utilities",
+                    "/System/Applications/Utilities", home + "/Applications"] {
             let urls = (try? FileManager.default.contentsOfDirectory(
                 at: URL(fileURLWithPath: dir), includingPropertiesForKeys: nil)) ?? []
             for url in urls where url.pathExtension == "app" {
@@ -83,26 +94,19 @@ public final class AXQuery: @unchecked Sendable {
                         if let s = info[k] as? String { names.append(s) }
                     }
                 }
-                installed.append((url, names.map { $0.lowercased() }))
+                installed.append((url, names))
             }
         }
-        // Same ordering (exact, prefix, contains) across all names of all apps.
-        let flat = installed.flatMap { entry in entry.1.map { (entry.0, $0) } }
-        guard let url = Self.bestMatch(q, in: flat)?.0 else { return false }
-        let config = NSWorkspace.OpenConfiguration()
-        config.activates = true
+        let flat = installed.flatMap { e in e.names.map { (name: $0, id: e.url) } }
+        guard let url = AppNameMatcher.best(for: q, in: flat) else { return false }
         NSWorkspace.shared.openApplication(at: url, configuration: config) { _, _ in }
         return true
-    }
-
-    static func bestMatch<T>(_ q: String, in items: [(T, String)]) -> (T, String)? {
-        items.first { $0.1 == q } ?? items.first { $0.1.hasPrefix(q) } ?? items.first { $0.1.contains(q) }
     }
 
     // MARK: screens
 
     /// Screen frames in CG (top-left origin) coordinates, flipped using the PRIMARY screen height.
-    static func screenRectsCG() -> [CGRect] {
+    public static func screenRectsCG() -> [CGRect] {
         let screens = NSScreen.screens
         guard let primary = screens.first else { return [] }
         let h = primary.frame.height
@@ -170,10 +174,18 @@ public final class AXQuery: @unchecked Sendable {
             AXUIElementSetMessagingTimeout(el, 0.05)
             let role = AXQuery.string(el, kAXRoleAttribute) ?? ""
             if AXQuery.actionableRoles.contains(role), let f = AXQuery.frame(el), isVisible(f) {
-                let title = AXQuery.string(el, kAXTitleAttribute)
-                    ?? AXQuery.string(el, kAXDescriptionAttribute)
-                    ?? AXQuery.string(el, kAXValueAttribute) ?? ""
-                found.append(Found(element: el, frame: f, title: title, role: role))
+                let subrole = AXQuery.string(el, kAXSubroleAttribute)
+                let secure = subrole == "AXSecureTextField"
+                var title = AXQuery.string(el, kAXTitleAttribute) ?? AXQuery.string(el, kAXDescriptionAttribute)
+                if title == nil, !secure, !TitleSource.allowsValueFallback(role: role, subrole: subrole) {
+                    title = AXQuery.string(el, "AXPlaceholderValue")
+                }
+                if title == nil, TitleSource.allowsValueFallback(role: role, subrole: subrole) {
+                    title = AXQuery.string(el, kAXValueAttribute)
+                }
+                if title == nil, secure { title = TitleSource.secureFieldTitle }
+                let finalTitle = title ?? ""
+                found.append(Found(element: el, frame: f, title: finalTitle, role: role))
             }
             // Menu bar items open menus whose contents are not on screen; do not descend into them.
             if stopAtMenuBarItems && role == "AXMenuBarItem" { return }
