@@ -115,3 +115,17 @@ import Foundation
     #expect(ClaudeRequestBuilder.userMessage(transcript: "hi", context: ctx) == ClaudeRequestBuilder.userMessage(request: req))
     #expect(req.observation.elements == [ObservedElement(number: 3, role: "element", title: "Back")])
 }
+
+@Test func goalIsKeptInFullButElementTitlesAreCut() {
+    let goal = String(repeating: "g", count: 150)
+    let req = StepRequest(goal: goal, step: 1, maxSteps: 5, history: [],
+        observation: ScreenObservation(app: "A", mode: .command,
+                                       elements: [ObservedElement(number: 1, role: "AXLink", title: String(repeating: "t", count: 150))]))
+    let m = ClaudeRequestBuilder.userMessage(request: req)
+    #expect(m.hasPrefix("Goal: " + goal + "\n"))
+    #expect(m.hasSuffix("Request: " + goal))
+    #expect(m.contains("  1 [link] " + String(repeating: "t", count: 80) + "\n"))
+    #expect(!m.contains(String(repeating: "t", count: 81)))
+    let legacy = ClaudeRequestBuilder.userMessage(transcript: goal, context: IntentContext(frontmostApp: "A", mode: .command, labeledElements: []))
+    #expect(legacy.hasSuffix("Request: " + goal))
+}

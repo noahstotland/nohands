@@ -33,7 +33,7 @@ public struct ClaudeRequestBuilder: Sendable {
 
     public static func userMessage(request r: StepRequest) -> String {
         let o = r.observation
-        let goal = sanitize(r.goal)
+        let goal = sanitize(r.goal, limit: 300)
         var s = "Goal: \(goal)\nStep: \(r.step) of \(r.maxSteps)\n"
         if !r.history.isEmpty {
             s += "History:\n"
@@ -42,7 +42,7 @@ public struct ClaudeRequestBuilder: Sendable {
                 s += "  \(i + 1). \(sanitize(h.intent)) -> \(ActionSummary.kinds(h.actions)) (\(outcome))\n"
             }
         }
-        s += "App: \(sanitize(o.app))   Window: \(sanitize(o.windowTitle).nonEmpty ?? "-")   URL: \(o.url.map(sanitize) ?? "-")\n"
+        s += "App: \(sanitize(o.app))   Window: \(sanitize(o.windowTitle).nonEmpty ?? "-")   URL: \(o.url.map { sanitize($0) } ?? "-")\n"
         s += "Mode: \(o.mode.rawValue)   Overlay: \(sanitize(o.overlay))\n"
         s += "Visible elements:\n"
         for e in o.elements {
@@ -54,12 +54,12 @@ public struct ClaudeRequestBuilder: Sendable {
         return s
     }
 
-    static func sanitize(_ s: String) -> String {
+    static func sanitize(_ s: String, limit: Int = 80) -> String {
         let mapped = String(String.UnicodeScalarView(s.unicodeScalars.map {
             CharacterSet.controlCharacters.contains($0) || CharacterSet.newlines.contains($0) ? " " : $0
         }))
         let collapsed = mapped.split(whereSeparator: { $0.isWhitespace }).joined(separator: " ")
-        return String(collapsed.prefix(80))
+        return String(collapsed.prefix(limit))
     }
 
     public static let headers: @Sendable (String) -> [String: String] = { apiKey in
