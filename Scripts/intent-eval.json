@@ -1,0 +1,847 @@
+[
+  {
+    "say": "open youtube on chrome",
+    "app": "Finder",
+    "overlay": "none",
+    "accept": [
+      {
+        "actions": [
+          {
+            "kind": "open_app",
+            "app_name": "Google Chrome"
+          },
+          {
+            "kind": "press_key",
+            "key": "l",
+            "modifiers": [
+              "command"
+            ]
+          },
+          {
+            "kind": "type_text",
+            "text": "youtube.com"
+          },
+          {
+            "kind": "press_key",
+            "key": "return"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "say": "take me to gmail in safari",
+    "app": "Finder",
+    "overlay": "none",
+    "accept": [
+      {
+        "actions": [
+          {
+            "kind": "open_app",
+            "app_name": "Safari"
+          },
+          {
+            "kind": "press_key",
+            "key": "l",
+            "modifiers": [
+              "command"
+            ]
+          },
+          {
+            "kind": "type_text",
+            "text": "gmail.com"
+          },
+          {
+            "kind": "press_key",
+            "key": "return"
+          }
+        ]
+      },
+      {
+        "actions": [
+          {
+            "kind": "open_app",
+            "app_name": "Safari"
+          },
+          {
+            "kind": "press_key",
+            "key": "l",
+            "modifiers": [
+              "command"
+            ]
+          },
+          {
+            "kind": "type_text",
+            "text": "mail.google.com"
+          },
+          {
+            "kind": "press_key",
+            "key": "return"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "say": "open google chrome and go to youtube",
+    "app": "Finder",
+    "overlay": "none",
+    "accept": [
+      {
+        "actions": [
+          {
+            "kind": "open_app",
+            "app_name": "Google Chrome"
+          },
+          {
+            "kind": "press_key",
+            "key": "l",
+            "modifiers": [
+              "command"
+            ]
+          },
+          {
+            "kind": "type_text",
+            "text": "youtube.com"
+          },
+          {
+            "kind": "press_key",
+            "key": "return"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "say": "pull up github in firefox",
+    "app": "Finder",
+    "overlay": "none",
+    "accept": [
+      {
+        "actions": [
+          {
+            "kind": "open_app",
+            "app_name": "Firefox"
+          },
+          {
+            "kind": "press_key",
+            "key": "l",
+            "modifiers": [
+              "command"
+            ]
+          },
+          {
+            "kind": "type_text",
+            "text": "github.com"
+          },
+          {
+            "kind": "press_key",
+            "key": "return"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "say": "launch safari and visit wikipedia",
+    "app": "Finder",
+    "overlay": "none",
+    "accept": [
+      {
+        "actions": [
+          {
+            "kind": "open_app",
+            "app_name": "Safari"
+          },
+          {
+            "kind": "press_key",
+            "key": "l",
+            "modifiers": [
+              "command"
+            ]
+          },
+          {
+            "kind": "type_text",
+            "text": "wikipedia.org"
+          },
+          {
+            "kind": "press_key",
+            "key": "return"
+          }
+        ]
+      },
+      {
+        "actions": [
+          {
+            "kind": "open_app",
+            "app_name": "Safari"
+          },
+          {
+            "kind": "press_key",
+            "key": "l",
+            "modifiers": [
+              "command"
+            ]
+          },
+          {
+            "kind": "type_text",
+            "text": "en.wikipedia.org"
+          },
+          {
+            "kind": "press_key",
+            "key": "return"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "say": "head over to reddit using chrome",
+    "app": "Finder",
+    "overlay": "none",
+    "accept": [
+      {
+        "actions": [
+          {
+            "kind": "open_app",
+            "app_name": "Google Chrome"
+          },
+          {
+            "kind": "press_key",
+            "key": "l",
+            "modifiers": [
+              "command"
+            ]
+          },
+          {
+            "kind": "type_text",
+            "text": "reddit.com"
+          },
+          {
+            "kind": "press_key",
+            "key": "return"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "say": "minimize google chrome",
+    "app": "Safari",
+    "overlay": "none",
+    "accept": [
+      {
+        "actions": [
+          {
+            "kind": "open_app",
+            "app_name": "Google Chrome"
+          },
+          {
+            "kind": "press_key",
+            "key": "m",
+            "modifiers": [
+              "command"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "say": "hide slack",
+    "app": "Notes",
+    "overlay": "none",
+    "accept": [
+      {
+        "actions": [
+          {
+            "kind": "open_app",
+            "app_name": "Slack"
+          },
+          {
+            "kind": "press_key",
+            "key": "h",
+            "modifiers": [
+              "command"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "say": "close the finder window",
+    "app": "Safari",
+    "overlay": "none",
+    "accept": [
+      {
+        "actions": [
+          {
+            "kind": "open_app",
+            "app_name": "Finder"
+          },
+          {
+            "kind": "press_key",
+            "key": "w",
+            "modifiers": [
+              "command"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "say": "make safari full screen",
+    "app": "Notes",
+    "overlay": "none",
+    "accept": [
+      {
+        "actions": [
+          {
+            "kind": "open_app",
+            "app_name": "Safari"
+          },
+          {
+            "kind": "press_key",
+            "key": "f",
+            "modifiers": [
+              "command",
+              "control"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "say": "quit spotify",
+    "app": "Finder",
+    "overlay": "none",
+    "accept": [
+      {
+        "actions": [
+          {
+            "kind": "open_app",
+            "app_name": "Spotify"
+          },
+          {
+            "kind": "press_key",
+            "key": "q",
+            "modifiers": [
+              "command"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "say": "go ahead and hit the send button",
+    "app": "Mail",
+    "elements": [
+      "Attach",
+      "Send",
+      "Delete"
+    ],
+    "overlay": "labels",
+    "accept": [
+      {
+        "actions": [
+          {
+            "kind": "click",
+            "target_kind": "label",
+            "target_number": 2
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "say": "press cancel",
+    "app": "Safari",
+    "elements": [
+      "Cancel",
+      "Save"
+    ],
+    "overlay": "labels",
+    "accept": [
+      {
+        "actions": [
+          {
+            "kind": "click",
+            "target_kind": "label",
+            "target_number": 1
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "say": "take me into the downloads folder",
+    "app": "Finder",
+    "elements": [
+      "Desktop",
+      "Documents",
+      "Downloads",
+      "Applications"
+    ],
+    "overlay": "labels",
+    "accept": [
+      {
+        "actions": [
+          {
+            "kind": "click",
+            "target_kind": "label",
+            "target_number": 3
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "say": "hit the reload button",
+    "app": "Safari",
+    "elements": [
+      "Back",
+      "Forward",
+      "Reload"
+    ],
+    "overlay": "labels",
+    "accept": [
+      {
+        "actions": [
+          {
+            "kind": "click",
+            "target_kind": "label",
+            "target_number": 3
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "say": "choose the second tab",
+    "app": "Chrome",
+    "elements": [
+      "Inbox",
+      "Calendar",
+      "Drive"
+    ],
+    "overlay": "labels",
+    "accept": [
+      {
+        "actions": [
+          {
+            "kind": "click",
+            "target_kind": "label",
+            "target_number": 2
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "say": "hit save",
+    "app": "TextEdit",
+    "elements": [
+      "Cancel",
+      "Save",
+      "Don't Save"
+    ],
+    "overlay": "labels",
+    "accept": [
+      {
+        "actions": [
+          {
+            "kind": "click",
+            "target_kind": "label",
+            "target_number": 2
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "say": "square twelve please",
+    "app": "Finder",
+    "overlay": "grid",
+    "accept": [
+      {
+        "actions": [
+          {
+            "kind": "click",
+            "target_kind": "grid_cell",
+            "target_number": 12
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "say": "tap cell forty seven",
+    "app": "Safari",
+    "overlay": "grid",
+    "accept": [
+      {
+        "actions": [
+          {
+            "kind": "click",
+            "target_kind": "grid_cell",
+            "target_number": 47
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "say": "context menu on square five",
+    "app": "Finder",
+    "overlay": "grid",
+    "accept": [
+      {
+        "actions": [
+          {
+            "kind": "click",
+            "target_kind": "grid_cell",
+            "target_number": 5,
+            "button": "right"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "say": "write good morning team",
+    "app": "Mail",
+    "overlay": "none",
+    "accept": [
+      {
+        "actions": [
+          {
+            "kind": "type_text",
+            "text": "good morning team"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "say": "select everything and delete it",
+    "app": "Notes",
+    "overlay": "none",
+    "accept": [
+      {
+        "actions": [
+          {
+            "kind": "press_key",
+            "key": "a",
+            "modifiers": [
+              "command"
+            ]
+          },
+          {
+            "kind": "press_key",
+            "key": "delete"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "say": "undo that twice",
+    "app": "Notes",
+    "overlay": "none",
+    "accept": [
+      {
+        "actions": [
+          {
+            "kind": "press_key",
+            "key": "z",
+            "modifiers": [
+              "command"
+            ]
+          },
+          {
+            "kind": "press_key",
+            "key": "z",
+            "modifiers": [
+              "command"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "say": "copy this then paste it below",
+    "app": "Notes",
+    "overlay": "none",
+    "accept": [
+      {
+        "actions": [
+          {
+            "kind": "press_key",
+            "key": "c",
+            "modifiers": [
+              "command"
+            ]
+          },
+          {
+            "kind": "press_key",
+            "key": "return"
+          },
+          {
+            "kind": "press_key",
+            "key": "v",
+            "modifiers": [
+              "command"
+            ]
+          }
+        ]
+      },
+      {
+        "actions": [
+          {
+            "kind": "press_key",
+            "key": "c",
+            "modifiers": [
+              "command"
+            ]
+          },
+          {
+            "kind": "press_key",
+            "key": "down"
+          },
+          {
+            "kind": "press_key",
+            "key": "v",
+            "modifiers": [
+              "command"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "say": "jot down that the meeting moved to friday",
+    "app": "Mail",
+    "overlay": "none",
+    "accept": [
+      {
+        "actions": [
+          {
+            "kind": "type_text",
+            "text": "the meeting moved to Friday"
+          }
+        ]
+      },
+      {
+        "actions": [
+          {
+            "kind": "type_text",
+            "text": "The meeting moved to Friday"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "say": "start a new line and write thanks",
+    "app": "Notes",
+    "overlay": "none",
+    "accept": [
+      {
+        "actions": [
+          {
+            "kind": "press_key",
+            "key": "return"
+          },
+          {
+            "kind": "type_text",
+            "text": "thanks"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "say": "scroll way down",
+    "app": "Safari",
+    "overlay": "none",
+    "accept": [
+      {
+        "actions": [
+          {
+            "kind": "scroll",
+            "direction": "down",
+            "amount": 20
+          }
+        ]
+      },
+      {
+        "actions": [
+          {
+            "kind": "scroll",
+            "direction": "down",
+            "amount": 15
+          }
+        ]
+      },
+      {
+        "actions": [
+          {
+            "kind": "scroll",
+            "direction": "down",
+            "amount": 25
+          }
+        ]
+      },
+      {
+        "actions": [
+          {
+            "kind": "scroll",
+            "direction": "down",
+            "amount": 30
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "say": "move the mouse a bit to the left",
+    "app": "Finder",
+    "overlay": "none",
+    "accept": [
+      {
+        "actions": [
+          {
+            "kind": "move_cursor",
+            "target_kind": "relative",
+            "dx": -50,
+            "dy": 0
+          }
+        ]
+      },
+      {
+        "actions": [
+          {
+            "kind": "move_cursor",
+            "target_kind": "relative",
+            "dx": -30,
+            "dy": 0
+          }
+        ]
+      },
+      {
+        "actions": [
+          {
+            "kind": "move_cursor",
+            "target_kind": "relative",
+            "dx": -100,
+            "dy": 0
+          }
+        ]
+      },
+      {
+        "actions": [
+          {
+            "kind": "move_cursor",
+            "target_kind": "relative",
+            "dx": -40,
+            "dy": 0
+          }
+        ]
+      },
+      {
+        "actions": [
+          {
+            "kind": "move_cursor",
+            "target_kind": "relative",
+            "dx": -20,
+            "dy": 0
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "say": "go back up to the top of the page",
+    "app": "Safari",
+    "overlay": "none",
+    "accept": [
+      {
+        "actions": [
+          {
+            "kind": "scroll",
+            "direction": "up",
+            "amount": 50
+          }
+        ]
+      },
+      {
+        "actions": [
+          {
+            "kind": "scroll",
+            "direction": "up",
+            "amount": 100
+          }
+        ]
+      },
+      {
+        "actions": [
+          {
+            "kind": "press_key",
+            "key": "up",
+            "modifiers": [
+              "command"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "say": "I wonder what time it is",
+    "app": "Finder",
+    "overlay": "none",
+    "accept": [
+      {
+        "actions": [
+          {
+            "kind": "ignore"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "say": "hmm",
+    "app": "Notes",
+    "overlay": "none",
+    "accept": [
+      {
+        "actions": [
+          {
+            "kind": "ignore"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "say": "that's really interesting, thanks for listening",
+    "app": "Finder",
+    "overlay": "none",
+    "accept": [
+      {
+        "actions": [
+          {
+            "kind": "ignore"
+          }
+        ]
+      }
+    ]
+  }
+]

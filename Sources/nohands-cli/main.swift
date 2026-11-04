@@ -25,6 +25,7 @@ func usage() -> Never {
       nohands-cli parse "<text>"     (dry run: prints the grammar's actions, or "no match -> LLM"; executes nothing)
       nohands-cli run "<phrase>"...  (waits 2 s, executes each phrase in order, 0.8 s apart)
       nohands-cli resolve "<text>"   (waits 3 s, sends text + frontmost app's labels to the configured backend)
+      nohands-cli eval <file> [--runs N]  (scores the configured backend on a fixture set; executes nothing)
       nohands-cli listen             (mic -> VAD -> ASR; Ctrl-C to quit)
     """)
 }
@@ -191,6 +192,43 @@ do {
             // Never print request details; IntentError carries no key material.
             fail("error: \(e)")
         }
+    case "eval":
+        guard let file = rest.first else { usage() }
+        var runs = 1
+        if rest.count == 3, rest[1] == "--runs", let n = Int(rest[2]), n >= 1 { runs = n }
+        else if rest.count != 1 { usage() }
+        let cases = try JSONDecoder().decode([EvalCase].self, from: try Data(contentsOf: URL(fileURLWithPath: file)))
+        let cfgURL = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".config/nohands/config.json")
+        let config = try AppConfig.load(from: try? Data(contentsOf: cfgURL), environment: ProcessInfo.processInfo.environment)
+        let resolver: any IntentResolving
+        let modelName: String
+        switch config.effectiveBackend {
+        case .claude: resolver = ClaudeIntentResolver(config: config); modelName = config.intentModel
+        case .local: resolver = OllamaIntentResolver(config: config); modelName = config.resolvedLocalModel
+        case .off: fail("error: LLM off")
+        }
+        var passed = 0, total = 0
+        var times: [Int] = []
+        for c in cases {
+            for _ in 1...runs {
+                let t0 = ContinuousClock.now
+                var got: [Action] = []
+                var errText: String?
+                do { got = try await resolver.resolve(c.say, context: IntentEval.context(for: c)) }
+                catch { errText = "\(error)" }
+                let ms = Int(t0.duration(to: .now) / .milliseconds(1))
+                times.append(ms)
+                total += 1
+                if errText == nil, IntentEval.matches(got, anyOf: c.accept) {
+                    passed += 1
+                    print("PASS \(ms)ms  \(c.say)")
+                } else {
+                    print("FAIL \(ms)ms  \(c.say)  got: \(errText.map { "error: \($0)" } ?? "\(got)")")
+                }
+            }
+        }
+        let warm = (times.count > 2 ? Array(times.dropFirst(2)) : times).sorted()
+        print("accuracy=\(total == 0 ? 0 : passed * 100 / total)% median=\(warm.isEmpty ? 0 : warm[warm.count / 2])ms (excluding first 2 calls) model=\(modelName)")
     case "listen":
         try await listen()
     default:
