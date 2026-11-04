@@ -3,85 +3,162 @@ import Foundation
 
 public enum MicrophoneError: Error { case noInputFormat, converterUnavailable }
 
+public enum MicrophoneEvent: Sendable, Equatable {
+    case started
+    /// The audio configuration changed (device switch, sample-rate change) and capture was rebuilt.
+    case restarted
+    case failed(String)
+}
+
 /// Captures the default input device as 16 kHz mono Float32 in exact 4096-sample chunks.
 ///
-/// Threading: the AVAudioEngine tap runs on a realtime audio thread. In the tap we only convert
-/// the buffer and append to a lock-protected accumulator; completed chunks are copied out and
-/// delivered to `onChunk` on a private serial queue, never on the audio thread.
+/// Threading: the AVAudioEngine tap runs on a realtime audio thread. There we only copy the raw buffer
+/// and hand it to a private serial queue; format conversion, 4096-sample chunking, `onChunk` and
+/// `onEvent` all run on that queue, never on the audio thread. On AVAudioEngineConfigurationChange
+/// the tap is rebuilt for the new input format and the engine restarted.
+/// Microphone permission is NOT checked here.
 public final class MicrophoneCapture: @unchecked Sendable {
     public static let chunkSize = 4096
 
+    /// Called on the capture queue.
+    public var onEvent: (@Sendable (MicrophoneEvent) -> Void)? {
+        get { lock.lock(); defer { lock.unlock() }; return _onEvent }
+        set { lock.lock(); _onEvent = newValue; lock.unlock() }
+    }
+
     private let engine = AVAudioEngine()
     private let queue = DispatchQueue(label: "nohands.mic.chunks", qos: .userInteractive)
+    private let outFormat: AVAudioFormat
     private let lock = NSLock()
-    private var pending: [Float] = []   // guarded by lock
-    private var running = false         // guarded by lock
+    private var _onEvent: (@Sendable (MicrophoneEvent) -> Void)?
+    private var running = false                              // guarded by lock
+    private var observer: NSObjectProtocol?                  // guarded by lock
+    // Queue-confined:
+    private var onChunk: (@Sendable ([Float]) -> Void)?
+    private var converter: AVAudioConverter?
+    private var pending: [Float] = []
 
-    public init() throws {}
+    public init() throws {
+        guard let f = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 16_000, channels: 1, interleaved: false)
+        else { throw MicrophoneError.converterUnavailable }
+        outFormat = f
+    }
 
     /// 16 kHz mono Float32 chunks of exactly 4096 samples (VadManager.chunkSize), delivered on a background queue.
     public func start(_ onChunk: @escaping @Sendable ([Float]) -> Void) throws {
         lock.lock()
         if running { lock.unlock(); return }
         running = true
-        pending.removeAll()
         lock.unlock()
-
-        let input = engine.inputNode
-        let inFormat = input.outputFormat(forBus: 0)
-        guard inFormat.sampleRate > 0, inFormat.channelCount > 0 else { running = false; throw MicrophoneError.noInputFormat }
-        guard let outFormat = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 16_000, channels: 1, interleaved: false),
-              let converter = AVAudioConverter(from: inFormat, to: outFormat)
-        else { running = false; throw MicrophoneError.converterUnavailable }
-
-        let ratio = outFormat.sampleRate / inFormat.sampleRate
-        let box = ConverterBox(converter)
-        input.installTap(onBus: 0, bufferSize: 4096, format: inFormat) { [weak self] buffer, _ in
-            // Realtime thread: convert, then hand off.
-            guard let self else { return }
-            let capacity = AVAudioFrameCount(Double(buffer.frameLength) * ratio) + 64
-            guard let out = AVAudioPCMBuffer(pcmFormat: outFormat, frameCapacity: capacity) else { return }
-            var supplied = false
-            var error: NSError?
-            let status = box.converter.convert(to: out, error: &error) { _, inputStatus in
-                if supplied { inputStatus.pointee = .noDataNow; return nil }
-                supplied = true
-                inputStatus.pointee = .haveData
-                return buffer
-            }
-            guard status != .error, let ch = out.floatChannelData, out.frameLength > 0 else { return }
-            let samples = Array(UnsafeBufferPointer(start: ch[0], count: Int(out.frameLength)))
-            var chunks: [[Float]] = []
-            self.lock.lock()
-            self.pending.append(contentsOf: samples)
-            while self.pending.count >= Self.chunkSize {
-                chunks.append(Array(self.pending.prefix(Self.chunkSize)))
-                self.pending.removeFirst(Self.chunkSize)
-            }
-            self.lock.unlock()
-            for c in chunks { self.queue.async { onChunk(c) } }
-        }
-        engine.prepare()
-        do { try engine.start() } catch {
-            input.removeTap(onBus: 0)
+        queue.sync { self.onChunk = onChunk; self.pending.removeAll(); self.converter = nil }
+        do {
+            try installTapAndStart()
+        } catch {
             lock.lock(); running = false; lock.unlock()
             throw error
         }
+        let token = NotificationCenter.default.addObserver(
+            forName: .AVAudioEngineConfigurationChange, object: engine, queue: nil
+        ) { [weak self] _ in
+            guard let self else { return }
+            self.queue.async { [weak self] in self?.handleConfigurationChange() }
+        }
+        lock.lock(); observer = token; lock.unlock()
+        emit(.started)
     }
 
     public func stop() {
         lock.lock()
         let was = running
         running = false
-        pending.removeAll()
+        let token = observer
+        observer = nil
         lock.unlock()
         guard was else { return }
+        if let token { NotificationCenter.default.removeObserver(token) }
         engine.inputNode.removeTap(onBus: 0)
         engine.stop()
+        queue.sync { self.onChunk = nil; self.pending.removeAll(); self.converter = nil }
+    }
+
+    private var isRunning: Bool { lock.lock(); defer { lock.unlock() }; return running }
+
+    private func emit(_ e: MicrophoneEvent) {
+        let cb = onEvent
+        queue.async { cb?(e) }
+    }
+
+    private func installTapAndStart() throws {
+        let input = engine.inputNode
+        let inFormat = input.outputFormat(forBus: 0)
+        guard inFormat.sampleRate > 0, inFormat.channelCount > 0 else { throw MicrophoneError.noInputFormat }
+        input.removeTap(onBus: 0)
+        input.installTap(onBus: 0, bufferSize: 4096, format: inFormat) { [weak self] buffer, _ in
+            // Realtime thread: copy and hand off only.
+            guard let self, let copy = Self.copy(buffer) else { return }
+            let box = BufferBox(copy)
+            self.queue.async { self.consume(box.buffer) }
+        }
+        engine.prepare()
+        do { try engine.start() } catch {
+            input.removeTap(onBus: 0)
+            throw error
+        }
+    }
+
+    /// Runs on `queue` after the engine stopped itself because the hardware configuration changed.
+    private func handleConfigurationChange() {
+        guard isRunning else { return }
+        pending.removeAll()
+        converter = nil
+        do {
+            try installTapAndStart()
+            onEvent?(.restarted)
+        } catch {
+            onEvent?(.failed("microphone restart failed: \(error)"))
+        }
+    }
+
+    /// Runs on `queue`. Converts to 16 kHz mono and emits exact 4096-sample chunks.
+    private func consume(_ buffer: AVAudioPCMBuffer) {
+        guard isRunning else { return }
+        if converter == nil || converter?.inputFormat != buffer.format {
+            converter = AVAudioConverter(from: buffer.format, to: outFormat)
+            pending.removeAll()   // partial chunk from a different format is meaningless
+        }
+        guard let converter else { onEvent?(.failed("no converter for \(buffer.format)")); return }
+        let ratio = outFormat.sampleRate / buffer.format.sampleRate
+        let capacity = AVAudioFrameCount(Double(buffer.frameLength) * ratio) + 64
+        guard let out = AVAudioPCMBuffer(pcmFormat: outFormat, frameCapacity: capacity) else { return }
+        var supplied = false
+        var error: NSError?
+        let status = converter.convert(to: out, error: &error) { _, inputStatus in
+            if supplied { inputStatus.pointee = .noDataNow; return nil }
+            supplied = true
+            inputStatus.pointee = .haveData
+            return buffer
+        }
+        guard status != .error, let ch = out.floatChannelData, out.frameLength > 0 else { return }
+        pending.append(contentsOf: UnsafeBufferPointer(start: ch[0], count: Int(out.frameLength)))
+        while pending.count >= Self.chunkSize {
+            let chunk = Array(pending.prefix(Self.chunkSize))
+            pending.removeFirst(Self.chunkSize)
+            onChunk?(chunk)
+        }
+    }
+
+    private static func copy(_ src: AVAudioPCMBuffer) -> AVAudioPCMBuffer? {
+        guard let dst = AVAudioPCMBuffer(pcmFormat: src.format, frameCapacity: src.frameLength),
+              let s = src.floatChannelData, let d = dst.floatChannelData else { return nil }
+        dst.frameLength = src.frameLength
+        for c in 0..<Int(src.format.channelCount) {
+            memcpy(d[c], s[c], Int(src.frameLength) * MemoryLayout<Float>.size)
+        }
+        return dst
     }
 }
 
-private final class ConverterBox: @unchecked Sendable {
-    let converter: AVAudioConverter
-    init(_ c: AVAudioConverter) { converter = c }
+private final class BufferBox: @unchecked Sendable {
+    let buffer: AVAudioPCMBuffer
+    init(_ b: AVAudioPCMBuffer) { buffer = b }
 }
