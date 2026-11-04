@@ -1,4 +1,5 @@
 import Foundation
+import AppKit
 import CoreGraphics
 import NoHandsCore
 import NoHandsMac
@@ -19,6 +20,8 @@ func usage() -> Never {
       nohands-cli vad-test <wav>
       nohands-cli elements           (waits 3 s, lists frontmost app's actionable elements)
       nohands-cli click "<name>"     (waits 3 s, clicks the named element's center)
+      nohands-cli grid               (10x8 grid 4 s, zoom into cell 35 for 4 s, HUD "done")
+      nohands-cli labels             (waits 3 s, badges for frontmost app's elements for 5 s)
       nohands-cli listen             (mic -> VAD -> ASR; Ctrl-C to quit)
     """)
 }
@@ -115,6 +118,25 @@ do {
             fail("no element named \"\(rest[0])\" in \(ax.app)")
         }
         try synth.click(at: hit.clickPoint(screens: AXQuery.screenRectsCG()), button: .left, count: 1)
+    case "grid":
+        await runOverlay { overlay in
+            let bounds = OverlayController.screenBoundsCG(containing: CGPoint(x: 1, y: 1))
+            let grid = GridModel(bounds: bounds)
+            overlay.showGrid(grid)
+            try? await Task.sleep(for: .seconds(4))
+            if let z = grid.zoomed(into: 35) { overlay.showGrid(z) }
+            try? await Task.sleep(for: .seconds(4))
+            overlay.hide()
+            overlay.showHUD("done", duration: .seconds(1.5))
+            try? await Task.sleep(for: .seconds(1.8))
+        }
+    case "labels":
+        let ax = try await frontElements()
+        await runOverlay { overlay in
+            overlay.showLabels(ax.labels)
+            try? await Task.sleep(for: .seconds(5))
+            overlay.hide()
+        }
     case "listen":
         try await listen()
     default:
@@ -133,6 +155,20 @@ func frontElements() async throws -> (app: String, labels: [Int: UIElementInfo])
     try await Task.sleep(for: .seconds(3))
     let q = AXQuery()
     return (q.frontmostAppName, LabelAssigner.assign(q.actionableElements()))
+}
+
+/// Runs `body` on the main actor inside a briefly-running accessory NSApplication, then terminates.
+func runOverlay(_ body: @escaping @MainActor (OverlayController) async -> Void) async {
+    await MainActor.run {
+        let app = NSApplication.shared
+        app.setActivationPolicy(.accessory)
+        let overlay = OverlayController()
+        Task { @MainActor in
+            await body(overlay)
+            NSApplication.shared.terminate(nil)
+        }
+        app.run()
+    }
 }
 
 func sanitized(_ s: String) -> String {
