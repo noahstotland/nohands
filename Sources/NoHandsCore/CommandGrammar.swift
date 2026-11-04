@@ -97,7 +97,7 @@ public struct CommandGrammar: Sendable {
             return rest.isEmpty ? nil : [.openApp(rest.joined(separator: " "))]
         case "type":
             let rest = tokens.dropFirst()
-            return rest.isEmpty ? nil : [.typeText(rest.joined(separator: " "))]
+            return rest.isEmpty ? nil : [.typeText(DictationFormatter.format(rest.joined(separator: " ")))]
         default: break
         }
 

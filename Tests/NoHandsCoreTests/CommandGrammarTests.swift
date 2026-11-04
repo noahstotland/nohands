@@ -63,7 +63,7 @@ let g = CommandGrammar()
 }
 
 @Test func typeCommandAndUnmatched() {
-    #expect(g.parse("type hello world") == [.typeText("hello world")])
+    #expect(g.parse("type hello world") == [.typeText("Hello world")])
     #expect(g.parse("make this window full screen") == nil)
     #expect(g.parse("") == nil)
 }
