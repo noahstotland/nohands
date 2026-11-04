@@ -192,3 +192,12 @@ private let reload = UIElementInfo(id: 1, frame: CGRect(x: 100, y: 100, width: 8
     #expect(i.calls == ["releaseAll"])
     #expect(o.state == .none)
 }
+
+@MainActor @Test func cancelledExecutionStopsBetweenActions() async {
+    let (ex, input, _, _) = make()
+    let task = Task { await ex.execute([.wait(ms: 5000), .typeText("late")]) }
+    try? await Task.sleep(for: .milliseconds(50))
+    task.cancel()
+    #expect(await task.value == "cancelled")
+    #expect(input.calls.isEmpty)
+}

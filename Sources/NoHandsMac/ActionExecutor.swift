@@ -43,6 +43,7 @@ extension OverlayController: OverlayPresenting {
     /// Guards against runaway LLM output being typed into the focused app.
     public static let maxTypedCharacters = 2000
     static let pointerUnknown = "pointer position unknown"
+    public static let cancelled = "cancelled"
 
     private let input: any InputSynthesizing
     private let ax: any ElementProviding
@@ -65,12 +66,19 @@ extension OverlayController: OverlayPresenting {
 
     /// Executes in order; stops at the first failure and shows it in the HUD. Returns the failure message if any.
     /// Any mouse button pressed by this call is released before a failure is returned.
+    /// Returns `cancelled` (without a HUD) when the calling task is cancelled before an action.
     @discardableResult
     public func execute(_ actions: [Action], labels: [Int: UIElementInfo]? = nil) async -> String? {
         pressed = []
         labelSnapshot = labels
         defer { labelSnapshot = nil }
         for (i, action) in actions.enumerated() {
+            // A cancelled task (stop phrase, pause) must not keep acting, e.g. after an interrupted `wait`.
+            if Task.isCancelled {
+                if !pressed.isEmpty { input.releaseAll() }
+                pressed = []
+                return Self.cancelled
+            }
             if let message = await run(action, isLast: i == actions.count - 1) {
                 if !pressed.isEmpty { input.releaseAll() }
                 pressed = []
