@@ -42,6 +42,14 @@ public struct CommandGrammar: Sendable {
             "find": chord(.f, [.command]), "new tab": chord(.t, [.command]),
             "close tab": chord(.w, [.command]),
             "close window": chord(.w, [.command, .shift]),
+            "minimize": chord(.m, [.command]), "minimize window": chord(.m, [.command]),
+            "full screen": chord(.f, [.command, .control]),
+            "hide app": chord(.h, [.command]),
+            "reload": chord(.r, [.command]), "refresh": chord(.r, [.command]),
+            "go back": chord(.leftBracket, [.command]),
+            "go forward": chord(.rightBracket, [.command]),
+            "next tab": chord(.tab, [.control]),
+            "previous tab": chord(.tab, [.control, .shift]),
             "quit app": chord(.q, [.command]),
             "undo": chord(.z, [.command]),
             "redo": chord(.z, [.command, .shift]),
@@ -102,6 +110,14 @@ public struct CommandGrammar: Sendable {
             // "open chrome and go to youtube" is a multi-step request, not an app name: leave it to the LLM.
             guard !rest.isEmpty, rest.allSatisfy({ !Self.compoundMarkers.contains($0) }) else { return nil }
             return [.openApp(rest.joined(separator: " "))]
+        case "go", "search":
+            let prefix = first == "go" ? ["go", "to"] : ["search", "for"]
+            guard Array(tokens.prefix(2)) == prefix else { return nil }
+            // Raw payload (speaker's casing, no DictationFormatter), trailing ASR punctuation trimmed.
+            var payload = transcript.split(whereSeparator: { $0.isWhitespace }).dropFirst(2).joined(separator: " ")
+            while let last = payload.last, ".,!?".contains(last) { payload.removeLast() }
+            guard !payload.isEmpty else { return nil }
+            return [.pressKey(KeyChord(.l, [.command])), .typeText(payload), .pressKey(KeyChord(.return))]
         case "type":
             guard tokens.count > 1 else { return nil }
             // Payload comes from the raw transcript so ASR casing/punctuation survives.

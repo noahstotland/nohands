@@ -114,3 +114,23 @@ let g = CommandGrammar()
     #expect(g.parse("type hello comma world") == [.typeText("Hello, world")])
     #expect(g.parse("type") == nil)
 }
+
+@Test func accessibilityShortcuts() {
+    #expect(g.parse("minimize") == [.pressKey(KeyChord(.m, [.command]))])
+    #expect(g.parse("minimize window") == [.pressKey(KeyChord(.m, [.command]))])
+    #expect(g.parse("full screen") == [.pressKey(KeyChord(.f, [.command, .control]))])
+    #expect(g.parse("hide app") == [.pressKey(KeyChord(.h, [.command]))])
+    #expect(g.parse("reload") == [.pressKey(KeyChord(.r, [.command]))])
+    #expect(g.parse("refresh") == [.pressKey(KeyChord(.r, [.command]))])
+    #expect(g.parse("go back") == [.pressKey(KeyChord(.leftBracket, [.command]))])
+    #expect(g.parse("go forward") == [.pressKey(KeyChord(.rightBracket, [.command]))])
+    #expect(g.parse("next tab") == [.pressKey(KeyChord(.tab, [.control]))])
+    #expect(g.parse("previous tab") == [.pressKey(KeyChord(.tab, [.control, .shift]))])
+    let nav: [Action] = [.pressKey(KeyChord(.l, [.command])), .typeText("youtube"), .pressKey(KeyChord(.return))]
+    #expect(g.parse("go to youtube") == nav)
+    #expect(g.parse("Search for cute cats.") == [.pressKey(KeyChord(.l, [.command])), .typeText("cute cats"),
+                                                .pressKey(KeyChord(.return))])
+    #expect(g.parse("go to sleep") == [.setMode(.sleep)])   // exact phrase still wins
+    #expect(g.parse("go to") == nil)
+    #expect(g.parse("search for") == nil)
+}

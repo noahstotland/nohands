@@ -76,6 +76,9 @@ Transcripts are logged as private, so they show as `<private>` unless private da
 | `enter`, `tab`, `escape`, `delete`, arrow names | Presses that key |
 | `undo`, `redo`, `copy`, `paste`, `cut`, `select all`, `save`, `find` | Standard shortcuts |
 | `new tab`, `close tab`, `close window`, `quit app`, `switch app`, `spotlight` | App and window shortcuts |
+| `minimize`, `full screen`, `hide app`, `reload` / `refresh` | Window and app shortcuts |
+| `go back`, `go forward`, `next tab`, `previous tab` | Browser and tab navigation |
+| `go to <site>`, `search for <words>` | Focuses the address bar, types the text and presses Return |
 | `click`, `double click`, `right click`, `middle click` | Clicks at the pointer |
 | `click 42` | Clicks label or grid cell 42 |
 | `click save` | Clicks the element named "save" |
