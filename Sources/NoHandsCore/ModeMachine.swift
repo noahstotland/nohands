@@ -16,6 +16,14 @@ public struct ModeMachine: Sendable {
         self.mode = mode
     }
 
+    /// Forces the mode (e.g. an LLM-produced `.setMode`). Idempotent: re-applying the current mode changes
+    /// nothing, so an ongoing dictation session is not reset. Entering dictation starts a fresh session.
+    public mutating func apply(mode newMode: Mode) {
+        guard newMode != mode else { return }
+        mode = newMode
+        if newMode == .dictation { session = DictationSession() }
+    }
+
     /// Applies mode transitions contained in the result and returns what the executor should do.
     public mutating func route(_ transcript: String) -> Routing {
         let tokens = CommandGrammar.normalize(transcript)

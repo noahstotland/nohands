@@ -1,5 +1,6 @@
 import AVFoundation
 import Foundation
+import NoHandsCore
 
 public enum MicrophoneError: Error { case noInputFormat, converterUnavailable }
 
@@ -32,6 +33,7 @@ public final class MicrophoneCapture: @unchecked Sendable {
     private let lock = NSLock()
     private var _onEvent: (@Sendable (MicrophoneEvent) -> Void)?
     private var running = false                              // guarded by lock
+    private var generation = 0                               // guarded by lock; bumped by every start/stop
     private var observer: NSObjectProtocol?                  // guarded by lock
     // Queue-confined:
     private var onChunk: (@Sendable ([Float]) -> Void)?
@@ -49,19 +51,23 @@ public final class MicrophoneCapture: @unchecked Sendable {
         lock.lock()
         if running { lock.unlock(); return }
         running = true
+        generation += 1
+        let gen = generation
         lock.unlock()
         queue.sync { self.onChunk = onChunk; self.pending.removeAll(); self.converter = nil }
         do {
-            try installTapAndStart()
+            try installTapAndStart(generation: gen)
         } catch {
-            lock.lock(); running = false; lock.unlock()
+            lock.lock()
+            if generation == gen { running = false }
+            lock.unlock()
             throw error
         }
         let token = NotificationCenter.default.addObserver(
             forName: .AVAudioEngineConfigurationChange, object: engine, queue: nil
         ) { [weak self] _ in
             guard let self else { return }
-            self.queue.async { [weak self] in self?.handleConfigurationChange() }
+            self.queue.async { [weak self] in self?.handleConfigurationChange(generation: gen, failures: 0) }
         }
         lock.lock(); observer = token; lock.unlock()
         emit(.started)
@@ -71,6 +77,7 @@ public final class MicrophoneCapture: @unchecked Sendable {
         lock.lock()
         let was = running
         running = false
+        generation += 1
         let token = observer
         observer = nil
         lock.unlock()
@@ -83,12 +90,16 @@ public final class MicrophoneCapture: @unchecked Sendable {
 
     private var isRunning: Bool { lock.lock(); defer { lock.unlock() }; return running }
 
+    /// True while `gen` is still the live capture session (no stop()/restart since it was taken).
+    private func isCurrent(_ gen: Int) -> Bool { lock.lock(); defer { lock.unlock() }; return running && generation == gen }
+
     private func emit(_ e: MicrophoneEvent) {
         let cb = onEvent
         queue.async { cb?(e) }
     }
 
-    private func installTapAndStart() throws {
+    private func installTapAndStart(generation gen: Int) throws {
+        guard isCurrent(gen) else { return }
         let input = engine.inputNode
         let inFormat = input.outputFormat(forBus: 0)
         guard inFormat.sampleRate > 0, inFormat.channelCount > 0 else { throw MicrophoneError.noInputFormat }
@@ -104,18 +115,31 @@ public final class MicrophoneCapture: @unchecked Sendable {
             input.removeTap(onBus: 0)
             throw error
         }
+        // stop() may have run while the engine was starting (it cannot tear down an engine that was not yet
+        // running); re-check and tear down so the engine never outlives stop().
+        if !isCurrent(gen) {
+            input.removeTap(onBus: 0)
+            engine.stop()
+        }
     }
 
     /// Runs on `queue` after the engine stopped itself because the hardware configuration changed.
-    private func handleConfigurationChange() {
-        guard isRunning else { return }
+    /// A failed rebuild is retried (see `RestartBackoff`) before `.failed` is emitted.
+    private func handleConfigurationChange(generation gen: Int, failures: Int) {
+        guard isCurrent(gen) else { return }
         pending.removeAll()
         converter = nil
         do {
-            try installTapAndStart()
-            onEvent?(.restarted)
+            try installTapAndStart(generation: gen)
+            if isCurrent(gen) { onEvent?(.restarted) }
         } catch {
-            onEvent?(.failed("microphone restart failed: \(error)"))
+            if let delay = RestartBackoff().delay(afterFailures: failures + 1) {
+                queue.asyncAfter(deadline: .now() + delay) { [weak self] in
+                    self?.handleConfigurationChange(generation: gen, failures: failures + 1)
+                }
+            } else {
+                onEvent?(.failed("microphone restart failed: \(error)"))
+            }
         }
     }
 

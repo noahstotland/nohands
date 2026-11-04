@@ -33,3 +33,23 @@ import Testing
     #expect(m.route("hello") == .execute([.typeText("Hello")]))
     #expect(m.route("world") == .execute([.typeText(" world")]))
 }
+
+@Test func applyModeIsIdempotentAndKeepsDictationSession() {
+    var m = ModeMachine()
+    _ = m.route("start dictating")
+    #expect(m.route("hello there") == .execute([.typeText("Hello there")]))
+    m.apply(mode: .dictation)   // same mode: must not reset session spacing
+    #expect(m.route("again") == .execute([.typeText(" again")]))
+}
+
+@Test func applyModeSyncsMachineAndResetsSessionOnEnteringDictation() {
+    var m = ModeMachine()
+    m.apply(mode: .dictation)
+    #expect(m.mode == .dictation)
+    #expect(m.route("hello") == .execute([.typeText("Hello")]))
+    m.apply(mode: .command)
+    m.apply(mode: .dictation)   // fresh session: capitalized, no leading space
+    #expect(m.route("world") == .execute([.typeText("World")]))
+    m.apply(mode: .sleep)
+    #expect(m.route("click") == .ignore(reason: "sleeping"))
+}
