@@ -18,7 +18,7 @@ mic → Silero VAD → Parakeet speech recognition (on-device)
 ```
 
 - **Fast path:** a deterministic grammar matches the common commands in under a millisecond.
-- **Natural language:** anything the grammar can't match goes to Claude, which returns structured actions. This needs an Anthropic API key and is optional.
+- **Natural language:** anything the grammar can't match goes to Claude, which returns structured actions. This needs an Anthropic API key or a local Ollama model, and is optional.
 - **Targeting:** say "show numbers" to label every clickable element in the frontmost app, or "grid" to overlay a numbered 10×8 grid you can zoom into.
 
 ## Requirements
@@ -26,7 +26,7 @@ mic → Silero VAD → Parakeet speech recognition (on-device)
 - Apple Silicon Mac, macOS 14 or later
 - Xcode 16 / Swift 6 toolchain
 - Microphone and Accessibility permissions
-- Optional: an Anthropic API key for natural-language commands
+- Optional, for natural-language commands: an Anthropic API key, or a local model through [Ollama](https://ollama.com) (no key, about 2-5 GB of free RAM)
 
 ## Build
 
@@ -66,6 +66,22 @@ log stream --predicate 'subsystem == "dev.nohands.app"'
 Transcripts are logged as private, so they show as `<private>` unless private data logging is enabled (`sudo log config --mode "private_data:on"`). Running `build/NoHands.app/Contents/MacOS/NoHands` directly from a terminal also prints the full lines to that terminal.
 
 **Claude API key:** shell exports do not reach an app started with `open`. Put the key in `~/.config/nohands/config.json` (see Configuration) and run `chmod 600 ~/.config/nohands/config.json`. Without a key, natural-language commands show "LLM off" and the fast grammar still works.
+
+## Local model (no API key)
+
+NoHands can resolve natural-language commands with a model running on your Mac through Ollama, so nothing leaves the machine and it works offline once the model is downloaded.
+
+```bash
+Scripts/setup-local-model.sh            # picks a model by RAM
+Scripts/setup-local-model.sh qwen2.5:3b-instruct   # or name one
+```
+
+The script installs Ollama with Homebrew if needed, starts it, pulls the model and runs a smoke test. It is safe to re-run. You can also download the model from the NoHands menu. Ollama installed with brew starts at login (`brew services`), so the model server is there after a reboot.
+
+- **Default model:** `qwen2.5:7b-instruct` with 12 GB of RAM or more, otherwise `qwen2.5:3b-instruct`.
+- **RAM:** the 7B model needs about 5 GB free, the 3B model about 2 GB.
+- **Backend choice:** `intentBackend` is `auto` (default: Claude when an API key is set, otherwise the local model), `claude`, `local` or `off`. Set `localModel` and `ollamaURL` to change the model or server (only `127.0.0.1`, `localhost` or `::1` over `http` is accepted).
+- **If it fails:** the HUD says `local model not running: start Ollama` or `local model not downloaded: see the NoHands menu`.
 
 ## Voice commands
 
@@ -121,6 +137,9 @@ Optional file at `~/.config/nohands/config.json`. Every key may be omitted. For 
 {
   "anthropicAPIKey": "sk-ant-...",
   "intentModel": "claude-opus-5-5",
+  "intentBackend": "auto",
+  "localModel": "qwen2.5:7b-instruct",
+  "ollamaURL": "http://127.0.0.1:11434",
   "asrModelVersion": "v2",
   "silenceMs": 350,
   "gridColumns": 10,
@@ -132,7 +151,7 @@ Optional file at `~/.config/nohands/config.json`. Every key may be omitted. For 
 
 ## Privacy
 
-Audio never leaves your machine. Only commands the grammar can't match are sent to Claude, as text: your transcript, the frontmost app's name and the titles of its visible controls. Without an API key nothing is ever sent.
+Audio never leaves your machine. Only commands the grammar can't match are sent to Claude (or to the local model, which stays on your Mac), as text: your transcript, the frontmost app's name and the titles of its visible controls. Without an API key nothing is sent off the Mac; with the local backend, text goes only to Ollama on `127.0.0.1`.
 
 **There is no wake word and no echo cancellation.** Any audio the microphone hears (calls, videos, other people talking, your own speakers) is transcribed and acted on, and in dictation mode it is typed into the focused app. With an API key, phrases the grammar doesn't match are also sent to Claude as text. Say "go to sleep" before leaving the desk or when playing audio; only "wake up" is honored while asleep.
 
