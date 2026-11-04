@@ -46,4 +46,15 @@ import CoreGraphics
         #expect(OverlayMath.screenIndex(for: CGRect(x: -5, y: 10, width: 20, height: 10), in: screens) == 0)
         #expect(OverlayMath.screenIndex(for: CGRect(x: 500, y: 500, width: 10, height: 10), in: screens) == nil)
     }
+
+    @Test func drawnLabelsDropsOffScreen() {
+        let screens = [CGRect(x: 0, y: 0, width: 100, height: 100)]
+        func el(_ id: Int, _ f: CGRect) -> UIElementInfo { UIElementInfo(id: id, frame: f, title: "", role: "") }
+        let labels = [3: el(3, CGRect(x: 10, y: 10, width: 5, height: 5)),
+                      7: el(7, CGRect(x: -5, y: 10, width: 20, height: 5)),
+                      9: el(9, CGRect(x: 500, y: 500, width: 5, height: 5))]
+        let out = OverlayMath.drawnLabels(labels, screens: screens)
+        #expect(Set(out.keys) == [3, 7])
+        #expect(out[7]?.id == 7)
+    }
 }

@@ -34,6 +34,11 @@ public enum OverlayMath {
         return screens.firstIndex(where: { $0.intersects(frame) })
     }
 
+    /// Labels that get a badge (not entirely off every screen); original numbers preserved.
+    public static func drawnLabels(_ labels: [Int: UIElementInfo], screens: [CGRect]) -> [Int: UIElementInfo] {
+        labels.filter { screenIndex(for: $0.value.frame, in: screens) != nil }
+    }
+
     /// Collapses all whitespace runs to single spaces; nil if nothing is left.
     /// Truncates to `maxChars` characters including a trailing ellipsis.
     public static func hudText(_ text: String, maxChars: Int = 80) -> String? {

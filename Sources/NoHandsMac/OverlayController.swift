@@ -32,8 +32,9 @@ public final class OverlayController {
         removeLabelsPanels()
         let screensCG = Self.allScreensCG()
         let h = Self.primaryHeight
+        let drawn = OverlayMath.drawnLabels(labels, screens: screensCG)
         var perScreen = [[Int: UIElementInfo]](repeating: [:], count: screensCG.count)
-        for (n, e) in labels {
+        for (n, e) in drawn {
             if let i = OverlayMath.screenIndex(for: e.frame, in: screensCG) { perScreen[i][n] = e }
         }
         for (i, screen) in screensCG.enumerated() where !perScreen[i].isEmpty {
@@ -45,7 +46,7 @@ public final class OverlayController {
             panel.orderFrontRegardless()
             labelsPanels.append(panel)
         }
-        state = .labels(labels)
+        state = .labels(drawn)
     }
 
     public func hide() {
