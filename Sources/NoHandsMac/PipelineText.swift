@@ -36,4 +36,9 @@ public enum PipelineText {
     public static func logLine(trace: LatencyTrace, transcript: String, summary: String) -> String {
         "[\(trace.summary)] \(transcript) -> \(summary)"
     }
+
+    /// Truncates for the menu: at most `limit` characters, with an ellipsis when cut.
+    public static func truncated(_ text: String, limit: Int = 60) -> String {
+        text.count <= limit ? text : String(text.prefix(limit - 1)) + "…"
+    }
 }

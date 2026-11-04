@@ -4,7 +4,7 @@
 
 Control your Mac with your voice and nothing else. Dictate into any app, press shortcuts, move and click the mouse, and give natural-language commands. Speech recognition runs on-device, so ordinary commands never touch the network.
 
-> **Status: work in progress.** The core logic, input synthesis and audio pipeline are built and unit-tested. The menu-bar app, overlays and Claude integration are still being built. Nothing has been run end to end against real apps yet.
+> **Status: work in progress.** The app is wired up end to end (microphone, voice activity detection, speech recognition, command routing, execution, menu-bar UI) but has not yet been verified on real hardware against real apps.
 
 ## How it works
 
@@ -37,6 +37,28 @@ swift test
 
 The first build downloads and compiles [FluidAudio](https://github.com/FluidInference/FluidAudio). Speech models download on first use.
 
+## Run it
+
+```bash
+Scripts/bundle.sh && open build/NoHands.app
+```
+
+`Scripts/bundle.sh` builds a release binary, assembles `build/NoHands.app` and code-signs it. NoHands is a menu-bar app (no Dock icon); the menu bar shows `CMD`, `DICT` or `ZZZ` for the current mode.
+
+**First run:**
+
+1. **Microphone** — macOS asks when the app starts. If you click Don't Allow, the menu shows "Microphone denied — open Settings".
+2. **Accessibility** — needed to type, click and read UI elements. macOS opens a prompt; enable NoHands under System Settings > Privacy & Security > Accessibility. The menu shows a red "Grant Accessibility…" item until it is granted.
+3. NoHands starts listening only after both are granted, and checks for Accessibility every 2 seconds, so no restart is needed. The first launch also downloads the speech models.
+
+**Ad-hoc signature caveat:** by default the app is ad-hoc signed, so macOS treats every rebuild as a new app and you must re-grant Microphone and Accessibility each time (remove the stale NoHands entry in Accessibility first). Set a stable signing identity to avoid this:
+
+```bash
+CODESIGN_IDENTITY="Apple Development: Your Name (TEAMID)" Scripts/bundle.sh
+```
+
+**Logs:** the app prints one line per utterance, `[asr=…ms total=…ms] <transcript> -> <what it did>`, plus warnings. Run `build/NoHands.app/Contents/MacOS/NoHands` from a terminal to see it, or use `log stream --predicate 'process == "NoHands"'`.
+
 ## Voice commands
 
 | Say | Does |
@@ -58,6 +80,26 @@ The first build downloads and compiles [FluidAudio](https://github.com/FluidInfe
 | `go to sleep` / `wake up` | Pause and resume listening |
 
 In dictation mode, say `period`, `comma`, `question mark`, `new line`, `new paragraph`, `open quote` and similar to insert punctuation.
+
+## CLI tools
+
+`nohands-cli` exercises the pieces without the menu-bar app (`swift run nohands-cli <subcommand>`). Subcommands that act on other apps need Accessibility for your terminal and wait a few seconds so you can focus the target app.
+
+| Subcommand | Does |
+|---|---|
+| `type "<text>"` | Waits 2 s, then types the text |
+| `key "<chord>"` | Presses a key chord, e.g. `"command shift s"` |
+| `click-at <x> <y>` | Clicks at screen coordinates |
+| `move <x> <y>` | Moves the pointer |
+| `transcribe <wav>` | Transcribes an audio file and prints timings |
+| `vad-test <wav>` | Prints voice-activity events for an audio file |
+| `elements` | Lists the frontmost app's actionable elements |
+| `click "<name>"` | Clicks the named element |
+| `grid` | Shows the 10×8 grid, zooms into cell 35 |
+| `labels` | Shows numbered badges on the frontmost app's elements |
+| `run "<phrase>"...` | Executes grammar phrases in order |
+| `resolve "<text>"` | Sends text and the frontmost app's labels to Claude (spends API credit) |
+| `listen` | Microphone to VAD to speech recognition, printing transcripts |
 
 ## Configuration
 

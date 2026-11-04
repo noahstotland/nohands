@@ -25,3 +25,11 @@ import NoHandsCore
     t.actionsDone = start.advanced(by: .milliseconds(150))
     #expect(PipelineText.logLine(trace: t, transcript: "click", summary: "llm") == "[asr=100ms total=150ms] click -> llm")
 }
+
+@Test func menuTranscriptTruncation() {
+    #expect(PipelineText.truncated("short") == "short")
+    let long = String(repeating: "a", count: 100)
+    #expect(PipelineText.truncated(long).count == 60)
+    #expect(PipelineText.truncated(long).hasSuffix("…"))
+    #expect(PipelineText.truncated(String(repeating: "b", count: 60)).count == 60)
+}
