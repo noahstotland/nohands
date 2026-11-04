@@ -38,15 +38,16 @@ public final class AXQuery: @unchecked Sendable {
     }
 
     /// Chromium builds the page's accessibility tree lazily; flag it once per pid.
+    /// The page tree appears ~0.5 s AFTER exposure and this never waits (it runs on the main actor), so the
+    /// first walk of a freshly exposed browser is thin. Callers that need page content must re-observe
+    /// (the task loop's settle polling does; the voice path accepts a thin first walk).
     private func exposeChromiumTree(_ app: NSRunningApplication, _ appEl: AXUIElement) {
         guard let id = app.bundleIdentifier, Self.chromiumBundleIDs.contains(id) else { return }
         let pid = app.processIdentifier
         let first = lock.withLock { exposedPids.insert(pid).inserted }
         guard first else { return }
-        // Chrome answers with an error code but does start building the tree; it needs a moment
-        // before the page's nodes appear, so wait once on first exposure.
+        // Chrome answers with an error code but does start building the tree.
         AXUIElementSetAttributeValue(appEl, "AXManualAccessibility" as CFString, kCFBooleanTrue)
-        Thread.sleep(forTimeInterval: 0.6)
     }
 
     private func focusedWindow() -> (app: NSRunningApplication, appEl: AXUIElement, window: AXUIElement)? {
@@ -67,8 +68,9 @@ public final class AXQuery: @unchecked Sendable {
         guard let f = focusedWindow() else { return nil }
         exposeChromiumTree(f.app, f.appEl)
         var visited = 0
+        let deadline = ContinuousClock.now.advanced(by: budget)
         func find(_ el: AXUIElement, depth: Int) -> String? {
-            guard depth <= Self.maxDepth, visited < maxNodes else { return nil }
+            guard depth <= Self.maxDepth, visited < maxNodes, ContinuousClock.now < deadline else { return nil }
             visited += 1
             AXUIElementSetMessagingTimeout(el, 0.05)
             if Self.string(el, kAXRoleAttribute) == "AXWebArea" {

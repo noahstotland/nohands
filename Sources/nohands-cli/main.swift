@@ -147,7 +147,10 @@ do {
             fail("Accessibility permission is not granted to this process (or its terminal). Enable it in System Settings > Privacy & Security > Accessibility, then rerun.")
         }
         try await Task.sleep(for: .seconds(3))
-        let (obs, _) = ScreenObserver(ax: AXQuery(budget: .milliseconds(1000), maxNodes: 6000), maxElements: AppConfig().maxObservedElements)
+        let query = AXQuery(budget: .milliseconds(1000), maxNodes: 6000)
+        _ = query.actionableElements()   // exposes a Chromium page tree, which appears ~0.5 s later
+        try await Task.sleep(for: .seconds(1))
+        let (obs, _) = ScreenObserver(ax: query, maxElements: AppConfig().maxObservedElements)
             .observe(mode: .command, overlay: .none)
         print(ClaudeRequestBuilder.userMessage(request: StepRequest(goal: "-", step: 1, maxSteps: 12, history: [], observation: obs)))
     case "parse":
