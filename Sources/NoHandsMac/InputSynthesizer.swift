@@ -104,8 +104,9 @@ public struct CGEventInputSynthesizer: InputSynthesizing {
     }
 
     public func mouseUp(_ button: MouseButton, at point: CGPoint) throws {
-        try post(button, down: false, at: point, clickState: 1)
+        // Clear held state first so a failed event creation can never leave a stale drag.
         buttons.withLock { $0.up(button) }
+        try post(button, down: false, at: point, clickState: 1)
     }
 
     public func scroll(_ direction: Direction, lines: Int) throws {

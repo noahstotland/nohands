@@ -13,3 +13,11 @@ import Testing
     #expect(s.heldButton == nil)
     #expect(s.moveKind == .moved)
 }
+
+@Test func mouseStateUpClearsHeldButton() {
+    var s = MouseButtonState()
+    s.down(.right)
+    s.up(.right)
+    #expect(s.heldButton == nil)
+    #expect(s.moveKind == .moved)
+}
