@@ -49,7 +49,7 @@ Scripts/bundle.sh && open build/NoHands.app
 
 1. **Microphone** — macOS asks when the app starts. If you click Don't Allow, the menu shows "Microphone denied — open Settings".
 2. **Accessibility** — needed to type, click and read UI elements. macOS opens a prompt; enable NoHands under System Settings > Privacy & Security > Accessibility. The menu shows a red "Grant Accessibility…" item until it is granted.
-3. NoHands starts listening only after both are granted, and checks for Accessibility every 2 seconds, so no restart is needed. The first launch also downloads the speech models.
+3. NoHands starts listening only after both are granted, and re-checks Accessibility every few seconds (and pauses if you revoke it), so no restart is needed. The first launch also downloads the speech models.
 
 **Ad-hoc signature caveat:** by default the app is ad-hoc signed, so macOS treats every rebuild as a new app and you must re-grant Microphone and Accessibility each time (remove the stale NoHands entry in Accessibility first). Set a stable signing identity to avoid this:
 

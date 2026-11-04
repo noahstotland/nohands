@@ -19,9 +19,11 @@ public enum PipelineText {
     }
 
     /// Short description of a routing decision for the one-line log.
-    public static func summary(_ routing: Routing) -> String {
+    /// `detailed: false` (the default) is payload-free and safe for public logs; `true` includes payloads
+    /// (typed text, element and app names) and belongs only in private log fields or a terminal.
+    public static func summary(_ routing: Routing, detailed: Bool = false) -> String {
         switch routing {
-        case .execute(let actions): "execute \(describe(actions))"
+        case .execute(let actions): "execute \(detailed ? describe(actions) : ActionSummary.kinds(actions))"
         case .resolveWithLLM: "llm"
         case .ignore(let reason): "ignore(\(reason))"
         }

@@ -29,6 +29,9 @@ import NoHandsCore
     private var mic: MicrophoneCapture?
     private var tasks: [Task<Void, Never>] = []
     private var consumer: Task<Void, Never>?
+    /// Bumped by every stop(). start() compares it after its last await so a stop() requested while start()
+    /// was suspended (VAD load, warm-up) wins and the mic is never started.
+    private var stopGeneration = 0
     private var starting = false
     private var warmedUp = false
     private var llmOffShown = false
@@ -58,6 +61,7 @@ import NoHandsCore
         guard mic == nil, !starting else { return }
         starting = true
         defer { starting = false }
+        let requested = stopGeneration
 
         // A consumer from a previous session may still be executing an utterance; let it finish first so
         // execution stays strictly serialized across pause/resume.
@@ -69,6 +73,8 @@ import NoHandsCore
         await vad.reset()
         if !warmedUp { warmedUp = await warmUp() }
 
+        guard requested == stopGeneration else { return }   // stop()/pause() arrived while we were loading
+
         let (chunks, chunkCont) = AsyncStream<[Float]>.makeStream(bufferingPolicy: .unbounded)
         // At most 2 pending utterances; when full the OLDEST is dropped.
         let (utterances, uttCont) = AsyncStream<(samples: [Float], at: ContinuousClock.Instant)>
@@ -78,7 +84,7 @@ import NoHandsCore
         let capture = try MicrophoneCapture()
         capture.onEvent = { [weak self] event in
             if case .failed(let message) = event {
-                PipelineLog.error("[mic] \(message)")
+                PipelineLog.error("[mic] failure", detail: message)
                 Task { @MainActor in
                     guard let self else { return }
                     self.overlay.showHUD("microphone error")
@@ -104,7 +110,7 @@ import NoHandsCore
                         }
                     }
                 } catch {
-                    PipelineLog.error("vad error (state reset): \(error)")
+                    PipelineLog.error("vad error (state reset)", detail: "\(error)")
                     await vad.reset()
                     assembler.reset()
                 }
@@ -125,7 +131,7 @@ import NoHandsCore
                         }
                     }
                 } catch {
-                    PipelineLog.error("asr error (utterance skipped): \(error)")
+                    PipelineLog.error("asr error (utterance skipped)", detail: "\(error)")
                 }
             }
             jobCont.finish()
@@ -155,6 +161,7 @@ import NoHandsCore
 
     /// Stops the microphone and drops any queued audio. Safe to call repeatedly.
     public func stop() {
+        stopGeneration += 1
         mic?.stop()
         mic = nil
         for t in tasks { t.cancel() }
@@ -174,7 +181,7 @@ import NoHandsCore
         do {
             _ = try await transcriber.transcribe(samples)
         } catch {
-            PipelineLog.error("[asr] warm-up failed: \(error)")
+            PipelineLog.error("[asr] warm-up failed", detail: "\(error)")
             onError?("warm-up failed")
             return false
         }
@@ -199,26 +206,32 @@ import NoHandsCore
         }
         lastTranscript = text
         let routing = modeMachine.route(text)
-        var outcome = PipelineText.summary(routing)
+        var outcome = PipelineText.summary(routing)                    // public: kinds only
+        var detail = PipelineText.summary(routing, detailed: true)     // private: with payloads
 
         switch routing {
         case .ignore:
             break   // nothing on the HUD (this also keeps sleep silent)
         case .execute(let actions):
             overlay.showHUD(text)
-            if let failure = await executor.execute(actions) { outcome += " FAILED(\(failure))" }
+            if let failure = await executor.execute(actions) {
+                outcome += " FAILED"
+                detail += " FAILED(\(failure))"
+            }
         case .resolveWithLLM(let phrase):
             overlay.showHUD(text)
-            outcome += await resolve(phrase)
+            let r = await resolve(phrase)
+            outcome += r.pub
+            detail += r.priv
         }
 
         trace.actionsDone = .now
-        PipelineLog.utterance(trace: trace, transcript: text, outcome: outcome)
+        PipelineLog.utterance(trace: trace, transcript: text, outcome: outcome, detail: detail)
         publishStatus()
     }
 
-    /// Returns a suffix for the log line.
-    private func resolve(_ phrase: String) async -> String {
+    /// Returns (public, private) suffixes for the log line.
+    private func resolve(_ phrase: String) async -> (pub: String, priv: String) {
         guard let resolver else {
             if llmOffShown {
                 overlay.showHUD(PipelineText.didntCatch)
@@ -226,24 +239,29 @@ import NoHandsCore
                 llmOffShown = true
                 overlay.showHUD(PipelineText.llmOff)
             }
-            return " (no resolver)"
+            return (" (no resolver)", " (no resolver)")
         }
         let context = IntentContextBuilder.make(elements: ax, mode: modeMachine.mode)
         do {
             let actions = try await resolver.resolve(phrase, context: context)
             guard !actions.isEmpty else {
                 overlay.showHUD(PipelineText.didntCatch)
-                return " -> no actions"
+                return (" -> no actions", " -> no actions")
             }
-            var suffix = " -> \(PipelineText.describe(actions))"
-            if let failure = await executor.execute(actions) { suffix += " FAILED(\(failure))" }
-            return suffix
+            var pub = " -> \(ActionSummary.kinds(actions))"
+            var priv = " -> \(PipelineText.describe(actions))"
+            if let failure = await executor.execute(actions) {
+                pub += " FAILED"
+                priv += " FAILED(\(failure))"
+            }
+            return (pub, priv)
         } catch let error as IntentError {
             if let message = PipelineText.hud(for: error) { overlay.showHUD(message) }
-            return " -> error(\(Self.label(error)))"
+            let s = " -> error(\(Self.label(error)))"
+            return (s, s)
         } catch {
             overlay.showHUD(PipelineText.didntCatch)
-            return " -> error"
+            return (" -> error", " -> error")
         }
     }
 

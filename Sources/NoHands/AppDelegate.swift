@@ -91,7 +91,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     try await pipeline.resume()
                     userPaused = false
                 } catch {
-                    PipelineLog.error("resume failed: \(error)")
+                    PipelineLog.error("resume failed", detail: "\(error)")
                     overlay.showHUD("microphone error")
                     errorText = "microphone failed"
                 }
@@ -110,7 +110,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             pipeline.stop()
             Task {
                 do { try await pipeline.start(); userPaused = false } catch {
-                    PipelineLog.error("retry failed: \(error)")
+                    PipelineLog.error("retry failed", detail: "\(error)")
                     errorText = "microphone failed"
                 }
                 refresh()
@@ -186,7 +186,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 if !userPaused {
                     Task {
                         do { try await pipeline.resume() } catch {
-                            PipelineLog.error("resume after Accessibility grant failed: \(error)")
+                            PipelineLog.error("resume after Accessibility grant failed", detail: "\(error)")
                             errorText = "microphone failed"
                         }
                         refresh()
@@ -222,7 +222,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 schedulePoll(every: 5)
                 overlay.showHUD("NoHands is listening", duration: .seconds(2))
             } catch {
-                PipelineLog.error("failed to start pipeline: \(error)")
+                PipelineLog.error("failed to start pipeline", detail: "\(error)")
                 errorText = "start failed"
                 overlay.showHUD("failed to start: \(error.localizedDescription)", duration: .seconds(5))
             }
