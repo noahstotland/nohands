@@ -24,8 +24,8 @@ public final class AXQuery: @unchecked Sendable {
 
     public init() {}
 
-    public var frontmostAppName: String {
-        NSWorkspace.shared.frontmostApplication?.localizedName ?? ""
+    public func frontmostAppName() -> String? {
+        NSWorkspace.shared.frontmostApplication?.localizedName
     }
 
     public func element(for id: Int) -> AXUIElement? {
