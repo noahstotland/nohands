@@ -35,5 +35,6 @@ public enum Action: Equatable, Codable, Sendable {
     case hideOverlay
     case setMode(Mode)
     case openApp(String)
+    case wait(ms: Int)
     case ignore
 }

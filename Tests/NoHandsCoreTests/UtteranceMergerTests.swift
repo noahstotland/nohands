@@ -30,7 +30,7 @@ import Testing
     let i = try #require(s.range(of: "\"intent\""))
     let a = try #require(s.range(of: "\"actions\""))
     #expect(i.lowerBound < a.lowerBound)
-    #expect(s.contains(#""required":["intent","actions"]"#))
+    #expect(s.contains(#""required":["intent","status","actions"]"#))
     #expect(OrderedJSON.string("a\"b\n").serialized == #""a\"b\n""#)
 }
 

@@ -22,6 +22,7 @@ public enum ActionSummary {
         case .hideOverlay: "hideOverlay"
         case .setMode(let m): "setMode(\(m.rawValue))"
         case .openApp: "openApp"
+        case .wait: "wait"
         case .ignore: "ignore"
         }
     }

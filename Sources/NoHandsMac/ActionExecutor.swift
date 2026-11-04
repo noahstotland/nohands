@@ -130,6 +130,8 @@ extension OverlayController: OverlayPresenting {
                 hideStaleOverlay()
                 let arrived = await waitForFront(name)
                 if !arrived && !isLast { return "app did not come to front" }
+            case .wait(let ms):
+                try? await Task.sleep(for: .milliseconds(ms))
             case .ignore:
                 break
             }

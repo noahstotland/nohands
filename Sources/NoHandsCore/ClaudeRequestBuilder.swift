@@ -8,7 +8,11 @@ public struct ClaudeRequestBuilder: Sendable {
     public init(model: String, effort: String = "medium") { self.model = model; self.effort = effort }
 
     public func body(transcript: String, context: IntentContext) throws -> Data {
-        let user = Self.userMessage(transcript: transcript, context: context)
+        try body(request: StepRequest(oneShot: transcript, context: context))
+    }
+
+    public func body(request: StepRequest) throws -> Data {
+        let user = Self.userMessage(request: request)
         let obj: [String: Any] = [
             "model": model,
             "max_tokens": 1024,
@@ -24,10 +28,30 @@ public struct ClaudeRequestBuilder: Sendable {
     }
 
     public static func userMessage(transcript: String, context: IntentContext) -> String {
-        var user = "App: \(Self.sanitize(context.frontmostApp))\nMode: \(context.mode.rawValue)\nOverlay: \(Self.sanitize(context.overlay))\nVisible elements:\n"
-        for e in context.labeledElements { user += "\(e.number): \(Self.sanitize(e.title))\n" }
-        user += "\nRequest: \(transcript)"
-        return user
+        userMessage(request: StepRequest(oneShot: transcript, context: context))
+    }
+
+    public static func userMessage(request r: StepRequest) -> String {
+        let o = r.observation
+        let goal = sanitize(r.goal)
+        var s = "Goal: \(goal)\nStep: \(r.step) of \(r.maxSteps)\n"
+        if !r.history.isEmpty {
+            s += "History:\n"
+            for (i, h) in r.history.enumerated() {
+                let outcome = h.failure.map { "FAILED: \(sanitize($0))" } ?? "ok"
+                s += "  \(i + 1). \(sanitize(h.intent)) -> \(ActionSummary.kinds(h.actions)) (\(outcome))\n"
+            }
+        }
+        s += "App: \(sanitize(o.app))   Window: \(sanitize(o.windowTitle).nonEmpty ?? "-")   URL: \(o.url.map(sanitize) ?? "-")\n"
+        s += "Mode: \(o.mode.rawValue)   Overlay: \(sanitize(o.overlay))\n"
+        s += "Visible elements:\n"
+        for e in o.elements {
+            var role = sanitize(e.role).lowercased()
+            if role.hasPrefix("ax") { role.removeFirst(2) }
+            s += "  \(e.number) [\(role)] \(sanitize(e.title))\n"
+        }
+        s += "\nRequest: \(r.step == 1 ? goal : "Continue toward the goal.")"
+        return s
     }
 
     static func sanitize(_ s: String) -> String {
@@ -47,3 +71,5 @@ public struct ClaudeRequestBuilder: Sendable {
         ]
     }
 }
+
+private extension String { var nonEmpty: String? { isEmpty ? nil : self } }

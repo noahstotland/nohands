@@ -3,7 +3,7 @@ import Foundation
 public enum IntentDecodeError: Error, Equatable { case refusal, noTextBlock, malformed(String) }
 
 public enum IntentDecoder {
-    public static func actions(fromResponse data: Data) throws -> [Action] {
+    public static func step(fromResponse data: Data) throws -> IntentStep {
         guard let root = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
             throw IntentDecodeError.malformed("response is not a JSON object")
         }
@@ -13,27 +13,33 @@ public enum IntentDecoder {
               let text = block["text"] as? String else {
             throw IntentDecodeError.noTextBlock
         }
-        return try actions(fromPayloadText: text)
-
+        return try step(fromPayloadText: text)
     }
 
-    public static func actions(fromPayloadText text: String) throws -> [Action] {
+    public static func step(fromPayloadText text: String) throws -> IntentStep {
         guard let payload = (try? JSONSerialization.jsonObject(with: Data(text.utf8))) as? [String: Any],
               let list = payload["actions"] as? [Any] else {
             throw IntentDecodeError.malformed("text block is not {\"actions\":[...]}")
         }
-        return list.compactMap { ($0 as? [String: Any]).flatMap(action(from:)) }
+        // Missing or unknown status: an old-style one-shot payload, which means "run these and finish".
+        let status = (payload["status"] as? String).flatMap(StepStatus.init(rawValue:)) ?? .done
+        return IntentStep(intent: payload["intent"] as? String ?? "", status: status,
+                          actions: list.compactMap { ($0 as? [String: Any]).flatMap(action(from:)) })
     }
 
-    public static func actions(fromOllamaResponse data: Data) throws -> [Action] {
+    public static func step(fromOllamaResponse data: Data) throws -> IntentStep {
         guard let root = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
             throw IntentDecodeError.malformed("response is not a JSON object")
         }
         guard let message = root["message"] as? [String: Any], let content = message["content"] as? String else {
             throw IntentDecodeError.noTextBlock
         }
-        return try actions(fromPayloadText: content)
+        return try step(fromPayloadText: content)
     }
+
+    public static func actions(fromResponse data: Data) throws -> [Action] { try step(fromResponse: data).actions }
+    public static func actions(fromPayloadText text: String) throws -> [Action] { try step(fromPayloadText: text).actions }
+    public static func actions(fromOllamaResponse data: Data) throws -> [Action] { try step(fromOllamaResponse: data).actions }
 
     /// Strict integer: JSON number (not boolean), finite, integral, exactly representable.
     private static func int(_ v: Any?) -> Int? {
@@ -118,6 +124,11 @@ public enum IntentDecoder {
             return (o["mode"] as? String).flatMap(Mode.init(rawValue:)).map(Action.setMode)
         case "open_app":
             return nonBlank(o["app_name"]).map(Action.openApp)
+        case "wait":
+            switch optInt(o, "ms") {
+            case .absent, .invalid: return .wait(ms: 1000)
+            case .value(let ms): return .wait(ms: clamp(ms, 100...5000))
+            }
         case "ignore": return .ignore
         default: return nil
         }

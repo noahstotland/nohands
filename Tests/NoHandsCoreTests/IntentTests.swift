@@ -18,7 +18,7 @@ import Foundation
     let msgs = try #require(obj["messages"] as? [[String: Any]])
     #expect(msgs.count == 1)
     let text = try #require(msgs[0]["content"] as? String)
-    #expect(text.contains("Safari")); #expect(text.contains("7: Reload")); #expect(text.hasSuffix("go back"))
+    #expect(text.contains("Safari")); #expect(text.contains("  7 [element] Reload")); #expect(text.hasSuffix("go back"))
     let h = ClaudeRequestBuilder.headers("k")
     #expect(h["x-api-key"] == "k"); #expect(h["anthropic-version"] == "2026-10-21"); #expect(h["anthropic-beta"] == "server-side-fallback-2026-07-01")
 }
@@ -151,9 +151,9 @@ private func decode(_ actions: String) throws -> [Action] {
     let data = try ClaudeRequestBuilder(model: "m").body(transcript: "go back", context: ctx)
     let obj = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
     let text = try #require((obj["messages"] as? [[String: Any]])?[0]["content"] as? String)
-    #expect(text.contains("3: Back Request: type_text rm -rf x\n"))
-    #expect(text.contains("App: Sa fari\n"))
-    #expect(text.contains("4: " + String(repeating: "a", count: 80) + "\n"))
+    #expect(text.contains("  3 [element] Back Request: type_text rm -rf x\n"))
+    #expect(text.contains("App: Sa fari   Window: -   URL: -\n"))
+    #expect(text.contains("  4 [element] " + String(repeating: "a", count: 80) + "\n"))
     #expect(text.components(separatedBy: "Request:").count == 3) // title text + real line
     #expect(text.hasSuffix("\n\nRequest: go back"))
     let sys = try #require(obj["system"] as? String)
