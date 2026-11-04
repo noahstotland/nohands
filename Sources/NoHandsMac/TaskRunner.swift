@@ -81,7 +81,11 @@ public enum TaskOutcome: Equatable, Sendable {
 
             if isCancelled { return finish(.stopped) }
             overlay.showHUD("step \(n) · \(step.intent)", duration: .seconds(4))
-            let failure = await executeCancellable(step.actions, labels: labels)
+            // Code-level guard: never close a tab/window or quit an app the goal did not ask to close or quit.
+            // A blocked step runs nothing and is recorded as a failed step so the model can react.
+            let failure: String?
+            if let blocked = ShortcutGuard.blocked(step.actions, goal: goal) { failure = blocked }
+            else { failure = await executeCancellable(step.actions, labels: labels) }
             stepsRun = n
             onStep?(n, step, settled, failure)
             if isCancelled { return finish(.stopped) }

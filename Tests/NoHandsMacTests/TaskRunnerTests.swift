@@ -266,3 +266,14 @@ private actor SleepCounter {
     #expect(await r.runner.run(goal: "x", mode: .command) == .done("type hi"))
     #expect(seen == ["1 open it no app named Nope", "2 type hi ok"])
 }
+
+@MainActor @Test func blockedShortcutRunsNothingAndRecordsFailure() async {
+    let resolver = FakeResolver([step("go to the url", .continue, [.pressKey(KeyChord(.w, [.command])), .typeText("youtube.com")]),
+                                 step("gave up", .stuck)])
+    let r = rig(resolver)
+    #expect(await r.runner.run(goal: "open the latest video", mode: .command) == .stuck("gave up"))
+    #expect(r.input.calls.allSatisfy { $0 == "releaseAll" })   // nothing typed or pressed
+    #expect(resolver.requests[1].history == [StepRecord(
+        intent: "go to the url", actions: [.pressKey(KeyChord(.w, [.command])), .typeText("youtube.com")],
+        failure: "blocked: command-w not allowed for this request")])
+}
