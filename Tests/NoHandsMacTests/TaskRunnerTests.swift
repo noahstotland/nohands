@@ -125,6 +125,7 @@ private func step(_ intent: String, _ status: StepStatus, _ actions: [Action] = 
     #expect(outcome == .stuck("repeating the same action"))
     #expect(resolver.requests.count == 3)
     #expect(r.input.calls.filter { $0 == "scroll" }.count == 2)   // the third repeat is not executed
+    #expect(r.releaseAllCalls == 1)
 }
 
 @MainActor @Test func cancelBeforeSecondExecuteStopsAndReleases() async {
@@ -171,14 +172,14 @@ private func step(_ intent: String, _ status: StepStatus, _ actions: [Action] = 
 @MainActor @Test func ignoreRunsNothing() async {
     let r = rig(FakeResolver([step("chatter", .ignore, [.typeText("no")])]))
     #expect(await r.runner.run(goal: "hello there", mode: .command) == .ignored)
-    #expect(r.input.calls.isEmpty)
+    #expect(r.input.calls == ["releaseAll"])
     #expect(r.overlay.huds == [PipelineText.didntCatch])
 }
 
 @MainActor @Test func stuckRunsNothing() async {
     let r = rig(FakeResolver([step("no such button", .stuck, [.typeText("no")])]))
     #expect(await r.runner.run(goal: "press it", mode: .command) == .stuck("no such button"))
-    #expect(r.input.calls.isEmpty)
+    #expect(r.input.calls == ["releaseAll"])
     #expect(r.overlay.huds == ["stuck: no such button"])
 }
 
@@ -231,4 +232,25 @@ private actor SleepCounter {
     #expect(await task.value == .stopped)
     #expect(r.typed.isEmpty)
     #expect(r.releaseAllCalls == 1)
+}
+
+@MainActor @Test func doneWithFailedActionsContinuesWithFailureInHistory() async {
+    let resolver = FakeResolver([step("open it", .done, [.openApp("Nope")]),
+                                 step("opened", .done)])
+    let r = rig(resolver)
+    #expect(await r.runner.run(goal: "open nope", mode: .command) == .done("opened"))
+    #expect(resolver.requests.count == 2)
+    #expect(resolver.requests[1].history == [StepRecord(intent: "open it", actions: [.openApp("Nope")],
+                                                        failure: "no app named Nope")])
+    #expect(r.releaseAllCalls == 0)
+}
+
+@MainActor @Test func repeatedFailingDoneEndsAsStuck() async {
+    let resolver = FakeResolver([step("open it", .done, [.openApp("Nope")])])
+    let r = rig(resolver)
+    #expect(await r.runner.run(goal: "open nope", mode: .command) == .stuck("repeating the same action"))
+    #expect(resolver.requests.count == 3)
+    #expect(resolver.requests[2].history.count == 2)
+    #expect(r.releaseAllCalls == 1)
+    #expect(r.overlay.huds.last == "stuck: repeating the same action")
 }

@@ -67,16 +67,16 @@ public enum TaskOutcome: Equatable, Sendable {
             switch step.status {
             case .ignore: return finish(.ignored)
             case .stuck: return finish(.stuck(step.intent))
-            case .continue:
+            case .continue, .done:
                 if repeats.record(step.actions) { return finish(.stuck(Self.repeating)) }
-            case .done: break
             }
 
             if isCancelled { return finish(.stopped) }
             overlay.showHUD("step \(n) · \(step.intent)", duration: .seconds(4))
             let failure = await executeCancellable(step.actions, labels: labels)
             if isCancelled { return finish(.stopped) }
-            // A failed `done` is not done: the model sees the failure and decides again.
+            // A `done` whose actions failed did not achieve the goal: record the failure and let the model react
+            // (repeat detection above covers both `continue` and `done`, so a stubborn failing batch ends as stuck).
             if step.status == .done && failure == nil { return finish(.done(step.intent)) }
             history.append(StepRecord(intent: step.intent, actions: step.actions, failure: failure))
             if n < maxSteps { (observation, labels) = await settle(mode: mode) }
@@ -139,16 +139,14 @@ public enum TaskOutcome: Equatable, Sendable {
     }
 
     private func finish(_ outcome: TaskOutcome) -> TaskOutcome {
+        // Spec Safety: a held mouse button is released on any exit; a successful `done` keeps what it did.
+        if case .done = outcome {} else { executor.releaseAll() }
         switch outcome {
         case .done(let intent): overlay.showHUD(intent.isEmpty ? "done" : "done · \(intent)")
         case .stuck(let reason): overlay.showHUD("stuck: \(reason)")
         case .ignored: overlay.showHUD(PipelineText.didntCatch)
-        case .stopped:
-            executor.releaseAll()
-            overlay.showHUD("stopped")
-        case .failed(let message):
-            executor.releaseAll()
-            overlay.showHUD(message)
+        case .stopped: overlay.showHUD("stopped")
+        case .failed(let message): overlay.showHUD(message)
         }
         return outcome
     }
