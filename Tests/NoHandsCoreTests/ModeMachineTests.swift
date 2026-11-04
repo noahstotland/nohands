@@ -53,3 +53,10 @@ import Testing
     m.apply(mode: .sleep)
     #expect(m.route("click") == .ignore(reason: "sleeping"))
 }
+
+@Test func dictationEscapePhrases() {
+    #expect(ModeMachine.isDictationEscape("Stop dictating."))
+    #expect(ModeMachine.isDictationEscape("command mode"))
+    #expect(!ModeMachine.isDictationEscape("stop"))
+    #expect(!ModeMachine.isDictationEscape("please stop dictating now"))
+}

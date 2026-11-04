@@ -24,6 +24,12 @@ public struct ModeMachine: Sendable {
         if newMode == .dictation { session = DictationSession() }
     }
 
+    /// The phrases that leave dictation mode ("stop dictating", "command mode").
+    public static func isDictationEscape(_ transcript: String) -> Bool {
+        let phrase = CommandGrammar.normalize(transcript).joined(separator: " ")
+        return phrase == "stop dictating" || phrase == "command mode"
+    }
+
     /// Applies mode transitions contained in the result and returns what the executor should do.
     public mutating func route(_ transcript: String) -> Routing {
         let tokens = CommandGrammar.normalize(transcript)
@@ -36,7 +42,7 @@ public struct ModeMachine: Sendable {
             mode = .command
             return .execute([.setMode(.command)])
         case .dictation:
-            if phrase == "stop dictating" || phrase == "command mode" {
+            if Self.isDictationEscape(phrase) {
                 mode = .command
                 return .execute([.setMode(.command)])
             }

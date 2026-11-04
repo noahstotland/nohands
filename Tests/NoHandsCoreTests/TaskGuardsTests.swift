@@ -11,6 +11,15 @@ import Foundation
     }
 }
 
+@Test func stopWordsAcceptRepeatsAndFillers() {
+    for p in ["stop stop", "Stop, stop!", "no stop", "stop stop it", "um stop", "uh, cancel that", "stop, never mind"] {
+        #expect(StopWords.isStop(p), "\(p)")
+    }
+    for p in ["um", "no", "the task", "stop the music", "stop dictating", "stop it now and click save", "please"] {
+        #expect(!StopWords.isStop(p), "\(p)")
+    }
+}
+
 @Test func repeatDetectorFiresAfterLimit() {
     var r = RepeatDetector(limit: 3)
     let a: [Action] = [.pressKey(KeyChord(.return))]
@@ -44,4 +53,12 @@ import Foundation
     b = a; b.app = "Mail"; #expect(!Settle.same(a, b))
     b = a; b.elements = e + e; #expect(!Settle.same(a, b))
     b = a; b.elements = [ObservedElement(number: 1, role: "link", title: "Save")]; #expect(!Settle.same(a, b))
+}
+
+@Test func secondInterruptExits() {
+    var p = InterruptPolicy()
+    #expect(p.interrupt() == .stopTask)
+    #expect(p.interrupt() == .exitNow)
+    #expect(p.interrupt() == .exitNow)
+    #expect(InterruptPolicy.exitStatus == 130)
 }
