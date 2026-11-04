@@ -30,3 +30,35 @@ import Foundation
     #expect(r?.rest == ["pixels"])
     #expect(NumberWords.leadingNumber(in: ["pixels"]) == nil)
 }
+
+@Test func homophoneBarePrefixInNumberSlot() {
+    let a = NumberWords.leadingNumber(in: ["to", "fit"])
+    #expect(a?.value == 2)
+    #expect(a?.rest == ["fit"])
+    let b = NumberWords.leadingNumber(in: ["twenty", "to", "save"])
+    #expect(b?.value == 22)
+    #expect(b?.rest == ["save"])
+    let c = NumberWords.leadingNumber(in: ["for"])
+    #expect(c?.value == 4)
+    #expect(c?.rest == [])
+}
+
+@Test func trailingAndNotConsumed() {
+    #expect(NumberWords.parse(["one", "hundred", "and"]) == nil)
+    #expect(NumberWords.parse(["one", "hundred", "and", "five"]) == 105)
+    let r = NumberWords.leadingNumber(in: ["one", "hundred", "and", "save"])
+    #expect(r?.value == 100)
+    #expect(r?.rest == ["and", "save"])
+}
+
+@Test func zeroOnlyStandalone() {
+    #expect(NumberWords.parse(["forty", "zero"]) == nil)
+    #expect(NumberWords.parse(["one", "hundred", "zero"]) == nil)
+    #expect(NumberWords.parse(["zero"]) == 0)
+}
+
+@Test func digitTokensAreAllDigits() {
+    #expect(NumberWords.parse(["-5"]) == nil)
+    #expect(NumberWords.parse(["+5"]) == nil)
+    #expect(NumberWords.parse(["007"]) == 7)
+}

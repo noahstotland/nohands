@@ -15,9 +15,11 @@ public enum NumberWords {
     /// Parses a run of tokens as a cardinal number. Accepts digits ("42"), words ("forty two", "one hundred five"),
     /// and in-slot homophones ("to"/"too" → 2, "for" → 4). Returns nil if the tokens are not a number.
     public static func parse(_ tokens: [String]) -> Int? {
+        if tokens.count == 1, !tokens[0].isEmpty, tokens[0].allSatisfy({ $0.isASCII && $0.isNumber }) {
+            return Int(tokens[0])
+        }
         let words = tokens.flatMap { $0.lowercased().split(separator: "-").map(String.init) }
         guard !words.isEmpty else { return nil }
-        if words.count == 1, words[0].allSatisfy(\.isASCII), let n = Int(words[0]), n >= 0 { return n }
 
         var total = 0
         var sawAny = false
@@ -27,14 +29,14 @@ public enum NumberWords {
             total = u * 100
             i += 2
             sawAny = true
-            if i < words.count, words[i] == "and" { i += 1 }
             if i == words.count { return total }
+            if words[i] == "and", i + 1 < words.count { i += 1 }
         } else if i < words.count, words[i] == "hundred" {
             total = 100
             i += 1
             sawAny = true
-            if i < words.count, words[i] == "and" { i += 1 }
             if i == words.count { return total }
+            if words[i] == "and", i + 1 < words.count { i += 1 }
         }
         var rest = 0
         var restAny = false
@@ -42,11 +44,11 @@ public enum NumberWords {
             rest = t
             i += 1
             restAny = true
-            if i < words.count, let u = units[words[i]], u < 10 {
+            if i < words.count, let u = units[words[i]], u >= 1, u < 10 {
                 rest += u
                 i += 1
             }
-        } else if i < words.count, let u = units[words[i]] {
+        } else if i < words.count, let u = units[words[i]], u != 0 || !sawAny {
             rest = u
             i += 1
             restAny = true
@@ -56,6 +58,8 @@ public enum NumberWords {
     }
 
     /// Longest prefix of `tokens` that parses as a number, with the remainder.
+    /// Homophones ("to", "too", "for") count as numbers, so ["to", "fit"] yields (2, ["fit"]).
+    /// Only call this where a number is expected, never on arbitrary text.
     public static func leadingNumber(in tokens: [String]) -> (value: Int, rest: [String])? {
         var n = tokens.count
         while n > 0 {
