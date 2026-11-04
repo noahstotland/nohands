@@ -17,6 +17,8 @@ func usage() -> Never {
       nohands-cli move <x> <y>
       nohands-cli transcribe <wav>
       nohands-cli vad-test <wav>
+      nohands-cli elements           (waits 3 s, lists frontmost app's actionable elements)
+      nohands-cli click "<name>"     (waits 3 s, clicks the named element's center)
       nohands-cli listen             (mic -> VAD -> ASR; Ctrl-C to quit)
     """)
 }
@@ -99,6 +101,20 @@ do {
             }
             i += 4096
         }
+    case "elements":
+        let ax = try await frontElements()
+        print("app: \(ax.app)")
+        for n in ax.labels.keys.sorted() {
+            let e = ax.labels[n]!
+            print(String(format: "%3d  %@  (%.0f,%.0f %.0fx%.0f)  %@", n, e.role, e.frame.minX, e.frame.minY, e.frame.width, e.frame.height, e.title))
+        }
+    case "click":
+        guard rest.count == 1 else { usage() }
+        let ax = try await frontElements()
+        guard let hit = LabelAssigner.find(named: rest[0], in: Array(ax.labels.values.sorted { $0.id < $1.id })) else {
+            fail("no element named \"\(rest[0])\" in \(ax.app)")
+        }
+        try synth.click(at: CGPoint(x: hit.frame.midX, y: hit.frame.midY), button: .left, count: 1)
     case "listen":
         try await listen()
     default:
@@ -106,6 +122,17 @@ do {
     }
 } catch {
     fail("error: \(error)")
+}
+
+/// Waits 3 s (so the user can focus an app), then labels the frontmost app's elements.
+/// Never prompts: exits non-zero with a message if Accessibility is not granted.
+func frontElements() async throws -> (app: String, labels: [Int: UIElementInfo]) {
+    guard Permissions.accessibilityGranted(prompt: false) else {
+        fail("Accessibility permission is not granted to this process (or its terminal). Enable it in System Settings > Privacy & Security > Accessibility, then rerun.")
+    }
+    try await Task.sleep(for: .seconds(3))
+    let q = AXQuery()
+    return (q.frontmostAppName, LabelAssigner.assign(q.actionableElements()))
 }
 
 enum Log {
