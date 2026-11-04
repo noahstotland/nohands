@@ -55,6 +55,8 @@ import NoHandsCore
     private var activeTask: Task<Void, Never>?
     /// The newest utterance heard while a task ran; handled after the task ends.
     private var heldJob: Job?
+    /// A held job a stop phrase discarded; reported ("dropped") once the stopped task has unwound.
+    private var droppedJob: Job?
     /// A held job is replayed after the task only if it was spoken within this window.
     static let heldJobMaxAge: Duration = .seconds(60)
 
@@ -88,9 +90,15 @@ import NoHandsCore
         }
     }
 
-    /// Only a complete grammar command in command mode skips the merge window.
-    nonisolated private static func isComplete(_ transcript: String, mode: Mode, grammar: CommandGrammar) -> Bool {
-        mode == .command && grammar.parse(transcript) != nil
+    /// Skips the merge window: a complete grammar command in command mode, a stop phrase in any mode, and the
+    /// dictation escape phrases in dictation mode. Internal so tests build their MergeBuffer the same way.
+    nonisolated static func isComplete(_ transcript: String, mode: Mode, grammar: CommandGrammar) -> Bool {
+        if StopWords.isStop(transcript) { return true }
+        switch mode {
+        case .command: return grammar.parse(transcript) != nil
+        case .dictation: return ModeMachine.isDictationEscape(transcript)
+        case .sleep: return false
+        }
     }
 
     /// Loads VAD, warms up ASR (first call only) and starts the microphone.
@@ -131,7 +139,7 @@ import NoHandsCore
             emit: { text, trace in
                 if case .dropped = jobCont.yield(Job(transcript: text, trace: trace)) {
                     PipelineLog.warning("busy: dropped oldest queued utterance")
-                    Task { @MainActor [weak self] in self?.overlay.showHUD("skipped (busy)") }
+                    Task { @MainActor [weak self] in self?.overlay.showHUD(PipelineText.skippedBusy) }
                 }
             })
         self.merge = merge
@@ -227,6 +235,7 @@ import NoHandsCore
         tasks = []
         executor.releaseAll()   // release a held mouse button and drop any grid/labels overlay
         heldJob = nil
+        droppedJob = nil
         runner?.cancel()
         activeTask?.cancel()    // also covers a cancel() that lands before run() starts (run() clears its flag)
         if let merge { Task { await merge.reset() } }
@@ -272,7 +281,7 @@ import NoHandsCore
     func handle(transcript text: String, trace: LatencyTrace) async {
         let job = Job(transcript: text, trace: trace)
         if activeTask != nil { busy(job); return }
-        if let pending = await process(job, maxAge: StaleJobPolicy.defaultMaxAge) { startTask(pending) }
+        if let pending = await process(job) { startTask(pending) }
     }
 
     /// Waits until no task is running (including held jobs handled after it). For tests.
@@ -285,24 +294,27 @@ import NoHandsCore
     private func busy(_ job: Job) {
         guard !stopped else { return }
         if StopWords.isStop(job.transcript) {
+            if let held = heldJob { droppedJob = held }
             heldJob = nil
             runner?.cancel()
             activeTask?.cancel()   // the runner shows "stopped" when it unwinds
             PipelineLog.utterance(trace: job.trace, transcript: job.transcript, outcome: "stop", detail: "stop")
         } else {
             heldJob = job
-            overlay.showHUD(PipelineText.busySayStop)
+            overlay.showHUD(PipelineText.held(job.transcript), duration: .seconds(3))
             PipelineLog.utterance(trace: job.trace, transcript: job.transcript, outcome: "held", detail: "held")
         }
     }
 
     /// Routes and executes one job. Returns the task to run when it routed to the LLM (logged when the task ends).
-    private func process(_ job: Job, maxAge: Duration) async -> PendingTask? {
+    /// `held` marks a job that waited for a task: it gets the longer age limit and a "dropped" HUD when too old.
+    private func process(_ job: Job, held: Bool = false) async -> PendingTask? {
         let text = job.transcript
         var trace = job.trace
+        let maxAge = held ? Self.heldJobMaxAge : StaleJobPolicy.defaultMaxAge
         if let spoke = trace.speechEnd, StaleJobPolicy.isStale(age: spoke.duration(to: .now), maxAge: maxAge) {
             PipelineLog.warning("busy: skipped (stale) utterance (older than \(maxAge))")
-            overlay.showHUD("skipped (busy)")
+            overlay.showHUD(held ? PipelineText.dropped(text) : PipelineText.skippedBusy)
             return nil
         }
         lastTranscript = text
@@ -351,10 +363,17 @@ import NoHandsCore
                 await runTask(pending, runner: runner)
                 while next == nil, canExecute, let held = heldJob {
                     heldJob = nil
-                    next = await process(held, maxAge: Self.heldJobMaxAge)   // it waited on purpose: longer limit
+                    next = await process(held, held: true)   // it waited on purpose: longer limit
                 }
             }
-            heldJob = nil   // still held here means the task was cancelled: it must never run (e.g. in the next task)
+            // Still held here means the task was stopped: it must never run (e.g. in the next task).
+            let lost = heldJob ?? droppedJob
+            heldJob = nil
+            droppedJob = nil
+            if let lost, !stopped {
+                overlay.showHUD(PipelineText.dropped(lost.transcript))
+                PipelineLog.utterance(trace: lost.trace, transcript: lost.transcript, outcome: "dropped", detail: "dropped")
+            }
             activeTask = nil
         }
     }

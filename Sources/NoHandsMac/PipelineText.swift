@@ -8,8 +8,18 @@ public enum PipelineText {
     public static let localNotDownloaded = "local model not downloaded: see the NoHands menu"
     public static let llmDisabled = "LLM off (intentBackend is off)"
     public static let llmOff = "LLM off: add anthropicAPIKey to ~/.config/nohands/config.json"
-    public static let busySayStop = "busy — say stop to cancel"
     public static let stopped = "stopped"
+    public static let skippedBusy = "skipped (busy)"
+
+    /// Shown when an utterance arrives while a task runs: it is held (newest only) and runs after the task.
+    public static func held(_ transcript: String) -> String {
+        "held: \(truncated(transcript, limit: 24)) — runs after this task (say stop to cancel)"
+    }
+
+    /// Shown when a held utterance is discarded (a stop, or it waited longer than the held-job limit).
+    public static func dropped(_ transcript: String) -> String {
+        "dropped: \(truncated(transcript, limit: 40))"
+    }
 
     /// The finish HUD for a task.
     public static func hud(for outcome: TaskOutcome) -> String {

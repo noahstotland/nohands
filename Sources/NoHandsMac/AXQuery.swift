@@ -13,6 +13,8 @@ public final class AXQuery: @unchecked Sendable {
     private let lock = NSLock()
     private var elements: [Int: AXUIElement] = [:]
     private var exposedPids: Set<pid_t> = []
+    /// Set when a pid is first exposed; cleared by `didJustExpose()`.
+    private var justExposed = false
 
     static let maxDepth = 30   // YouTube links sit ~23 levels below the window
     public static let defaultMaxNodes = 2000
@@ -38,16 +40,28 @@ public final class AXQuery: @unchecked Sendable {
     }
 
     /// Chromium builds the page's accessibility tree lazily; flag it once per pid.
-    /// The page tree appears ~0.5 s AFTER exposure and this never waits (it runs on the main actor), so the
-    /// first walk of a freshly exposed browser is thin. Callers that need page content must re-observe
-    /// (the task loop's settle polling does; the voice path accepts a thin first walk).
+    /// The page tree appears ~0.5 s AFTER exposure and this never waits, so the first walk of a freshly exposed
+    /// browser is thin. Callers that need page content check `didJustExpose()` and re-observe (the task loop
+    /// settles then); the voice path accepts a thin first walk.
     private func exposeChromiumTree(_ app: NSRunningApplication, _ appEl: AXUIElement) {
         guard let id = app.bundleIdentifier, Self.chromiumBundleIDs.contains(id) else { return }
         let pid = app.processIdentifier
-        let first = lock.withLock { exposedPids.insert(pid).inserted }
+        let first = lock.withLock {
+            let inserted = exposedPids.insert(pid).inserted
+            if inserted { justExposed = true }
+            return inserted
+        }
         guard first else { return }
         // Chrome answers with an error code but does start building the tree.
         AXUIElementSetAttributeValue(appEl, "AXManualAccessibility" as CFString, kCFBooleanTrue)
+    }
+
+    /// True once after a walk first exposed a Chromium app (see `exposeChromiumTree`); reading clears it.
+    public func didJustExpose() -> Bool {
+        lock.withLock {
+            defer { justExposed = false }
+            return justExposed
+        }
     }
 
     private func focusedWindow() -> (app: NSRunningApplication, appEl: AXUIElement, window: AXUIElement)? {

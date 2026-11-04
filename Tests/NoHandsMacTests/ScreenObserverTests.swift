@@ -21,4 +21,20 @@ import NoHandsCore
         #expect(obs.elements.map(\.role) == ["button", "link"])
         #expect(Set(labels.keys) == Set(obs.elements.map(\.number)))
     }
+
+    @Test func shownLabelsAreObservedWithTheirBadgeNumbers() {
+        let f = FakeElements()
+        f.elements = [UIElementInfo(id: 0, frame: CGRect(x: 0, y: 0, width: 50, height: 50), title: "Other", role: "AXButton")]
+        let badges = [
+            4: UIElementInfo(id: 4, frame: CGRect(x: 0, y: 0, width: 50, height: 50), title: "Save", role: "AXButton"),
+            11: UIElementInfo(id: 11, frame: CGRect(x: 100, y: 0, width: 50, height: 50), title: "Home", role: "AXLink"),
+            12: UIElementInfo(id: 12, frame: CGRect(x: 200, y: 0, width: 50, height: 50), title: "", role: "AXButton"),
+        ]
+        let (obs, labels) = ScreenObserver(ax: f, maxElements: 10).observe(mode: .command, overlay: .labels(badges))
+        #expect(obs.overlay == "labels")
+        #expect(obs.elements.map(\.number) == [4, 11])
+        #expect(obs.elements.map(\.title) == ["Save", "Home"])
+        #expect(labels == [4: badges[4]!, 11: badges[11]!])
+        #expect(f.walks == 0)                                   // no fresh walk with different numbering
+    }
 }

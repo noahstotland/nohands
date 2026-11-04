@@ -27,10 +27,25 @@ final class FakeElements: ElementProviding, @unchecked Sendable {
     var front: String? = nil
     var windowTitle: String? = nil
     var url: String? = nil
+    /// Set to report that the next walk freshly exposed a Chromium page tree (cleared when read).
+    var exposeOnNextWalk = false
+    private var justExposed = false
+    /// Number of `actionableElements()` walks.
+    var walks = 0
+    /// Simulated walk time (blocks the calling thread like a real AX walk) and where each walk ran.
+    var walkDelay: TimeInterval = 0
+    var walkedOnMainThread: [Bool] = []
     func focusedWindowTitle() -> String? { windowTitle }
     func webURL() -> String? { url }
     func frontmostAppName() -> String? { front }
-    func actionableElements() -> [UIElementInfo] { elements }
+    func actionableElements() -> [UIElementInfo] {
+        walks += 1
+        walkedOnMainThread.append(Thread.isMainThread)
+        if walkDelay > 0 { Thread.sleep(forTimeInterval: walkDelay) }
+        if exposeOnNextWalk { exposeOnNextWalk = false; justExposed = true }
+        return elements
+    }
+    func didJustExpose() -> Bool { defer { justExposed = false }; return justExposed }
     func screenRectsCG() -> [CGRect] { [CGRect(x: 0, y: 0, width: 1000, height: 800)] }
     func activate(appNamed: String) -> Bool { apps.contains(appNamed) }
 }

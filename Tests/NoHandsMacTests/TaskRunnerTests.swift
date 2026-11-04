@@ -277,3 +277,94 @@ private actor SleepCounter {
         intent: "go to the url", actions: [.pressKey(KeyChord(.w, [.command])), .typeText("youtube.com")],
         failure: "blocked: command-w not allowed for this request")])
 }
+
+// MARK: - first observation, badge numbers, mid-task ignore, exit status
+
+@MainActor private func countingRunner(_ resolver: FakeResolver, ax: FakeElements, overlay: FakeOverlay = FakeOverlay(),
+                                       sleeps: SleepCounter) -> TaskRunner {
+    var config = AppConfig(); config.settleMs = 3000
+    let executor = ActionExecutor(input: FakeInput(), ax: ax, overlay: overlay, config: config)
+    return TaskRunner(config: config, resolver: resolver, executor: executor,
+                      observer: ScreenObserver(ax: ax, maxElements: 120), overlay: overlay,
+                      sleep: { _ in await sleeps.tick { _ in } })
+}
+
+@MainActor @Test func firstStepObservesOnceWhenNothingWasJustExposed() async {
+    let ax = FakeElements(); ax.elements = [el(1, "Reload")]
+    let sleeps = SleepCounter()
+    let resolver = FakeResolver([step("", .done)])
+    let walksAtResolve = WalkLog()
+    resolver.onResolve = { _ in await walksAtResolve.set(ax.walks) }
+    let runner = countingRunner(resolver, ax: ax, sleeps: sleeps)
+    #expect(await runner.run(goal: "x", mode: .command) == .done(""))
+    #expect(await walksAtResolve.value == 1)
+    #expect(await sleeps.count == 0)
+}
+
+@MainActor @Test func firstStepSettlesWhenAChromiumTreeWasJustExposed() async {
+    let ax = FakeElements(); ax.elements = [el(1, "Reload")]
+    ax.exposeOnNextWalk = true
+    let sleeps = SleepCounter()
+    let resolver = FakeResolver([step("", .done)])
+    let walksAtResolve = WalkLog()
+    resolver.onResolve = { _ in await walksAtResolve.set(ax.walks) }
+    let runner = countingRunner(resolver, ax: ax, sleeps: sleeps)
+    #expect(await runner.run(goal: "x", mode: .command) == .done(""))
+    #expect(await sleeps.count == 2)                // settled: two equal observations after ≥ 300 ms
+    #expect(await walksAtResolve.value == 3)
+}
+
+private actor WalkLog {
+    var value = 0
+    func set(_ v: Int) { value = v }
+}
+
+@MainActor @Test func shownBadgesKeepTheirNumbersForTheModelAndTheClick() async {
+    let ax = FakeElements()
+    ax.elements = [el(1, "Reload"), el(2, "Save", x: 300)]       // a fresh walk would number these 1, 2
+    let overlay = FakeOverlay()
+    overlay.state = .labels([7: el(7, "Save", x: 300), 9: el(9, "Open", x: 500)])   // what the badges show
+    let input = FakeInput()
+    var config = AppConfig(); config.settleMs = 0
+    let executor = ActionExecutor(input: input, ax: ax, overlay: overlay, config: config)
+    let resolver = FakeResolver([step("click open", .done, [.click(.label(9), button: .left, count: 1)])])
+    let runner = TaskRunner(config: config, resolver: resolver, executor: executor,
+                            observer: ScreenObserver(ax: ax, maxElements: 120), overlay: overlay, sleep: { _ in })
+    #expect(await runner.run(goal: "click 9", mode: .command) == .done("click open"))
+    let obs = resolver.requests[0].observation
+    #expect(obs.overlay == "labels")
+    #expect(obs.elements.map(\.number) == [7, 9])
+    #expect(obs.elements.map(\.title) == ["Save", "Open"])
+    #expect(input.calls == ["click:540,375"])                    // badge 9's frame
+}
+
+@MainActor @Test func ignoreAfterEarlierStepsShowsStoppedWithIntent() async {
+    let r = rig(FakeResolver([step("type a", .continue, [.typeText("a")]), step("cannot find the button", .ignore)]))
+    #expect(await r.runner.run(goal: "x", mode: .command) == .ignored)
+    #expect(r.overlay.huds.last == "stopped: cannot find the button")
+    #expect(r.releaseAllCalls == 1)
+}
+
+@Test func taskExitStatus() {
+    #expect(TaskOutcome.done("x").exitStatus == 0)
+    #expect(TaskOutcome.ignored.exitStatus == 0)
+    #expect(TaskOutcome.stuck("x").exitStatus == 2)
+    #expect(TaskOutcome.failed("x").exitStatus == 2)
+    #expect(TaskOutcome.stopped.exitStatus == 2)
+}
+
+@MainActor @Test func settleObservesOffTheMainActorAndCountsWalkTime() async {
+    let ax = FakeElements()
+    ax.walkDelay = 0.3
+    let counter = SleepCounter()
+    var config = AppConfig(); config.settleMs = 1000
+    let overlay = FakeOverlay()
+    let executor = ActionExecutor(input: FakeInput(), ax: ax, overlay: overlay, config: config)
+    let runner = TaskRunner(config: config, resolver: FakeResolver([step("", .done)]), executor: executor,
+                            observer: ScreenObserver(ax: ax, maxElements: 120), overlay: overlay,
+                            sleep: { _ in await counter.tick { n in ax.elements = [el(1, "t\(n)")] } })   // never settles
+    _ = await runner.settle(mode: .command)
+    // 300 (walk) + 250 (sleep) + 300 (walk) = 850; then a 150 ms sleep reaches 1000: 2 sleeps, not 4.
+    #expect(await counter.count == 2)
+    #expect(ax.walkedOnMainThread == [false, false, false])
+}

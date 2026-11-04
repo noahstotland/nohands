@@ -3,7 +3,8 @@ import NoHandsCore
 
 /// Sits between ASR and execution. A finished transcript is held for a short window; if the VAD reports
 /// speech again inside it, the next transcript is appended and the window restarts, so a mid-command pause
-/// yields one merged request. Grammar commands that are not left hanging are released immediately.
+/// yields one merged request. Grammar commands that are not left hanging are released immediately; a stop phrase
+/// (and, in dictation, "stop dictating" / "command mode") is never merged and always released immediately.
 actor MergeBuffer {
     struct Pending: Sendable {
         var transcript: String
@@ -36,6 +37,21 @@ actor MergeBuffer {
 
     func transcript(_ text: String, trace: LatencyTrace) {
         speechActive = false
+        // A stop phrase or a dictation escape is never merged: it must reach the pipeline on its own, at once.
+        if StopWords.isStop(text) {
+            // In command mode a stop also cancels what was still being said; in dictation the words already
+            // spoken are kept (typed) before the stop.
+            if mode == .dictation { flush() } else { discardPending() }
+            pending = Pending(transcript: text, trace: trace)
+            flush()
+            return
+        }
+        if mode == .dictation && ModeMachine.isDictationEscape(text) {
+            flush()
+            pending = Pending(transcript: text, trace: trace)
+            flush()
+            return
+        }
         var next = Pending(transcript: text, trace: trace)
         if let p = pending { next.transcript = UtteranceMerger.merge(p.transcript, text) }
         pending = next
@@ -60,7 +76,9 @@ actor MergeBuffer {
         if hold == .zero { flush() } else { schedule(after: hold) }
     }
 
-    func reset() {
+    func reset() { discardPending() }
+
+    private func discardPending() {
         generation += 1
         timer?.cancel()
         timer = nil

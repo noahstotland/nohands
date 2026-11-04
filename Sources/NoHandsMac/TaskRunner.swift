@@ -8,6 +8,14 @@ public enum TaskOutcome: Equatable, Sendable {
     case stopped
     /// The resolver failed; the message is the HUD text.
     case failed(String)
+
+    /// Exit status for `nohands-cli task`: 0 for done (and ignored), 2 for stuck, failed or stopped.
+    public var exitStatus: Int32 {
+        switch self {
+        case .done, .ignored: 0
+        case .stuck, .failed, .stopped: 2
+        }
+    }
 }
 
 /// Drives one spoken goal to completion: observe → resolve one step → act → settle → repeat.
@@ -59,9 +67,13 @@ public enum TaskOutcome: Equatable, Sendable {
         let maxSteps = max(1, config.maxTaskSteps)
         var history: [StepRecord] = []
         var repeats = RepeatDetector(limit: 3)
-        // Settle first too: Chromium exposes its page tree shortly after AXManualAccessibility is set.
+        // Observe once. Settle first only when that walk just exposed a Chromium page tree (it fills in ~0.5 s
+        // later); otherwise the screen is already what the user sees and the model is asked at once.
+        _ = observer.didJustExpose()   // clear a flag left over from a walk after the previous task's last step
         var settleStart = ContinuousClock.now
-        var (observation, labels) = await settle(mode: mode)
+        var first = await observeTimed(mode: mode)
+        if observer.didJustExpose() { first = (await settle(mode: mode, from: first), first.ms) }
+        var (observation, labels) = first.result
         var settled = settleStart.duration(to: .now)
 
         for n in 1...maxSteps {
@@ -73,7 +85,8 @@ public enum TaskOutcome: Equatable, Sendable {
             case .end(let outcome): return finish(isCancelled ? .stopped : outcome)
             }
             switch step.status {
-            case .ignore: return finish(.ignored)
+            // An `ignore` after earlier steps already acted is the model giving up mid-task, not chatter.
+            case .ignore: return finish(.ignored, hud: n > 1 ? Self.stoppedHUD(step.intent) : nil)
             case .stuck: return finish(.stuck(step.intent))
             case .continue, .done:
                 if repeats.record(step.actions) { return finish(.stuck(Self.repeating)) }
@@ -102,22 +115,39 @@ public enum TaskOutcome: Equatable, Sendable {
         return finish(.stuck(Self.stepLimit))
     }
 
+    typealias Observed = (observation: ScreenObservation, labels: [Int: UIElementInfo])
+
     /// Observes until two consecutive observations are the same (after at least 300 ms), or `settleMs` elapses.
-    /// Time is counted from the injected sleeps so tests run instantly. `settleMs == 0` observes once.
-    func settle(mode: Mode) async -> (observation: ScreenObservation, labels: [Int: UIElementInfo]) {
-        var current = observer.observe(mode: mode, overlay: overlay.state)
+    /// Elapsed time is the injected sleeps plus the measured wall time of each observation, so production is
+    /// bounded by `settleMs` in wall time while tests with instant fakes run instantly. `settleMs == 0` observes
+    /// once. `first` is an observation just taken (counted from its own duration) instead of a fresh one.
+    func settle(mode: Mode, from first: (result: Observed, ms: Int)? = nil) async -> Observed {
+        var taken: (result: Observed, ms: Int)
+        if let first { taken = first } else { taken = await observeTimed(mode: mode) }
+        var current = taken.result
         let limit = max(0, config.settleMs)
-        var elapsed = 0
+        var elapsed = taken.ms
         while elapsed < limit, !isCancelled {
             let step = min(Self.pollInterval, limit - elapsed)
             await sleep(.milliseconds(step))
             elapsed += step
-            let next = observer.observe(mode: mode, overlay: overlay.state)
-            let same = Settle.same(current.observation, next.observation)
-            current = next
+            let next = await observeTimed(mode: mode)
+            elapsed += next.ms
+            let same = Settle.same(current.observation, next.result.observation)
+            current = next.result
             if same && elapsed >= Self.minSettleMs { break }
         }
         return current
+    }
+
+    /// One observation, run off the main actor (an AX walk can take up to its budget, ~1-2 s on a busy page),
+    /// and how long it took in milliseconds. The overlay state is read here, on the main actor.
+    private func observeTimed(mode: Mode) async -> (result: Observed, ms: Int) {
+        let observer = self.observer
+        let state = overlay.state
+        let start = ContinuousClock.now
+        let result = await Task.detached { observer.observe(mode: mode, overlay: state) }.value
+        return (result, Int(start.duration(to: .now) / .milliseconds(1)))
     }
 
     private enum Resolved { case step(IntentStep), end(TaskOutcome) }
@@ -156,10 +186,13 @@ public enum TaskOutcome: Equatable, Sendable {
         await withTaskCancellationHandler { await task.value } onCancel: { task.cancel() }
     }
 
-    private func finish(_ outcome: TaskOutcome) -> TaskOutcome {
+    static func stoppedHUD(_ intent: String) -> String { intent.isEmpty ? PipelineText.stopped : "stopped: \(intent)" }
+
+    /// `hud` overrides the outcome's usual finish HUD.
+    private func finish(_ outcome: TaskOutcome, hud: String? = nil) -> TaskOutcome {
         // Spec Safety: a held mouse button is released on any exit; a successful `done` keeps what it did.
         if case .done = outcome {} else { executor.releaseAll() }
-        overlay.showHUD(PipelineText.hud(for: outcome))
+        overlay.showHUD(hud ?? PipelineText.hud(for: outcome))
         return outcome
     }
 }

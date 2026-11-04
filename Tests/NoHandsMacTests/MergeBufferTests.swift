@@ -16,7 +16,7 @@ private func make(_ sink: Sink, window: Int = 80, unfinished: Int = 200) -> Merg
     let grammar = CommandGrammar()
     return MergeBuffer(
         merger: UtteranceMerger(windowMs: window, unfinishedWindowMs: unfinished),
-        isComplete: { text, mode in mode == .command && grammar.parse(text) != nil },
+        isComplete: { VoicePipeline.isComplete($0, mode: $1, grammar: grammar) },
         onHold: { sink.hold($0) },
         emit: { text, _ in sink.emit(text) })
 }
@@ -69,4 +69,60 @@ private func make(_ sink: Sink, window: Int = 80, unfinished: Int = 200) -> Merg
     await b.reset()
     try await Task.sleep(for: .milliseconds(200))
     #expect(sink.out.isEmpty)
+}
+
+// MARK: - stop phrases and dictation escapes are never merged
+
+@Test func stopPhraseIsReleasedImmediatelyInAnyMode() async {
+    for mode in [Mode.command, .dictation, .sleep] {
+        let sink = Sink()
+        let b = make(sink)
+        await b.set(mode: mode)
+        await b.transcript("Stop, stop!", trace: LatencyTrace())
+        #expect(sink.out == ["Stop, stop!"], "\(mode)")
+        #expect(sink.held.isEmpty)
+    }
+}
+
+@Test func stopAfterPendingTextDropsItInCommandMode() async throws {
+    let sink = Sink()
+    let b = make(sink)
+    await b.transcript("open the", trace: LatencyTrace())          // dangling: held for the long window
+    await b.speechStarted()
+    await b.transcript("stop", trace: LatencyTrace())
+    #expect(sink.out == ["stop"])                                   // never "open the stop"
+    try await Task.sleep(for: .milliseconds(300))
+    #expect(sink.out == ["stop"])                                   // the dropped text never fires later
+}
+
+@Test func stopAfterPendingDictationKeepsTheDictatedWords() async {
+    let sink = Sink()
+    let b = make(sink)
+    await b.set(mode: .dictation)
+    await b.transcript("hello there", trace: LatencyTrace())
+    await b.transcript("stop", trace: LatencyTrace())
+    #expect(sink.out == ["hello there", "stop"])
+}
+
+@Test func dictationEscapeIsNeverMergedIntoDictatedText() async {
+    let sink = Sink()
+    let b = make(sink)
+    await b.set(mode: .dictation)
+    await b.transcript("stop dictating", trace: LatencyTrace())
+    #expect(sink.out == ["stop dictating"])                         // released at once
+    await b.transcript("hello there", trace: LatencyTrace())
+    await b.transcript("command mode", trace: LatencyTrace())
+    #expect(sink.out == ["stop dictating", "hello there", "command mode"])
+}
+
+@Test func isCompleteCoversStopsAndDictationEscapes() {
+    let g = CommandGrammar()
+    #expect(VoicePipeline.isComplete("stop stop", mode: .command, grammar: g))
+    #expect(VoicePipeline.isComplete("no stop", mode: .dictation, grammar: g))
+    #expect(VoicePipeline.isComplete("go back", mode: .command, grammar: g))
+    #expect(!VoicePipeline.isComplete("go back", mode: .dictation, grammar: g))
+    #expect(VoicePipeline.isComplete("Stop dictating.", mode: .dictation, grammar: g))
+    #expect(VoicePipeline.isComplete("command mode", mode: .dictation, grammar: g))
+    #expect(!VoicePipeline.isComplete("hello there", mode: .dictation, grammar: g))
+    #expect(!VoicePipeline.isComplete("make it bigger", mode: .command, grammar: g))
 }

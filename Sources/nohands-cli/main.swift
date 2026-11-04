@@ -44,6 +44,11 @@ let args = Array(CommandLine.arguments.dropFirst())
 guard let command = args.first else { usage() }
 let rest = Array(args.dropFirst())
 let synth = CGEventInputSynthesizer()
+/// The process exit status once `runCommand()` returns (`task` sets 2 when it does not finish done).
+var exitStatus: Int32 = 0
+
+/// Ctrl-C state shared with the SIGINT handler (main queue only).
+@MainActor final class InterruptState { var policy = InterruptPolicy() }
 
 /// Every command runs on the main actor inside a top-level (non-nested) `NSApplication` run loop, so overlay
 /// windows draw and main-actor tasks run. (Calling `app.run()` from inside an async main-actor job never drains
@@ -234,14 +239,27 @@ let synth = CGEventInputSynthesizer()
                     if let failure { print("        failed: \(failure)") }
                     last = now
                 }
-                // Ctrl-C stops the task like the spoken "stop" (so a held mouse button is released) instead of killing it.
+                // Ctrl-C stops the task like the spoken "stop" (so a held mouse button is released) instead of
+                // killing it; a second Ctrl-C exits at once (status 130).
                 signal(SIGINT, SIG_IGN)
                 let interrupt = DispatchSource.makeSignalSource(signal: SIGINT, queue: .main)
-                interrupt.setEventHandler { MainActor.assumeIsolated { runner.cancel() } }
+                let ctrlC = InterruptState()
+                interrupt.setEventHandler {
+                    MainActor.assumeIsolated {
+                        switch ctrlC.policy.interrupt() {
+                        case .stopTask:
+                            print("stopping... (Ctrl-C again to quit now)")
+                            runner.cancel()
+                        case .exitNow:
+                            exit(InterruptPolicy.exitStatus)
+                        }
+                    }
+                }
                 interrupt.resume()
                 defer { interrupt.cancel() }
                 let outcome = await runner.run(goal: goal, mode: .command)
                 print("outcome: \(outcome)  steps=\(runner.stepsRun) total=\(ms(t0.duration(to: .now))) ms")
+                exitStatus = outcome.exitStatus
                 try? await Task.sleep(for: .milliseconds(1800))   // let the outcome HUD show
             }
         case "eval":
@@ -291,7 +309,7 @@ let app = NSApplication.shared
 app.setActivationPolicy(.accessory)
 Task { @MainActor in
     await runCommand()
-    exit(0)
+    exit(exitStatus)
 }
 app.run()
 

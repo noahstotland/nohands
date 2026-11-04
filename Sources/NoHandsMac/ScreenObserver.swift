@@ -13,8 +13,11 @@ public struct ScreenObserver: Sendable {
     }
 
     /// `labels` holds exactly the elements listed in the observation (titled, first `maxElements` by number).
+    /// While number badges are shown (`overlay` is `.labels`), the badges' own elements and numbers are used, so a
+    /// number the model picks is the one the user sees. Safe to call off the main actor (`ax` is thread-safe).
     public func observe(mode: Mode, overlay: OverlayState) -> (observation: ScreenObservation, labels: [Int: UIElementInfo]) {
-        let all = LabelAssigner.assign(ax.actionableElements())
+        let all: [Int: UIElementInfo]
+        if case .labels(let badges) = overlay { all = badges } else { all = LabelAssigner.assign(ax.actionableElements()) }
         var listed: [ObservedElement] = []
         var snapshot: [Int: UIElementInfo] = [:]
         for n in all.keys.sorted() {
@@ -30,4 +33,7 @@ public struct ScreenObserver: Sendable {
             url: ax.webURL(), mode: mode, overlay: overlay.kindName, elements: listed)
         return (observation, snapshot)
     }
+
+    /// True once right after an observation first exposed a Chromium page tree: observe again before trusting it.
+    public func didJustExpose() -> Bool { ax.didJustExpose() }
 }

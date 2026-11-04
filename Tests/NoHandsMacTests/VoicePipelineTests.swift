@@ -205,7 +205,9 @@ private func step(_ intent: String, _ status: StepStatus, _ actions: [Action] = 
     await r.pipeline.handle(transcript: "scroll down", trace: trace())   // held, then replaced (newest wins)
     await r.pipeline.handle(transcript: "click", trace: trace())
     #expect(r.input.calls.isEmpty)                         // nothing runs concurrently with the task
-    #expect(r.overlay.huds.filter { $0 == PipelineText.busySayStop }.count == 2)
+    #expect(r.overlay.huds.filter { $0.hasPrefix("held: ") }.count == 2)
+    #expect(r.overlay.huds.contains(PipelineText.held("scroll down")))
+    #expect(r.overlay.huds.contains("held: click — runs after this task (say stop to cancel)"))
     release.open()
     await r.pipeline.waitForTask()
     #expect(r.pipeline.lastTaskOutcome == .done("type a"))
@@ -247,7 +249,9 @@ private func step(_ intent: String, _ status: StepStatus, _ actions: [Action] = 
     #expect(PipelineText.hud(for: TaskOutcome.ignored) == PipelineText.didntCatch)
     #expect(PipelineText.hud(for: TaskOutcome.stopped) == "stopped")
     #expect(PipelineText.hud(for: TaskOutcome.failed("timed out")) == "timed out")
-    #expect(PipelineText.busySayStop == "busy — say stop to cancel")
+    #expect(PipelineText.held("click") == "held: click — runs after this task (say stop to cancel)")
+    #expect(PipelineText.dropped("click") == "dropped: click")
+    #expect(PipelineText.held(String(repeating: "a", count: 100)).count <= 80)   // fits the HUD without cutting the hint
 }
 
 @MainActor @Test func idleStopPhraseIsIgnored() async {
@@ -281,6 +285,7 @@ private func step(_ intent: String, _ status: StepStatus, _ actions: [Action] = 
     #expect(r.pipeline.lastTaskOutcome == .done("type c"))
     #expect(r.typed == ["type:a", "type:c"])
     #expect(!r.input.calls.contains { $0.hasPrefix("click") })    // the held click never ran
+    #expect(r.overlay.huds.contains("dropped: click"))
 }
 
 @MainActor @Test func heldJobOlderThan60sIsSkipped() async {
@@ -295,6 +300,76 @@ private func step(_ intent: String, _ status: StepStatus, _ actions: [Action] = 
         release.open()
         await r.pipeline.waitForTask()
         #expect(r.input.calls.contains("click:10,20") == runs)
-        #expect(r.overlay.huds.contains("skipped (busy)") == !runs)
+        #expect(r.overlay.huds.contains("dropped: click") == !runs)
+        #expect(!r.overlay.huds.contains(PipelineText.skippedBusy))
+    }
+}
+
+@MainActor @Test func stopDropsHeldJobAndSaysSo() async {
+    let r = rig()
+    let entered = Gate()
+    r.resolver?.scripted = [step("type a", .done, [.typeText("a")])]
+    r.resolver?.onResolve = { _ in entered.open(); await Gate().wait() }   // blocks until cancelled
+    await r.pipeline.handle(transcript: "find the newest video", trace: trace())
+    await entered.wait()
+    await r.pipeline.handle(transcript: "scroll down", trace: trace())   // held
+    await r.pipeline.handle(transcript: "stop", trace: trace())
+    await r.pipeline.waitForTask()
+    #expect(r.pipeline.lastTaskOutcome == .stopped)
+    #expect(!r.input.calls.contains("scroll"))
+    #expect(Array(r.overlay.huds.suffix(2)) == [PipelineText.stopped, "dropped: scroll down"])
+}
+
+@MainActor @Test func stopRightAfterHandleCancelsBeforeTheFirstResolve() async {
+    let r = rig()
+    r.resolver?.scripted = [step("type a", .done, [.typeText("a")])]
+    await r.pipeline.handle(transcript: "find the newest video", trace: trace())
+    await r.pipeline.handle(transcript: "stop", trace: trace())          // the runner has not resolved yet
+    await r.pipeline.waitForTask()
+    #expect(r.pipeline.lastTaskOutcome == .stopped)
+    #expect(r.resolver?.calls == 0)
+    #expect(r.typed.isEmpty)
+    #expect(r.input.calls.allSatisfy { $0 == "releaseAll" })
+}
+
+/// Feeds transcripts through a MergeBuffer built like the pipeline's (same `isComplete`) into `handle`, in order.
+@MainActor private final class MergeFeed {
+    let merge: MergeBuffer
+    let cont: AsyncStream<String>.Continuation
+    let consumer: Task<Void, Never>
+    init(_ pipeline: VoicePipeline, windowMs: Int = 40, unfinishedMs: Int = 3000) {
+        let (stream, cont) = AsyncStream<String>.makeStream(bufferingPolicy: .unbounded)
+        let grammar = CommandGrammar(config: AppConfig().grammarConfig)
+        merge = MergeBuffer(merger: UtteranceMerger(windowMs: windowMs, unfinishedWindowMs: unfinishedMs),
+                            isComplete: { VoicePipeline.isComplete($0, mode: $1, grammar: grammar) },
+                            onHold: { _ in }, emit: { text, _ in cont.yield(text) })
+        self.cont = cont
+        consumer = Task { @MainActor in
+            for await text in stream { await pipeline.handle(transcript: text, trace: trace()) }
+        }
+    }
+    func say(_ text: String) async { await merge.transcript(text, trace: trace()) }
+    /// Waits until everything emitted so far was handled.
+    func drain() async { cont.finish(); await consumer.value }
+}
+
+@MainActor @Test func spokenStopThroughMergeBufferCancelsTask() async {
+    for stop in ["stop", "Stop, stop!", "no stop"] {
+        let r = rig()
+        let entered = Gate(), release = Gate()
+        r.resolver?.scripted = [step("type a", .continue, [.typeText("a")]), step("type b", .done, [.typeText("b")])]
+        r.resolver?.onResolve = { n in if n == 2 { entered.open(); await release.wait() } }
+        let feed = MergeFeed(r.pipeline)
+        await feed.say("find the newest video")          // not a grammar command: released after the short window
+        await entered.wait()                               // the task is resolving step 2
+        await feed.say("open the")                         // dangling: would wait 3 s and merge with what follows
+        await feed.say(stop)                               // must not become "open the stop"
+        await feed.drain()
+        release.open()
+        await r.pipeline.waitForTask()
+        #expect(r.pipeline.lastTaskOutcome == .stopped, "\(stop)")
+        #expect(r.typed == ["type:a"])
+        #expect(!r.overlay.huds.contains { $0.hasPrefix("held: ") })   // the stop was never held or merged
+        #expect(r.overlay.huds.last == PipelineText.stopped)
     }
 }

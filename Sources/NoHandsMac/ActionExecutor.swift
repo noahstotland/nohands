@@ -10,11 +10,15 @@ public protocol ElementProviding: Sendable {
     func frontmostAppName() -> String?
     func focusedWindowTitle() -> String?
     func webURL() -> String?
+    /// True once right after a walk first exposed the frontmost Chromium app's page tree (which appears a moment
+    /// later): the caller should re-observe before trusting the element list. Reading it clears it.
+    func didJustExpose() -> Bool
 }
 
 extension ElementProviding {
     public func focusedWindowTitle() -> String? { nil }
     public func webURL() -> String? { nil }
+    public func didJustExpose() -> Bool { false }
 }
 
 extension AXQuery: ElementProviding {
