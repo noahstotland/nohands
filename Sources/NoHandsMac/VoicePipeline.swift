@@ -303,7 +303,9 @@ import NoHandsCore
             return nil
         }
         lastTranscript = text
-        let routing = modeMachine.route(text)
+        var routing = modeMachine.route(text)
+        // A stop phrase with no task running must not start one (held jobs never get here: busy() intercepts them).
+        if case .resolveWithLLM(let phrase) = routing, StopWords.isStop(phrase) { routing = .ignore(reason: "stop") }
         var outcome = PipelineText.summary(routing)                    // public: kinds only
         var detail = PipelineText.summary(routing, detailed: true)     // private: with payloads
 

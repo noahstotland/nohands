@@ -249,3 +249,14 @@ private func step(_ intent: String, _ status: StepStatus, _ actions: [Action] = 
     #expect(PipelineText.hud(for: TaskOutcome.failed("timed out")) == "timed out")
     #expect(PipelineText.busySayStop == "busy — say stop to cancel")
 }
+
+@MainActor @Test func idleStopPhraseIsIgnored() async {
+    let r = rig()
+    for phrase in ["stop", "never mind", "halt"] {
+        await r.pipeline.handle(transcript: phrase, trace: trace())
+        #expect(!r.pipeline.isTaskActive)
+    }
+    #expect(r.resolver?.calls == 0)
+    #expect(r.overlay.huds.isEmpty)
+    #expect(r.input.calls.isEmpty)
+}
