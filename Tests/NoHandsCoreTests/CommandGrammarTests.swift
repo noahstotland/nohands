@@ -60,6 +60,9 @@ let g = CommandGrammar()
     #expect(g.parse("cancel") == [.hideOverlay])
     #expect(g.parse("open safari") == [.openApp("safari")])
     #expect(g.parse("open visual studio code") == [.openApp("visual studio code")])
+    // Compound requests fall through to the LLM instead of being read as an app name.
+    #expect(g.parse("open youtube on chrome") == nil)
+    #expect(g.parse("open google chrome and go to youtube") == nil)
 }
 
 @Test func typeCommandAndUnmatched() {

@@ -66,6 +66,11 @@ public struct CommandGrammar: Sendable {
         ]
     }()
 
+    /// Words that never appear in a bare "open <app>" request and signal a compound command.
+    private static let compoundMarkers: Set<String> = [
+        "and", "then", "on", "in", "to", "go", "search", "for", "with", "at", "type", "click", "press",
+    ]
+
     private static let modifierAliases: [String: Modifier] = [
         "cmd": .command, "alt": .option, "ctrl": .control,
     ]
@@ -94,7 +99,9 @@ public struct CommandGrammar: Sendable {
             return [.zoomGrid(n)]
         case "open":
             let rest = tokens.dropFirst()
-            return rest.isEmpty ? nil : [.openApp(rest.joined(separator: " "))]
+            // "open chrome and go to youtube" is a multi-step request, not an app name: leave it to the LLM.
+            guard !rest.isEmpty, rest.allSatisfy({ !Self.compoundMarkers.contains($0) }) else { return nil }
+            return [.openApp(rest.joined(separator: " "))]
         case "type":
             guard tokens.count > 1 else { return nil }
             // Payload comes from the raw transcript so ASR casing/punctuation survives.
