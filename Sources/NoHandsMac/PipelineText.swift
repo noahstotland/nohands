@@ -8,6 +8,19 @@ public enum PipelineText {
     public static let localNotDownloaded = "local model not downloaded: see the NoHands menu"
     public static let llmDisabled = "LLM off (intentBackend is off)"
     public static let llmOff = "LLM off: add anthropicAPIKey to ~/.config/nohands/config.json"
+    public static let busySayStop = "busy — say stop to cancel"
+    public static let stopped = "stopped"
+
+    /// The finish HUD for a task.
+    public static func hud(for outcome: TaskOutcome) -> String {
+        switch outcome {
+        case .done(let intent): intent.isEmpty ? "done" : "done · \(intent)"
+        case .stuck(let reason): "stuck: \(reason)"
+        case .ignored: didntCatch
+        case .stopped: stopped
+        case .failed(let message): message
+        }
+    }
 
     /// HUD text for a failed intent resolution; nil means show nothing (the request was cancelled).
     public static func hud(for error: IntentError) -> String? {

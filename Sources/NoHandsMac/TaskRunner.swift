@@ -26,6 +26,8 @@ public enum TaskOutcome: Equatable, Sendable {
     private let sleep: @Sendable (Duration) async -> Void
 
     private var cancelled = false
+    /// Steps whose actions were executed in the current (or last) `run`.
+    public private(set) var stepsRun = 0
     /// The in-flight resolve or execute; `cancel()` cancels it so an HTTP request or `wait` aborts.
     private var inFlight: Task<Void, Never>?
 
@@ -50,6 +52,7 @@ public enum TaskOutcome: Equatable, Sendable {
 
     public func run(goal: String, mode: Mode) async -> TaskOutcome {
         cancelled = false
+        stepsRun = 0
         let maxSteps = max(1, config.maxTaskSteps)
         var history: [StepRecord] = []
         var repeats = RepeatDetector(limit: 3)
@@ -74,6 +77,7 @@ public enum TaskOutcome: Equatable, Sendable {
             if isCancelled { return finish(.stopped) }
             overlay.showHUD("step \(n) · \(step.intent)", duration: .seconds(4))
             let failure = await executeCancellable(step.actions, labels: labels)
+            stepsRun = n
             if isCancelled { return finish(.stopped) }
             // A `done` whose actions failed did not achieve the goal: record the failure and let the model react
             // (repeat detection above covers both `continue` and `done`, so a stubborn failing batch ends as stuck).
@@ -141,13 +145,7 @@ public enum TaskOutcome: Equatable, Sendable {
     private func finish(_ outcome: TaskOutcome) -> TaskOutcome {
         // Spec Safety: a held mouse button is released on any exit; a successful `done` keeps what it did.
         if case .done = outcome {} else { executor.releaseAll() }
-        switch outcome {
-        case .done(let intent): overlay.showHUD(intent.isEmpty ? "done" : "done · \(intent)")
-        case .stuck(let reason): overlay.showHUD("stuck: \(reason)")
-        case .ignored: overlay.showHUD(PipelineText.didntCatch)
-        case .stopped: overlay.showHUD("stopped")
-        case .failed(let message): overlay.showHUD(message)
-        }
+        overlay.showHUD(PipelineText.hud(for: outcome))
         return outcome
     }
 }

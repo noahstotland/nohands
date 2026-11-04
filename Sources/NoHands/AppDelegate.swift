@@ -317,8 +317,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 }
                 let ax = AXQuery()
                 let executor = ActionExecutor(input: CGEventInputSynthesizer(), ax: ax, overlay: overlay, config: config)
+                // Tasks observe with their own, larger AX budget: Chrome's toolbar alone exhausts the default one.
+                let observer = ScreenObserver(ax: AXQuery(budget: .milliseconds(1000), maxNodes: 6000),
+                                              maxElements: config.maxObservedElements)
                 let p = VoicePipeline(config: config, transcriber: transcriber, resolver: resolver,
-                                      executor: executor, overlay: overlay, ax: ax)
+                                      executor: executor, overlay: overlay, ax: ax, observer: observer)
                 p.onStatus = { [weak self] mode, transcript in self?.apply(mode: mode, transcript: transcript) }
                 p.onNotice = { PipelineLog.info("notice: \($0)") }
                 p.onError = { [weak self] message in self?.errorText = message; self?.refresh() }
