@@ -19,6 +19,7 @@ let package = Package(
         ),
         .executableTarget(name: "NoHands", dependencies: ["NoHandsMac"], swiftSettings: [.swiftLanguageMode(.v6)]),
         .executableTarget(name: "nohands-cli", dependencies: ["NoHandsMac"], swiftSettings: [.swiftLanguageMode(.v6)]),
+        .testTarget(name: "NoHandsMacTests", dependencies: ["NoHandsMac", "NoHandsCore"], swiftSettings: [.swiftLanguageMode(.v6)]),
         .testTarget(name: "NoHandsCoreTests", dependencies: ["NoHandsCore"], swiftSettings: [.swiftLanguageMode(.v6)]),
     ]
 )

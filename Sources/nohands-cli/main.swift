@@ -22,6 +22,7 @@ func usage() -> Never {
       nohands-cli click "<name>"     (waits 3 s, clicks the named element's center)
       nohands-cli grid               (10x8 grid 4 s, zoom into cell 35 for 4 s, HUD "done")
       nohands-cli labels             (waits 3 s, badges for frontmost app's elements for 5 s)
+      nohands-cli run "<phrase>"     (waits 2 s, parses with the command grammar, executes the actions)
       nohands-cli listen             (mic -> VAD -> ASR; Ctrl-C to quit)
     """)
 }
@@ -136,6 +137,21 @@ do {
             overlay.showLabels(ax.labels)
             try? await Task.sleep(for: .seconds(5))
             overlay.hide()
+        }
+    case "run":
+        guard rest.count == 1 else { usage() }
+        guard Permissions.accessibilityGranted(prompt: false) else {
+            fail("Accessibility permission is not granted to this process (or its terminal).")
+        }
+        guard let actions = CommandGrammar().parse(rest[0]) else { fail("not a command: \(rest[0])") }
+        print("actions: \(actions)")
+        try await Task.sleep(for: .seconds(2))
+        await runOverlay { overlay in
+            let executor = ActionExecutor(input: synth, ax: AXQuery(), overlay: overlay, config: AppConfig())
+            if let failure = executor.execute(actions) { print("failed: \(failure)") }
+            // Keep a grid/labels overlay visible briefly so the next command can target it.
+            if overlay.state != .none { try? await Task.sleep(for: .seconds(4)) }
+            else { try? await Task.sleep(for: .milliseconds(1800)) }
         }
     case "listen":
         try await listen()
