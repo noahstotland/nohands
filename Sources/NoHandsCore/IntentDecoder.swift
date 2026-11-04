@@ -20,68 +20,120 @@ public enum IntentDecoder {
         return list.compactMap { ($0 as? [String: Any]).flatMap(action(from:)) }
     }
 
+    /// Strict integer: JSON number (not boolean), finite, integral, exactly representable.
     private static func int(_ v: Any?) -> Int? {
-        if let i = v as? Int { return i }
-        if let d = v as? Double, d == d.rounded() { return Int(d) }
-        return nil
+        guard let n = v as? NSNumber, CFGetTypeID(n) != CFBooleanGetTypeID() else { return nil }
+        let d = n.doubleValue
+        guard d.isFinite, d == d.rounded() else { return nil }
+        return Int(exactly: d)
     }
-    private static func double(_ v: Any?) -> Double? { (v as? NSNumber)?.doubleValue }
+    private static func double(_ v: Any?) -> Double? {
+        guard let n = v as? NSNumber, CFGetTypeID(n) != CFBooleanGetTypeID() else { return nil }
+        let d = n.doubleValue
+        return d.isFinite ? d : nil
+    }
+    private static func clamp(_ v: Int, _ r: ClosedRange<Int>) -> Int { min(max(v, r.lowerBound), r.upperBound) }
+
+    private enum Opt<T> { case absent, invalid, value(T) }
+    private static func optInt(_ o: [String: Any], _ k: String) -> Opt<Int> {
+        guard let v = o[k] else { return .absent }
+        return int(v).map(Opt.value) ?? .invalid
+    }
+    private static func optButton(_ o: [String: Any]) -> Opt<MouseButton> {
+        guard let v = o["button"] else { return .absent }
+        return (v as? String).flatMap(MouseButton.init(rawValue:)).map(Opt.value) ?? .invalid
+    }
+    private static func nonBlank(_ v: Any?) -> String? {
+        guard let s = v as? String, !s.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+        return s
+    }
+    private static func number(_ v: Any?) -> Int? { int(v).flatMap { $0 >= 1 ? $0 : nil } }
 
     private static func action(from o: [String: Any]) -> Action? {
         guard let kind = o["kind"] as? String else { return nil }
-        let button = (o["button"] as? String).flatMap(MouseButton.init(rawValue:))
         switch kind {
         case "type_text":
-            return (o["text"] as? String).map(Action.typeText)
+            return nonBlank(o["text"]).map(Action.typeText)
         case "press_key":
             guard let k = (o["key"] as? String).flatMap(Key.init(rawValue:)) else { return nil }
-            let mods = (o["modifiers"] as? [String] ?? []).compactMap(Modifier.init(rawValue:))
-            return .pressKey(KeyChord(k, Set(mods)))
+            var mods = Set<Modifier>()
+            if let raw = o["modifiers"] {
+                guard let arr = raw as? [Any] else { return nil }
+                for m in arr {
+                    guard let name = m as? String, let mod = Modifier(rawValue: name) else { return nil }
+                    mods.insert(mod)
+                }
+            }
+            return .pressKey(KeyChord(k, mods))
         case "click":
             guard let t = clickTarget(o) else { return nil }
-            return .click(t, button: button ?? .left, count: max(1, int(o["count"]) ?? 1))
-        case "press_mouse": return .pressMouse(button ?? .left)
-        case "release_mouse": return .releaseMouse(button ?? .left)
+            var count = 1
+            switch optInt(o, "count") {
+            case .absent: break
+            case .invalid: return nil
+            case .value(let c): count = clamp(c, 1...10)
+            }
+            switch optButton(o) {
+            case .absent: return .click(t, button: .left, count: count)
+            case .invalid: return nil
+            case .value(let b): return .click(t, button: b, count: count)
+            }
+        case "press_mouse", "release_mouse":
+            var b = MouseButton.left
+            switch optButton(o) {
+            case .absent: break
+            case .invalid: return nil
+            case .value(let v): b = v
+            }
+            return kind == "press_mouse" ? .pressMouse(b) : .releaseMouse(b)
         case "move_cursor":
             return moveTarget(o).map(Action.moveCursor)
         case "scroll":
             guard let d = (o["direction"] as? String).flatMap(Direction.init(rawValue:)) else { return nil }
-            return .scroll(d, amount: int(o["amount"]) ?? 1)
+            switch optInt(o, "amount") {
+            case .absent: return .scroll(d, amount: 1)
+            case .invalid: return nil
+            case .value(let a): return .scroll(d, amount: clamp(a, 1...100))
+            }
         case "show_grid": return .showGrid
-        case "zoom_grid": return int(o["target_number"]).map(Action.zoomGrid)
+        case "zoom_grid": return number(o["target_number"]).map(Action.zoomGrid)
         case "show_labels": return .showLabels
         case "hide_overlay": return .hideOverlay
         case "set_mode":
             return (o["mode"] as? String).flatMap(Mode.init(rawValue:)).map(Action.setMode)
         case "open_app":
-            return (o["app_name"] as? String).map(Action.openApp)
+            return nonBlank(o["app_name"]).map(Action.openApp)
         case "ignore": return .ignore
         default: return nil
         }
     }
 
+    private static func point(_ o: [String: Any]) -> CGPoint? {
+        guard let x = double(o["x"]), let y = double(o["y"]),
+              (-20000...20000).contains(x), (-20000...20000).contains(y) else { return nil }
+        return CGPoint(x: x, y: y)
+    }
+
     private static func clickTarget(_ o: [String: Any]) -> ClickTarget? {
         switch o["target_kind"] as? String {
         case "cursor": return .cursor
-        case "grid_cell", "label": return int(o["target_number"]).map(ClickTarget.numbered)
-        case "element": return (o["target_name"] as? String).map { .element(named: $0) }
+        case "grid_cell", "label": return number(o["target_number"]).map(ClickTarget.numbered)
+        case "element": return nonBlank(o["target_name"]).map { .element(named: $0) }
         case "point":
-            guard let x = double(o["x"]), let y = double(o["y"]) else { return nil }
-            return .point(CGPoint(x: x, y: y))
+            return point(o).map { .point($0) }
         default: return nil
         }
     }
 
     private static func moveTarget(_ o: [String: Any]) -> MoveTarget? {
         switch o["target_kind"] as? String {
-        case "grid_cell", "label": return int(o["target_number"]).map(MoveTarget.numbered)
-        case "element": return (o["target_name"] as? String).map { .element(named: $0) }
+        case "grid_cell", "label": return number(o["target_number"]).map(MoveTarget.numbered)
+        case "element": return nonBlank(o["target_name"]).map { .element(named: $0) }
         case "point":
-            guard let x = double(o["x"]), let y = double(o["y"]) else { return nil }
-            return .point(CGPoint(x: x, y: y))
+            return point(o).map { .point($0) }
         case "relative":
             guard let dx = int(o["dx"]), let dy = int(o["dy"]) else { return nil }
-            return .relative(dx: dx, dy: dy)
+            return .relative(dx: clamp(dx, -10000...10000), dy: clamp(dy, -10000...10000))
         default: return nil
         }
     }

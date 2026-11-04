@@ -5,8 +5,8 @@ public struct ClaudeRequestBuilder: Sendable {
     public init(model: String) { self.model = model }
 
     public func body(transcript: String, context: IntentContext) throws -> Data {
-        var user = "App: \(context.frontmostApp)\nMode: \(context.mode.rawValue)\nVisible elements:\n"
-        for e in context.labeledElements { user += "\(e.number): \(e.title)\n" }
+        var user = "App: \(Self.sanitize(context.frontmostApp))\nMode: \(context.mode.rawValue)\nVisible elements:\n"
+        for e in context.labeledElements { user += "\(e.number): \(Self.sanitize(e.title))\n" }
         user += "\nRequest: \(transcript)"
         let obj: [String: Any] = [
             "model": model,
@@ -20,6 +20,14 @@ public struct ClaudeRequestBuilder: Sendable {
             "messages": [["role": "user", "content": user]],
         ]
         return try JSONSerialization.data(withJSONObject: obj)
+    }
+
+    static func sanitize(_ s: String) -> String {
+        let mapped = String(String.UnicodeScalarView(s.unicodeScalars.map {
+            CharacterSet.controlCharacters.contains($0) || CharacterSet.newlines.contains($0) ? " " : $0
+        }))
+        let collapsed = mapped.split(whereSeparator: { $0.isWhitespace }).joined(separator: " ")
+        return String(collapsed.prefix(80))
     }
 
     public static let headers: @Sendable (String) -> [String: String] = { apiKey in
