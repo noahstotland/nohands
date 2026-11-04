@@ -13,11 +13,26 @@ public enum IntentDecoder {
               let text = block["text"] as? String else {
             throw IntentDecodeError.noTextBlock
         }
+        return try actions(fromPayloadText: text)
+
+    }
+
+    public static func actions(fromPayloadText text: String) throws -> [Action] {
         guard let payload = (try? JSONSerialization.jsonObject(with: Data(text.utf8))) as? [String: Any],
               let list = payload["actions"] as? [Any] else {
             throw IntentDecodeError.malformed("text block is not {\"actions\":[...]}")
         }
         return list.compactMap { ($0 as? [String: Any]).flatMap(action(from:)) }
+    }
+
+    public static func actions(fromOllamaResponse data: Data) throws -> [Action] {
+        guard let root = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
+            throw IntentDecodeError.malformed("response is not a JSON object")
+        }
+        guard let message = root["message"] as? [String: Any], let content = message["content"] as? String else {
+            throw IntentDecodeError.noTextBlock
+        }
+        return try actions(fromPayloadText: content)
     }
 
     /// Strict integer: JSON number (not boolean), finite, integral, exactly representable.
