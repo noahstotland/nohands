@@ -11,6 +11,11 @@ public struct DesktopSnapshot: Equatable, Sendable {
     /// Every node with a `ref_id`, ids 1…N in depth-first order; `frame` is zero when the node had no bounds.
     public var elements: [UIElementInfo]
 
+    public init(app: String, snapshotID: String, windowID: String?, windowTitle: String?, complete: Bool, elements: [UIElementInfo]) {
+        self.app = app; self.snapshotID = snapshotID; self.windowID = windowID; self.windowTitle = windowTitle
+        self.complete = complete; self.elements = elements
+    }
+
     public static let editableRoles: Set<String> = ["textfield", "textarea", "searchfield", "combobox"]
 
     /// Worth showing the model: it has a ref and a name, or a value, or is a field the user could type into.
