@@ -86,8 +86,7 @@ public struct ClaudeRequestBuilder: Sendable {
         sign-up box) with its own close control: Close, ×, Skip, No thanks, Reject, or Accept for a cookie banner; \
         never click the ad itself or a link inside it. When a countdown is visible ("Skip in 5"), wait it out (wait, \
         or wait with wait_for when available). Press play on the page's own player, not an embedded ad. For a request \
-        to play or watch something, set done only when it is playing: use the media-playing signal if the request \
-        carries one, otherwise the player's control reads Pause.
+        to play or watch something, set done only when the Media line reads playing.
         """
 
     /// agent-desktop state tokens worth the model's attention, in display order.
