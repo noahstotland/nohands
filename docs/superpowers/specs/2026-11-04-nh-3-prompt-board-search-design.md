@@ -1,6 +1,7 @@
 # NH-3: Land the prompt board and the search action — Design
 
-**Date:** 2026-11-04  **Status:** draft for approval  **Ticket:** [NH-3](https://github.com/noahstotland/nohands/issues/3)
+**Date:** 2026-11-04  **Status:** Shipped  **Ticket:** [NH-3](https://github.com/noahstotland/nohands/issues/3)
+**Shipped:** in PR #23, as specified
 
 ## Intent
 
