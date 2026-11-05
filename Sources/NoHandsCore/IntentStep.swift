@@ -39,6 +39,9 @@ public struct ScreenObservation: Equatable, Sendable {
     /// The frontmost browser's windows and tabs as read; nil when the front app is not a browser. The task loop
     /// turns it into `tabs`.
     public var browserWindows: [BrowserWindow]? = nil
+    /// The app `browserWindows` was read from (which can differ from `app` if focus moved during the walk); the
+    /// tab ledger is keyed on it.
+    public var browserApp: String? = nil
     /// The numbered, capped window and tab list the model sees (the `Tabs:` block); nil for a non-browser.
     public var tabs: TabListing? = nil
     /// Text the model asked to read in the previous step (clipboard, an element value, notifications).

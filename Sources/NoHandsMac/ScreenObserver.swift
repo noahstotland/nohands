@@ -87,7 +87,9 @@ public struct ScreenObserver: Sendable {
         // Player controls are looked for among every element found; the audio hint only when there is none.
         result.observation.media = MediaSignal.state(elements: every, audioPlaying: audio.isPlaying)
         result.observation.harness = harnessKind
-        result.observation.browserWindows = ax.browserWindows()
+        let browser = ax.browserWindows()
+        result.observation.browserWindows = browser?.windows
+        result.observation.browserApp = browser?.app
         result.observation.readings = readings
         return (result.observation, result.labels, fromHarness)
     }
