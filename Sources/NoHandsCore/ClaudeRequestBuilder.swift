@@ -21,9 +21,12 @@ public struct ClaudeRequestBuilder: Sendable {
             // user message starts with `Step: n of m`, which changes each step, so nothing in it is reusable.
             "system": [[
                 "type": "text",
-                "text": IntentSchema.systemPrompt(for: request.observation.harness),
+                "text": Self.systemText(for: request.observation.harness),
                 "cache_control": ["type": "ephemeral"],
             ] as [String: Any]],
+            // The full schema on every request, tab kinds included (the Ollama path trims them per request). Changing
+            // `output_config.format` between requests invalidates the cached system block, and a task flips between
+            // browser and non-browser screens; the system text's tab-kinds rule limits them to a request with a Tabs list.
             "output_config": [
                 "effort": effort,
                 "format": ["type": "json_schema", "schema": IntentSchema.actionsJSONSchema] as [String: Any],
@@ -31,6 +34,11 @@ public struct ClaudeRequestBuilder: Sendable {
             "messages": [["role": "user", "content": userContent]],
         ]
         return try JSONSerialization.data(withJSONObject: obj)
+    }
+
+    /// The cached system block: one stable string per harness.
+    static func systemText(for harness: HarnessKind) -> String {
+        IntentSchema.systemPrompt(for: harness) + "\n\n" + IntentSchema.tabKindsRule
     }
 
     public static func userMessage(transcript: String, context: IntentContext) -> String {

@@ -200,8 +200,13 @@ import Foundation
         let obj = try #require(JSONSerialization.jsonObject(with: ClaudeRequestBuilder(model: "m").body(request: req)) as? [String: Any])
         let sys = try #require(obj["system"] as? [[String: Any]])
         #expect(sys.count == 1)
-        #expect(sys[0]["text"] as? String == IntentSchema.systemPrompt(for: harness))
+        #expect(sys[0]["text"] as? String == ClaudeRequestBuilder.systemText(for: harness))
         #expect((sys[0]["cache_control"] as? [String: String]) == ["type": "ephemeral"])
+        // The schema is the same with or without a Tabs list: a changed output_config.format would drop the cached system block.
+        var withTabs = req
+        withTabs.observation.tabs = TabListing(app: "Chrome", windows: [], hiddenWindows: 0)
+        let tabbed = try #require(JSONSerialization.jsonObject(with: ClaudeRequestBuilder(model: "m").body(request: withTabs)) as? [String: Any])
+        #expect(tabbed["output_config"] as? NSDictionary == obj["output_config"] as? NSDictionary)
         let content = try #require((obj["messages"] as? [[String: Any]])?[0]["content"] as? [[String: Any]])
         let texts = content.compactMap { $0["text"] as? String }
         #expect(texts.count == 2 + req.history.count)
