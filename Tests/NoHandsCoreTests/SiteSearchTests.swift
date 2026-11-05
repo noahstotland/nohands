@@ -44,3 +44,21 @@ import CoreGraphics
     ]
     #expect(SearchField.pick(from: els)?.id == 2)   // the topmost box, never the button
 }
+
+@Test func typableSearchText() {
+    let cases: [(text: String, bar: Bool, out: String?)] = [
+        ("outdoor  boys", false, "outdoor boys"),
+        ("cats\nand\tdogs", false, "cats and dogs"),               // tabs and newlines would be key presses
+        ("   ", false, nil),
+        ("javascript:alert(1)", true, nil),
+        ("data:text/html,x", true, nil),
+        ("file:///etc/hosts", true, nil),
+        ("JavaScript:alert(1)", true, nil),
+        ("javascript:alert(1)", false, "javascript:alert(1)"),      // a page's own box searches it as text
+        ("https://example.org", true, "https://example.org"),
+        ("note: buy milk", true, "note: buy milk"),                 // a colon followed by a space is plain words
+    ]
+    for c in cases {
+        #expect(SiteSearch.typable(c.text, forAddressBar: c.bar) == c.out, "\(c)")
+    }
+}

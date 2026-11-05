@@ -45,6 +45,19 @@ public enum SiteSearch {
         return url(host: host, query: query)
     }
 
+    /// What a search may type: runs of whitespace (tabs and newlines would become Tab and Return presses) collapse
+    /// to one space. `forAddressBar` also refuses text that starts with a non-http scheme such as `javascript:`,
+    /// which a browser would run or open instead of search for. Nil for blank or refused text.
+    public static func typable(_ query: String, forAddressBar: Bool = false) -> String? {
+        let q = query.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+        guard !q.isEmpty else { return nil }
+        if forAddressBar, let scheme = q.range(of: "^[A-Za-z][A-Za-z0-9+.-]*:(?=\\S)", options: .regularExpression),
+           !["http:", "https:"].contains(q[scheme].lowercased()) {
+            return nil
+        }
+        return q
+    }
+
     static func encoded(_ query: String) -> String? {
         let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !q.isEmpty else { return nil }

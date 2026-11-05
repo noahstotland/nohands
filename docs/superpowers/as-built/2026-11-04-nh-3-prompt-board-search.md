@@ -9,6 +9,7 @@
 - The spec's plan step 3 asks for a table-driven route test. None was added: `searchPrefersTheSearchBoxThenTheResultsPageThenTheAddressBar` already drives all four routes through the fake `ElementProviding` and pins each route's key presses, so a new test would only restate it. The log lines themselves are not asserted.
 - The `siteURL` route line does not carry the page host (`route=siteURL (no search field, known site)`): the host is the user's current page and the log line is public.
 - Code review found that a held prompt that is replaced, or dropped by Pause or by "stop" followed by new speech, kept its "held" row. Each of those rows now ends `dropped` (`VoicePipeline`).
+- Security review found two gaps, both closed: a search box outside the focused window's frame is not clicked (the route is skipped, so Cmd-A and the typing cannot land in another app), and the typed query has its whitespace collapsed (tabs and newlines would be key presses) and, from the address bar, is refused when it starts with a non-http scheme such as `javascript:` ("can't search for that"). `SiteSearch.typable` holds the rule.
 - The README changes beyond the `search for` rows: the cherry-picked commit also replaces the old HUD wording (Prompt board paragraph, local-model failure line, "Pausing mid-command", "Stopping a task", "Talking while a task runs", the harness paragraph).
 - The architecture spec (`2026-11-04-nohands-design.md`) is updated for the prompt board (overlay line, failure handling) and lists the `search` action kind.
 

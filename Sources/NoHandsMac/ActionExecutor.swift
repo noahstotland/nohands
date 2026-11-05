@@ -260,16 +260,20 @@ extension OverlayController: OverlayPresenting {
         // never in it (transcripts are private); a thrown input error is logged as a warning naming the route.
         var route = "searchField"
         do {
-            if let box = ax.searchFieldFrame() {
+            guard let typed = SiteSearch.typable(query) else { return "nothing to search for" }
+            // A field outside the focused window (scrolled out of view, another app's) is not clicked: Cmd-A and the
+            // typing after it would land in whatever is there.
+            if let box = ax.searchFieldFrame(),
+               ax.focusedWindowFrame().map({ $0.contains(CGPoint(x: box.midX, y: box.midY)) }) ?? true {
                 try input.click(at: CGPoint(x: box.midX, y: box.midY), button: .left, count: 1)
                 try input.press(KeyChord(.a, [.command]))
-                try input.type(query)
+                try input.type(typed)
                 try input.press(KeyChord(.return))
                 PipelineLog.info("search: route=searchField")
                 return nil
             }
             let pageURL = ax.webURL()
-            if let host = pageURL.flatMap({ URL(string: $0)?.host }), let results = SiteSearch.url(host: host, query: query) {
+            if let host = pageURL.flatMap({ URL(string: $0)?.host }), let results = SiteSearch.url(host: host, query: typed) {
                 route = "siteURL"
                 try addressBar(results.absoluteString)
                 PipelineLog.info("search: route=siteURL (no search field, known site)")
@@ -280,7 +284,11 @@ extension OverlayController: OverlayPresenting {
                 return "nothing to search in \(ax.frontmostAppName() ?? "the frontmost app")"
             }
             route = "addressBar"
-            try addressBar(query)
+            guard let addressText = SiteSearch.typable(query, forAddressBar: true) else {
+                PipelineLog.info("search: route=none (text would not search from the address bar)")
+                return "can't search for that"
+            }
+            try addressBar(addressText)
             PipelineLog.info("search: route=addressBar (no search field, no known site)")
             return nil
         } catch {

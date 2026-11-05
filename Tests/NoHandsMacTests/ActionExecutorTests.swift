@@ -281,9 +281,15 @@ private let reload = UIElementInfo(id: 1, frame: CGRect(x: 100, y: 100, width: 8
     let (x, i, e, _) = make()
     e.front = "Google Chrome"
     e.url = "https://www.youtube.com/"
-    e.searchBox = CGRect(x: 300, y: 10, width: 400, height: 30)
+    e.searchBox = CGRect(x: 200, y: 120, width: 200, height: 30)
     #expect(await x.execute([.search("outdoor boys")]) == nil)
-    #expect(i.calls == ["click:500,25", "press", "type:outdoor boys", "press"])
+    #expect(i.calls == ["click:300,135", "press", "type:outdoor boys", "press"])
+
+    // A box outside the focused window is never clicked (Cmd-A and typing would land elsewhere): next route.
+    i.calls = []
+    e.searchBox = CGRect(x: 700, y: 10, width: 200, height: 30)
+    #expect(await x.execute([.search("outdoor boys")]) == nil)
+    #expect(i.calls == ["press", "type:https://www.youtube.com/results?search_query=outdoor%20boys", "press"])
 
     // No box reachable but a site with a known results page: navigate the current tab to it.
     i.calls = []
@@ -301,6 +307,11 @@ private let reload = UIElementInfo(id: 1, frame: CGRect(x: 100, y: 100, width: 8
     e.isBrowser = true   // a new-tab page with no web area yet
     #expect(await x.execute([.search("cats")]) == nil)
     #expect(i.calls == ["press", "type:cats", "press"])
+
+    // Text a browser would run or open instead of search for is refused in the address bar.
+    i.calls = []
+    #expect(await x.execute([.search("javascript:alert(1)")]) == "can't search for that")
+    #expect(i.calls.isEmpty)
 
     // An app with nothing to search: a failure, and no keystrokes into whatever is focused.
     i.calls = []
