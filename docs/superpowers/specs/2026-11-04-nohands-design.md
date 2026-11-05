@@ -24,7 +24,7 @@ A menu-bar macOS app that lets the user operate the whole computer with their vo
 ## 4. Architecture
 
 ```
-mic (AVAudioEngine, 16 kHz mono Float32)
+mic (AVAudioEngine with voice processing / echo cancellation unless `echoCancellation` is false, 16 kHz mono Float32)
   → Silero VAD (FluidAudio VadManager, streaming)        ~ per 4096-sample chunk
   → UtteranceAssembler  (speechStart…speechEnd + padding) → [Float] utterance
   → Transcriber (FluidAudio AsrManager, Parakeet TDT v2)  → text   ≤ 250 ms

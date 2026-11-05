@@ -9,6 +9,9 @@ public enum MicrophoneEvent: Sendable, Equatable {
     /// The audio configuration changed (device switch, sample-rate change) and capture was rebuilt.
     case restarted
     case failed(String)
+    /// Reported once per `start()` after the first successful start: whether voice processing (echo
+    /// cancellation) is on. False when the config turned it off or macOS refused it.
+    case echoCancellation(Bool)
 }
 
 /// Captures the default input device as 16 kHz mono Float32 in exact 4096-sample chunks.
@@ -31,16 +34,19 @@ public final class MicrophoneCapture: @unchecked Sendable {
     private let queue = DispatchQueue(label: "nohands.mic.chunks", qos: .userInteractive)
     private let outFormat: AVAudioFormat
     private let lock = NSLock()
+    private let echoCancellation: Bool
     private var _onEvent: (@Sendable (MicrophoneEvent) -> Void)?
     private var running = false                              // guarded by lock
     private var generation = 0                               // guarded by lock; bumped by every start/stop
     private var observer: NSObjectProtocol?                  // guarded by lock
+    private var echoUnavailable = false                      // guarded by lock; set once macOS refuses voice processing
     // Queue-confined:
     private var onChunk: (@Sendable ([Float]) -> Void)?
     private var converter: AVAudioConverter?
     private var pending: [Float] = []
 
-    public init() throws {
+    public init(echoCancellation: Bool = true) throws {
+        self.echoCancellation = echoCancellation
         guard let f = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 16_000, channels: 1, interleaved: false)
         else { throw MicrophoneError.converterUnavailable }
         outFormat = f
@@ -74,6 +80,8 @@ public final class MicrophoneCapture: @unchecked Sendable {
         }
         lock.unlock()
         emit(.started)
+        // Once per start() session, not per configuration-change rebuild (those do not pass through here).
+        emit(.echoCancellation(engine.inputNode.isVoiceProcessingEnabled))
     }
 
     public func stop() {
@@ -101,9 +109,47 @@ public final class MicrophoneCapture: @unchecked Sendable {
         queue.async { cb?(e) }
     }
 
+    private var isEchoUnavailable: Bool { lock.lock(); defer { lock.unlock() }; return echoUnavailable }
+    private func markEchoUnavailable() { lock.lock(); echoUnavailable = true; lock.unlock() }
+
+    /// Turns voice processing on (or off, if the config says so) while the engine is stopped, which the
+    /// system requires. A refusal marks it unavailable so later rebuilds skip the attempt, and capture goes on plain.
+    private func applyVoiceProcessing(_ input: AVAudioInputNode) {
+        guard echoCancellation else {
+            if input.isVoiceProcessingEnabled { try? input.setVoiceProcessingEnabled(false) }
+            return
+        }
+        guard !isEchoUnavailable, !input.isVoiceProcessingEnabled else { return }
+        do {
+            try input.setVoiceProcessingEnabled(true)
+            // The voice-processing unit needs the output side in the graph to start.
+            _ = engine.mainMixerNode
+            // The default ducks every other app while voice processing runs; NoHands listens all the time.
+            input.voiceProcessingOtherAudioDuckingConfiguration = AVAudioVoiceProcessingOtherAudioDuckingConfiguration(
+                enableAdvancedDucking: false, duckingLevel: .min)
+        } catch {
+            markEchoUnavailable()
+            try? input.setVoiceProcessingEnabled(false)
+        }
+    }
+
     private func installTapAndStart(generation gen: Int) throws {
         guard isCurrent(gen) else { return }
         let input = engine.inputNode
+        applyVoiceProcessing(input)
+        do {
+            try startEngine(input, generation: gen)
+        } catch {
+            // Voice processing can make the engine fail to start; retry once on the plain input.
+            guard input.isVoiceProcessingEnabled, !isEchoUnavailable else { throw error }
+            markEchoUnavailable()
+            try? input.setVoiceProcessingEnabled(false)
+            try startEngine(input, generation: gen)
+        }
+    }
+
+    /// Reads the input format (after voice processing may have changed it), installs the tap and starts the engine.
+    private func startEngine(_ input: AVAudioInputNode, generation gen: Int) throws {
         let inFormat = input.outputFormat(forBus: 0)
         guard inFormat.sampleRate > 0, inFormat.channelCount > 0 else { throw MicrophoneError.noInputFormat }
         input.removeTap(onBus: 0)
@@ -132,9 +178,14 @@ public final class MicrophoneCapture: @unchecked Sendable {
         guard isCurrent(gen) else { return }
         pending.removeAll()
         converter = nil
+        let echoWasOn = engine.inputNode.isVoiceProcessingEnabled
         do {
             try installTapAndStart(generation: gen)
-            if isCurrent(gen) { onEvent?(.restarted) }
+            if isCurrent(gen) {
+                onEvent?(.restarted)
+                // The rebuild fell back to the plain input; say so, since start() reported the earlier state.
+                if echoWasOn, echoCancellation, !engine.inputNode.isVoiceProcessingEnabled { onEvent?(.echoCancellation(false)) }
+            }
         } catch {
             if let delay = RestartBackoff().delay(afterFailures: failures + 1) {
                 queue.asyncAfter(deadline: .now() + delay) { [weak self] in
@@ -174,13 +225,16 @@ public final class MicrophoneCapture: @unchecked Sendable {
         }
     }
 
+    /// Copies channel 0 only, as a mono buffer at the source sample rate. A voice-processing input can be
+    /// multichannel; channel 0 is the processed voice, and converting every channel would mix in the rest.
     private static func copy(_ src: AVAudioPCMBuffer) -> AVAudioPCMBuffer? {
-        guard let dst = AVAudioPCMBuffer(pcmFormat: src.format, frameCapacity: src.frameLength),
+        guard !src.format.isInterleaved,
+              let mono = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: src.format.sampleRate, channels: 1, interleaved: false),
+              let dst = AVAudioPCMBuffer(pcmFormat: mono, frameCapacity: src.frameLength),
               let s = src.floatChannelData, let d = dst.floatChannelData else { return nil }
         dst.frameLength = src.frameLength
-        for c in 0..<Int(src.format.channelCount) {
-            memcpy(d[c], s[c], Int(src.frameLength) * MemoryLayout<Float>.size)
-        }
+        // Non-interleaved Float32 (what the input tap delivers): channel 0 is its own plane.
+        memcpy(d[0], s[0], Int(src.frameLength) * MemoryLayout<Float>.size)
         return dst
     }
 }

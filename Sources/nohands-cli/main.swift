@@ -405,7 +405,8 @@ enum Log {
 func listen() async throws {
     let asr = try await ParakeetTranscriber(version: "v2")
     let vad = try await VoiceActivity()
-    let mic = try MicrophoneCapture()
+    let config = try loadConfig()
+    let mic = try MicrophoneCapture(echoCancellation: config.echoCancellation)
     mic.onEvent = { Log.err("[mic] \($0)") }
     let (chunks, chunkCont) = AsyncStream<[Float]>.makeStream(bufferingPolicy: .unbounded)
     // Keep at most 2 pending utterances; when full the OLDEST is dropped (reported via the yield result).

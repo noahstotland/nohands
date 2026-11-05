@@ -49,6 +49,9 @@ public struct AppConfig: Codable, Equatable, Sendable {
     public var agentDesktopHeadedFallback: Bool = true
     /// Start an agent-desktop session (with its trace) per task.
     public var agentDesktopTrace: Bool = false
+    /// Turn on the system's voice processing (echo cancellation) on the microphone, so audio the Mac's own
+    /// speakers play is removed before VAD and ASR. Capture goes on without it if macOS refuses.
+    public var echoCancellation: Bool = true
 
     public static let defaultOllamaURL = "http://127.0.0.1:11434"
     public static let efforts = ["low", "medium", "high", "xhigh", "max"]
@@ -62,6 +65,7 @@ public struct AppConfig: Codable, Equatable, Sendable {
         case maxTaskSteps, llmDeadlineMs, settleMs, maxObservedElements
         case localLlmDeadlineMs, localMaxObservedElements
         case desktopHarness, agentDesktopPath, agentDesktopTimeoutMs, agentDesktopSnapshotMs, agentDesktopHeadedFallback, agentDesktopTrace
+        case echoCancellation
     }
 
     public init(from decoder: Decoder) throws {
@@ -94,6 +98,7 @@ public struct AppConfig: Codable, Equatable, Sendable {
         d.agentDesktopSnapshotMs = try c.decodeIfPresent(Int.self, forKey: .agentDesktopSnapshotMs) ?? d.agentDesktopSnapshotMs
         d.agentDesktopHeadedFallback = try c.decodeIfPresent(Bool.self, forKey: .agentDesktopHeadedFallback) ?? d.agentDesktopHeadedFallback
         d.agentDesktopTrace = try c.decodeIfPresent(Bool.self, forKey: .agentDesktopTrace) ?? d.agentDesktopTrace
+        d.echoCancellation = try c.decodeIfPresent(Bool.self, forKey: .echoCancellation) ?? d.echoCancellation
         self = d
     }
 
