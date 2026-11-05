@@ -1,6 +1,7 @@
 # NH-12: Optional attention word so stray speech is not acted on — Design
 
-**Date:** 2026-11-05  **Status:** Draft  **Ticket:** [NH-12](https://github.com/noahstotland/nohands/issues/12)
+**Date:** 2026-11-05  **Status:** Shipped  **Ticket:** [NH-12](https://github.com/noahstotland/nohands/issues/12)
+**Shipped:** in PR #27, with differences: [as-built](../as-built/2026-11-05-nh-12-attention-word.md)
 
 ## Intent
 
