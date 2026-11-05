@@ -166,9 +166,12 @@ Optional file at `~/.config/nohands/config.json`. Every key may be omitted. For 
   "settleMs": 3000,
   "maxObservedElements": 120,
   "localLlmDeadlineMs": 30000,
-  "localMaxObservedElements": 40
+  "localMaxObservedElements": 40,
+  "echoCancellation": true
 }
 ```
+
+**Echo cancellation.** `echoCancellation` (true by default) turns on macOS voice processing on the microphone, which removes what the Mac's own speakers play before NoHands listens. Set it to `false` if an external audio interface does its own processing and the two clash. If macOS refuses voice processing, NoHands keeps listening without it and says so in the log.
 
 **Task loop keys.** `maxTaskSteps` (1 to 30) is how many observe-and-act steps a multi-step request may take. `llmDeadlineMs` (2000 to 60000) is how long each model call may take. `settleMs` (0 to 10000) is the most time, in wall-clock terms and including the time spent reading the screen, to wait for the screen to stop changing after an action (and before the first step only when a Chromium browser's page content was just switched on). `maxObservedElements` (10 to 300) caps how many on-screen elements are sent to the model. When the local model is the backend, `localLlmDeadlineMs` (2000 to 120000, default 30000) and `localMaxObservedElements` (10 to 300, default 40) replace those two: a 7B model on an M1 Pro needs 5 to 20 s per step, and every element costs about 14 prompt tokens.
 
@@ -208,7 +211,7 @@ The harness is chosen once per task from its first observation: if agent-desktop
 
 Audio never leaves your machine. Only commands the grammar can't match are sent to Claude (or to the local model, which stays on your Mac), as text: your transcript, the frontmost app's name and the titles of its visible controls. Multi-step task steps also send the focused window's title, the page URL (in a browser) and each element's role, to Claude or to the local model alike. With the agent-desktop harness, each listed field's current value (what is typed in a search box or a form, cut at 60 characters) is sent too; clipboard text, a full element value and the notification list are sent only in the step after the model explicitly asked to read them. Text handed to agent-desktop (`set_value`, `type_into`, `clipboard_set`) travels in the child process's arguments, visible to `ps` while it runs. Without an API key nothing is sent off the Mac; with the local backend, text goes only to Ollama on `127.0.0.1`.
 
-**There is no wake word and no echo cancellation.** Any audio the microphone hears (calls, videos, other people talking, your own speakers) is transcribed and acted on, and in dictation mode it is typed into the focused app. With an API key, phrases the grammar doesn't match are also sent to Claude as text. Say "go to sleep" before leaving the desk or when playing audio; only "wake up" is honored while asleep.
+**There is no wake word.** Echo cancellation removes what the Mac's own speakers play, but other people talking, a phone on speaker or very loud playback can still be heard, so "go to sleep" is still the safe choice for calls. Any audio the microphone still hears is transcribed and acted on, and in dictation mode it is typed into the focused app. With an API key, phrases the grammar doesn't match are also sent to Claude as text. Say "go to sleep" before leaving the desk or when playing audio; only "wake up" is honored while asleep.
 
 ## Layout
 

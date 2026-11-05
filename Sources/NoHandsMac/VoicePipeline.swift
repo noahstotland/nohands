@@ -170,7 +170,8 @@ import NoHandsCore
         self.merge = merge
         await merge.set(mode: modeMachine.mode)
 
-        let capture = try MicrophoneCapture()
+        let echoWanted = config.echoCancellation
+        let capture = try MicrophoneCapture(echoCancellation: echoWanted)
         capture.onEvent = { [weak self] event in
             if case .failed(let message) = event {
                 PipelineLog.error("[mic] failure", detail: message)
@@ -180,6 +181,8 @@ import NoHandsCore
                     self.stop()
                     self.onError?("microphone failed")
                 }
+            } else if case .echoCancellation(false) = event, echoWanted {
+                PipelineLog.warning("[mic] echo cancellation unavailable; listening without it")
             } else {
                 PipelineLog.info("[mic] \(event)")
             }
