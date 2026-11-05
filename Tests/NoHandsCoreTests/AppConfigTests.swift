@@ -96,3 +96,9 @@ import Foundation
     #expect(unknown.desktopHarness == .auto)
     #expect(try AppConfig.load(from: Data(#"{"desktopHarness":"native"}"#.utf8), environment: [:]).desktopHarness == .native)
 }
+
+@Test func echoCancellationDefaultsOnAndParses() throws {
+    #expect(try AppConfig.load(from: nil, environment: [:]).echoCancellation)
+    #expect(try AppConfig.load(from: Data(#"{"silenceMs":600}"#.utf8), environment: [:]).echoCancellation)
+    #expect(!(try AppConfig.load(from: Data(#"{"echoCancellation":false}"#.utf8), environment: [:]).echoCancellation))
+}
