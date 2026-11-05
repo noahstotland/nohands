@@ -4,7 +4,7 @@ import NoHandsCore
 import NoHandsMac
 
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var statusItem: NSStatusItem!
     private let stateItem = NSMenuItem(title: MenuState.loading.text, action: nil, keyEquivalent: "")
     private let configItem = NSMenuItem(title: "config.json invalid: using defaults", action: nil, keyEquivalent: "")
@@ -14,6 +14,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let retryItem = NSMenuItem(title: "Retry", action: #selector(retry), keyEquivalent: "")
     private let accessibilityItem = NSMenuItem(title: "Grant Accessibility…", action: #selector(grantAccessibility), keyEquivalent: "")
     private let micItem = NSMenuItem(title: "Microphone denied — open Settings", action: #selector(openMicrophoneSettings), keyEquivalent: "")
+    private let harnessItem = NSMenuItem(title: "Harness: checking…", action: nil, keyEquivalent: "")
+    /// agent-desktop, when found and permitted at pipeline start (see `HarnessStatus`).
+    private var harnessStatus: HarnessStatus?
+    private var harnessProbeInFlight = false
 
     private let overlay = OverlayController()
     private var config = AppConfig()
@@ -51,9 +55,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem.button?.imagePosition = .imageLeading
 
         let menu = NSMenu()
+        menu.delegate = self
         stateItem.isEnabled = false
         configItem.isEnabled = false
         transcriptItem.isEnabled = false
+        harnessItem.isEnabled = false
         for item in [localModelItem, pauseItem, retryItem, accessibilityItem, micItem] { item.target = self }
         let title = NSMutableAttributedString(string: "● ", attributes: [.foregroundColor: NSColor.systemRed])
         title.append(NSAttributedString(string: "Grant Accessibility…"))
@@ -61,7 +67,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let quit = NSMenuItem(title: "Quit NoHands", action: #selector(quit), keyEquivalent: "q")
         quit.target = self
 
-        for item in [stateItem, configItem, NSMenuItem.separator(), transcriptItem, localModelItem, NSMenuItem.separator(),
+        for item in [stateItem, configItem, NSMenuItem.separator(), transcriptItem, localModelItem, harnessItem, NSMenuItem.separator(),
                      pauseItem, retryItem, accessibilityItem, micItem, NSMenuItem.separator(), quit] {
             menu.addItem(item)
         }
@@ -89,7 +95,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             localModelItem.isEnabled = LocalModelMenu.actionable(localStatus)
         }
         pauseItem.title = userPaused ? "Resume Listening" : "Pause Listening"
+        if let harnessStatus { harnessItem.title = harnessStatus.text }
         statusItem.button?.title = " " + MenuState.title(mode: mode, paused: state == .paused)
+    }
+
+    // MARK: - desktop harness
+
+    /// The harness kind the pipeline runs with (native until the probe answers).
+    private var harnessKind: HarnessKind { harnessStatus?.chosen ?? .native }
+
+    /// Re-reads the agent-desktop status (binary, version, Accessibility) so an install needs no restart.
+    private func probeHarness() async -> HarnessStatus {
+        harnessProbeInFlight = true
+        defer { harnessProbeInFlight = false }
+        let status = await HarnessStatus.probe(config: config)
+        harnessStatus = status
+        refresh()
+        return status
+    }
+
+    func menuWillOpen(_ menu: NSMenu) {
+        guard !harnessProbeInFlight else { return }
+        Task { _ = await probeHarness() }
     }
 
     private func apply(mode: Mode, transcript: String) {
@@ -169,7 +196,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         lastWarm = now
         Task {
             defer { warming = false }
-            do { try await ollama.warm(model: model) } catch {
+            do { try await ollama.warm(model: model, harness: harnessKind) } catch {
                 PipelineLog.warning("local model warm-up failed")
             }
         }
@@ -316,12 +343,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 case .off: resolver = nil
                 }
                 let ax = AXQuery()
-                let executor = ActionExecutor(input: CGEventInputSynthesizer(), ax: ax, overlay: overlay, config: config)
+                // agent-desktop, when installed and permitted: the task loop observes and acts through it.
+                let harness = await probeHarness().makeHarness(config: config)
+                PipelineLog.info("harness: \(harnessStatus?.text ?? "native")")
+                let executor = ActionExecutor(input: CGEventInputSynthesizer(), ax: ax, overlay: overlay, config: config,
+                                              harness: harness)
                 // Tasks observe with their own, larger AX budget: Chrome's toolbar alone exhausts the default one.
                 let observer = ScreenObserver(ax: AXQuery(budget: .milliseconds(1000), maxNodes: 6000),
-                                              maxElements: config.observedElementCap)
+                                              maxElements: config.observedElementCap, harness: harness,
+                                              snapshotTimeoutMs: config.agentDesktopSnapshotMs)
                 let p = VoicePipeline(config: config, transcriber: transcriber, resolver: resolver,
-                                      executor: executor, overlay: overlay, ax: ax, observer: observer)
+                                      executor: executor, overlay: overlay, ax: ax, observer: observer, harness: harness)
                 p.onStatus = { [weak self] mode, transcript in self?.apply(mode: mode, transcript: transcript) }
                 p.onNotice = { PipelineLog.info("notice: \($0)") }
                 p.onError = { [weak self] message in self?.errorText = message; self?.refresh() }

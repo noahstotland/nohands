@@ -55,11 +55,12 @@ public actor OllamaClient {
 
     /// Loads the model, keeps it resident, and prefills the fixed prompt prefix into Ollama's cache (one token is
     /// generated). Cold prefill of the prefix took 3-20 s on an M1 Pro under memory pressure; hence the long timeout.
-    public func warm(model: String) async throws {
+    /// `harness` must match the harness tasks will run with: the cached prefix differs per harness.
+    public func warm(model: String, harness: HarnessKind = .native) async throws {
         var req = URLRequest(url: baseURL.appendingPathComponent("api/chat"), timeoutInterval: 120)
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        req.httpBody = OllamaRequestBuilder(model: model).warmBody()
+        req.httpBody = OllamaRequestBuilder(model: model).warmBody(harness: harness)
         _ = try await session.data(for: req, delegate: NoRedirectDelegate())
     }
 }

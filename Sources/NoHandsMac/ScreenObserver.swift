@@ -80,7 +80,7 @@ public struct ScreenObserver: Sendable {
     }
 
     /// Numbers the snapshot's listable elements 1…N in snapshot (depth-first) order, up to `limit`.
-    static func list(_ snap: DesktopSnapshot, app: String, windowTitle: String, url: String?, mode: Mode,
+    public static func list(_ snap: DesktopSnapshot, app: String, windowTitle: String, url: String?, mode: Mode,
                      overlay: OverlayState, limit: Int) -> (observation: ScreenObservation, labels: [Int: UIElementInfo]) {
         var listed: [ObservedElement] = []
         var labels: [Int: UIElementInfo] = [:]
