@@ -161,17 +161,7 @@ public final class AXQuery: @unchecked Sendable {
             return nil
         }
         // The page first: a browser's own toolbar also has text fields ("Address and search bar").
-        func firstWebArea(_ el: AXUIElement, depth: Int) -> AXUIElement? {
-            guard depth <= Self.maxDepth, visited < Self.searchMaxNodes, ContinuousClock.now < deadline else { return nil }
-            visited += 1
-            AXUIElementSetMessagingTimeout(el, 0.05)
-            if Self.string(el, kAXRoleAttribute) == "AXWebArea" { return el }
-            for c in Self.elements(el, kAXChildrenAttribute) {
-                if let w = firstWebArea(c, depth: depth + 1) { return w }
-            }
-            return nil
-        }
-        if let web = firstWebArea(f.window, depth: 1) {
+        if let web = Self.firstWebArea(f.window, depth: 1, visited: &visited, limit: Self.searchMaxNodes, deadline: deadline) {
             if let hit = find(web, depth: 1, skippingWebAreas: false) { return hit }
             visited = 0
         }
@@ -194,6 +184,19 @@ public final class AXQuery: @unchecked Sendable {
 
     public func resetBrowserTokens() { lock.withLock { browserTokens = [] } }
 
+    /// The first `AXWebArea` under `el` (depth-first), within the node limit and deadline.
+    static func firstWebArea(_ el: AXUIElement, depth: Int, visited: inout Int, limit: Int,
+                             deadline: ContinuousClock.Instant) -> AXUIElement? {
+        guard depth <= maxDepth, visited < limit, ContinuousClock.now < deadline else { return nil }
+        visited += 1
+        AXUIElementSetMessagingTimeout(el, 0.05)
+        if string(el, kAXRoleAttribute) == "AXWebArea" { return el }
+        for c in elements(el, kAXChildrenAttribute) {
+            if let w = firstWebArea(c, depth: depth + 1, visited: &visited, limit: limit, deadline: deadline) { return w }
+        }
+        return nil
+    }
+
     public func element(for id: Int) -> AXUIElement? {
         lock.withLock { elements[id] }
     }
@@ -210,11 +213,20 @@ public final class AXQuery: @unchecked Sendable {
         let appEl = AXUIElementCreateApplication(app.processIdentifier)
         AXUIElementSetMessagingTimeout(appEl, 0.05)
         exposeChromiumTree(app, appEl)   // may block briefly; must precede the walk deadline
-        var walker = Walker(screens: screens, maxNodes: maxNodes, deadline: ContinuousClock.now.advanced(by: budget))
+        let policy = WalkPolicy.pick(isBrowser: frontmostIsBrowser(),
+                                     default: WalkPolicy(budget: budget, maxNodes: maxNodes, pageFirst: false))
+        let deadline = ContinuousClock.now.advanced(by: policy.budget)
+        var walker = Walker(screens: screens, maxNodes: policy.maxNodes, deadline: deadline)
 
         // Menu bar first (cheap, always present), then windows (sheets/popovers), then plain children.
         if let bar = Self.element(appEl, kAXMenuBarAttribute) {
             walker.visit(bar, depth: 1, descend: true, stopAtMenuBarItems: true)
+        }
+        if policy.pageFirst, let window = Self.element(appEl, kAXFocusedWindowAttribute) {
+            var seen = 0
+            if let web = Self.firstWebArea(window, depth: 1, visited: &seen, limit: policy.maxNodes, deadline: deadline) {
+                walker.visit(web, depth: 1, descend: true)
+            }
         }
         for w in Self.elements(appEl, kAXWindowsAttribute) { walker.visit(w, depth: 1, descend: true) }
         for c in Self.elements(appEl, kAXChildrenAttribute) { walker.visit(c, depth: 1, descend: true) }

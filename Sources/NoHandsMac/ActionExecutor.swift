@@ -133,6 +133,8 @@ extension OverlayController: OverlayPresenting {
     /// The accessibility layer the media walk uses: one with a larger budget than `ax`, which does not reach a
     /// browser player's buttons. Nil walks with `ax`.
     private let mediaAX: (any ElementProviding)?
+    /// How long a freshly exposed Chromium page tree gets to build before the one re-walk.
+    private let exposureSettle: Duration
     /// How long an app that just came to the front may take to show a window (a cold launch on a loaded Mac).
     private let windowTimeout: Duration
     private var pressed: Set<MouseButton> = []
@@ -147,11 +149,12 @@ extension OverlayController: OverlayPresenting {
                 config: AppConfig, frontTimeout: Duration = .seconds(1.5), windowTimeout: Duration = .seconds(6),
                 harness: (any DesktopHarness)? = nil, clipboard: any ClipboardAccess = PasteboardClipboard(),
                 audio: any AudioOutputProbing = AudioOutputProbe(), mediaPoll: Duration = .milliseconds(500),
-                mediaAX: (any ElementProviding)? = nil) {
+                mediaAX: (any ElementProviding)? = nil, exposureSettle: Duration = .milliseconds(600)) {
         self.audio = audio
         self.mediaAX = mediaAX
         self.mediaPoll = mediaPoll
         self.frontTimeout = frontTimeout
+        self.exposureSettle = exposureSettle
         self.windowTimeout = windowTimeout
         self.input = input
         self.ax = ax
@@ -220,7 +223,7 @@ extension OverlayController: OverlayPresenting {
                 }
                 let usedOverlay: Bool
                 if case .numbered = target { usedOverlay = overlay.state != .none } else { usedOverlay = false }
-                switch resolveClick(target) {
+                switch resolveClick(target, elements: await namedElements(for: target)) {
                 case .failure(let m): return m
                 case .point(let p):
                     try input.click(at: p, button: button, count: count)
@@ -235,7 +238,7 @@ extension OverlayController: OverlayPresenting {
                 try input.mouseUp(b, at: at)
                 pressed.remove(b)
             case .moveCursor(let target):
-                switch resolveMove(target) {
+                switch resolveMove(target, elements: await namedElements(for: target)) {
                 case .failure(let m): return m
                 case .point(let p): try input.moveMouse(to: p)
                 }
@@ -252,7 +255,7 @@ extension OverlayController: OverlayPresenting {
                 guard let zoomed = g.zoomed(into: n) else { return "no cell \(n)" }
                 overlay.showGrid(zoomed)
             case .showLabels:
-                overlay.showLabels(LabelAssigner.assign(ax.actionableElements()))
+                overlay.showLabels(LabelAssigner.assign(await freshElements()))
             case .hideOverlay:
                 overlay.hide()
             case .setMode(let mode):
@@ -483,27 +486,43 @@ extension OverlayController: OverlayPresenting {
         return .failure("point off screen")
     }
 
-    private func elementsIfNeeded(named: Bool) -> [UIElementInfo] { named ? ax.actionableElements() : [] }
+    /// One walk; if it just exposed a Chromium page tree, wait for the tree to build and walk once more.
+    private func freshElements() async -> [UIElementInfo] {
+        let first = ax.actionableElements()
+        guard ax.didJustExpose() else { return first }
+        try? await Task.sleep(for: exposureSettle)
+        return Task.isCancelled ? first : ax.actionableElements()
+    }
 
-    private func resolveClick(_ t: ClickTarget) -> TargetResolution {
+    private func namedElements(for target: ClickTarget) async -> [UIElementInfo]? {
+        if case .element = target { return await freshElements() }
+        return nil
+    }
+
+    private func namedElements(for target: MoveTarget) async -> [UIElementInfo]? {
+        if case .element = target { return await freshElements() }
+        return nil
+    }
+
+    private func resolveClick(_ t: ClickTarget, elements: [UIElementInfo]?) -> TargetResolution {
         var needsElements = false, direct = false
         if case .element = t { needsElements = true }
         if case .point = t { direct = true }
         let cursor = input.currentMouseLocation()
         if case .cursor = t, cursor == nil { return .failure(Self.pointerUnknown) }
         return checkOnScreen(TargetResolver.resolveClick(t, overlay: overlay.state, cursor: cursor ?? .zero,
-                                           elements: elementsIfNeeded(named: needsElements),
+                                           elements: elements ?? (needsElements ? ax.actionableElements() : []),
                                            screens: ax.screenRectsCG(), labels: labelSnapshot), checked: direct)
     }
 
-    func resolveMove(_ t: MoveTarget) -> TargetResolution {
+    func resolveMove(_ t: MoveTarget, elements: [UIElementInfo]? = nil) -> TargetResolution {
         var needsElements = false, direct = false
         if case .element = t { needsElements = true }
         switch t { case .point, .relative: direct = true; default: break }
         let cursor = input.currentMouseLocation()
         if case .relative = t, cursor == nil { return .failure(Self.pointerUnknown) }
         return checkOnScreen(TargetResolver.resolveMove(t, overlay: overlay.state, cursor: cursor ?? .zero,
-                                          elements: elementsIfNeeded(named: needsElements),
+                                          elements: elements ?? (needsElements ? ax.actionableElements() : []),
                                           screens: ax.screenRectsCG(), labels: labelSnapshot), checked: direct)
     }
 

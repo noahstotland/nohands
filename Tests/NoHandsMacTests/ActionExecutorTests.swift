@@ -381,3 +381,20 @@ private let reload = UIElementInfo(id: 1, frame: CGRect(x: 100, y: 100, width: 8
     let (ex, _, ax, _) = make()
     #expect(await ex.execute([.closeTab(5)], tabs: listing) == "no tab 5" && ax.closedTabs.isEmpty)
 }
+
+@MainActor @Test func namedClickRewalksAfterExposure() async {
+    let subscribe = UIElementInfo(id: 1, frame: CGRect(x: 100, y: 200, width: 80, height: 30), title: "Subscribe", role: "AXButton")
+    let click = [Action.click(.element(named: "subscribe"), button: .left, count: 1)]
+    for exposed in [true, false] {
+        let i = FakeInput(), e = FakeElements(), o = FakeOverlay()
+        e.walkLists = [[], [subscribe]]
+        e.exposeOnNextWalk = exposed
+        let x = ActionExecutor(input: i, ax: e, overlay: o, config: AppConfig(), exposureSettle: .zero)
+        let result = await x.execute(click)
+        if exposed {
+            #expect(result == nil && i.calls == ["click:140,215"] && e.walks == 2)
+        } else {
+            #expect(result == "no element named 'subscribe'" && i.calls.isEmpty && e.walks == 1)
+        }
+    }
+}

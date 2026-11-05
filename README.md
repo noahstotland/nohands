@@ -127,6 +127,8 @@ The script installs Ollama with Homebrew if needed, starts it, pulls the model a
 
 With `attentionWord` set (see Configuration), start each command with it: `computer, new tab`. Commands without it are ignored.
 
+In a browser, number badges and `click <name>` cover the page's links, buttons and fields as well as the toolbar; the first command after a browser comes to the front can take about a second longer while the page's accessibility tree is built.
+
 In dictation mode, say `period`, `comma`, `question mark`, `new line`, `new paragraph`, `open quote` and similar to insert punctuation.
 
 ## CLI tools
