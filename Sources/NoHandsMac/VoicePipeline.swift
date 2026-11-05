@@ -403,12 +403,14 @@ import NoHandsCore
                 overlay.report(job.id, text: text, status: .dropped(PipelineText.cancelled))
                 outcome += " (cancelled)"; detail += " (cancelled)"; break
             }
-            if let failure = await executor.execute(actions) {
+            let failure = await executor.execute(actions)
+            let reading = executor.takeReadings().first   // "is it playing" answers on the row
+            if let failure {
                 overlay.report(job.id, text: text, status: .failed(failure))
                 outcome += " FAILED"
                 detail += " FAILED(\(failure))"
             } else {
-                overlay.report(job.id, text: text, status: .done(""))
+                overlay.report(job.id, text: text, status: .done(reading ?? ""))
             }
         case .resolveWithLLM(let phrase):
             overlay.report(job.id, text: text, status: .heard)

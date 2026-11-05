@@ -44,6 +44,7 @@ public struct ClaudeRequestBuilder: Sendable {
         }
         s += "App: \(sanitize(o.app))   Window: \(sanitize(o.windowTitle).nonEmpty ?? "-")   URL: \(o.url.map { sanitize($0) } ?? "-")\n"
         s += "Mode: \(o.mode.rawValue)   Overlay: \(sanitize(o.overlay))   Harness: \(o.harness.rawValue)\n"
+        if let media = o.media { s += "Media: \(media.rawValue)\n" }
         if let surface = o.surface { s += "Surface: \(sanitize(surface))\n" }
         if !o.windows.isEmpty { s += "Windows: " + o.windows.map { "\"\(sanitize($0))\"" }.joined(separator: ", ") + "\n" }
         s += "Visible elements:\n"

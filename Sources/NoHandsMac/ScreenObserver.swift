@@ -9,14 +9,17 @@ public struct ScreenObserver: Sendable {
     private let maxElements: Int
     private let harness: (any DesktopHarness)?
     private let snapshotTimeoutMs: Int
+    private let audio: any AudioOutputProbing
     /// Overlay surfaces agent-desktop can snapshot; while one is open the window behind it is the wrong target.
     static let overlaySurfaces: [String: DesktopSurface] = ["menu": .menu, "sheet": .sheet, "alert": .alert, "popover": .popover]
 
-    public init(ax: any ElementProviding, maxElements: Int, harness: (any DesktopHarness)? = nil, snapshotTimeoutMs: Int = 3000) {
+    public init(ax: any ElementProviding, maxElements: Int, harness: (any DesktopHarness)? = nil, snapshotTimeoutMs: Int = 3000,
+                audio: any AudioOutputProbing = AudioOutputProbe()) {
         self.ax = ax
         self.maxElements = maxElements
         self.harness = harness
         self.snapshotTimeoutMs = snapshotTimeoutMs
+        self.audio = audio
     }
 
     /// `labels` holds exactly the elements listed in the observation (titled, first `maxElements` by number).
@@ -25,6 +28,13 @@ public struct ScreenObserver: Sendable {
     /// read on the main actor); nil reads them here.
     public func observe(mode: Mode, overlay: OverlayState,
                         screens: [CGRect]? = nil) -> (observation: ScreenObservation, labels: [Int: UIElementInfo]) {
+        let r = observeNative(mode: mode, overlay: overlay, screens: screens)
+        return (r.observation, r.labels)
+    }
+
+    /// The native walk; `all` is every element it found, before the untitled filter and the cap.
+    private func observeNative(mode: Mode, overlay: OverlayState, screens: [CGRect]?)
+        -> (observation: ScreenObservation, labels: [Int: UIElementInfo], all: [UIElementInfo]) {
         let all: [Int: UIElementInfo]
         if case .labels(let badges) = overlay { all = badges }
         else { all = LabelAssigner.assign(screens.map { ax.actionableElements(screens: $0) } ?? ax.actionableElements()) }
@@ -41,7 +51,7 @@ public struct ScreenObserver: Sendable {
         let observation = ScreenObservation(
             app: ax.frontmostAppName() ?? "", windowTitle: ax.focusedWindowTitle() ?? "",
             url: ax.webURL(), mode: mode, overlay: overlay.kindName, elements: listed)
-        return (observation, snapshot)
+        return (observation, snapshot, all.keys.sorted().compactMap { all[$0] })
     }
 
     /// The task loop's observation. `harnessKind` is the task's harness (chosen once with `probe()`): with
@@ -55,6 +65,7 @@ public struct ScreenObserver: Sendable {
     public func observe(mode: Mode, overlay: OverlayState, screens: [CGRect]? = nil, harnessKind: HarnessKind,
                         readings: [String] = [], surfaces: [String]? = nil) async -> (observation: ScreenObservation, labels: [Int: UIElementInfo], fromHarness: Bool) {
         var result: (observation: ScreenObservation, labels: [Int: UIElementInfo])
+        var every: [UIElementInfo]
         var fromHarness = false
         if harnessKind == .agentDesktop, let harness, overlay.kindName != "labels" {
             let app = ax.frontmostAppName() ?? ""
@@ -63,13 +74,18 @@ public struct ScreenObserver: Sendable {
                 result = Self.list(snap, app: app, windowTitle: ax.focusedWindowTitle() ?? snap.windowTitle ?? "",
                                    url: ax.webURL(), mode: mode, overlay: overlay, limit: maxElements)
                 result.observation.surface = surface?.rawValue
+                every = snap.elements
                 fromHarness = true
             } else {
-                result = observe(mode: mode, overlay: overlay, screens: screens)
+                let native = observeNative(mode: mode, overlay: overlay, screens: screens)
+                (result, every) = ((native.observation, native.labels), native.all)
             }
         } else {
-            result = observe(mode: mode, overlay: overlay, screens: screens)
+            let native = observeNative(mode: mode, overlay: overlay, screens: screens)
+            (result, every) = ((native.observation, native.labels), native.all)
         }
+        // Player controls are looked for among every element found; the audio hint only when there is none.
+        result.observation.media = MediaSignal.state(elements: every, audioPlaying: audio.isPlaying)
         result.observation.harness = harnessKind
         result.observation.readings = readings
         return (result.observation, result.labels, fromHarness)

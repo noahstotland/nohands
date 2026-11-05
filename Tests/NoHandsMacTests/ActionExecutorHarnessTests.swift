@@ -184,3 +184,32 @@ private let labels: [Int: UIElementInfo] = [
     #expect(await n.execute([.drag(from: .point(CGPoint(x: 1, y: 2)), to: .label(3))], labels: labels) == nil)
     #expect(ni.calls == ["move:1,2", "down", "move:55,55", "up"])
 }
+
+@MainActor @Test func mediaPlayingWaitIsPolledByNoHandsNotTheHarness() async {
+    func executor(_ e: FakeElements, _ h: FakeHarness, _ o: FakeOverlay) -> ActionExecutor {
+        ActionExecutor(input: FakeInput(), ax: e, overlay: o, config: AppConfig(), harness: h, audio: FakeAudio(),
+                       mediaPoll: .milliseconds(5))
+    }
+    let e = FakeElements(), h = FakeHarness(), o = FakeOverlay()
+    e.front = "Safari"
+    e.elements = [UIElementInfo(id: 1, frame: .zero, title: "Play", role: "AXButton")]
+    e.onWalk = { [unowned e] in
+        if e.walks == 3 { e.elements = [UIElementInfo(id: 1, frame: .zero, title: "Pause (k)", role: "AXButton")] }
+    }
+    let x = executor(e, h, o)
+    #expect(await x.execute([.waitFor(.mediaPlaying, timeoutMs: 2000)]) == nil)
+    #expect(e.walks == 3)
+
+    e.elements = [UIElementInfo(id: 1, frame: .zero, title: "Play", role: "AXButton")]
+    e.onWalk = nil
+    #expect(await x.execute([.waitFor(.mediaPlaying, timeoutMs: 40)]) == "wait timed out")
+    #expect(await x.execute([.checkMedia]) == nil)
+    #expect(x.takeReadings() == ["Media: paused"])
+    #expect(h.calls.isEmpty)
+
+    // Cancelling a long wait ends it at once with `cancelled`, not after its timeout.
+    let waiting = Task { await x.execute([.waitFor(.mediaPlaying, timeoutMs: 30000)]) }
+    try? await Task.sleep(for: .milliseconds(30))
+    waiting.cancel()
+    #expect(await waiting.value == ActionExecutor.cancelled)
+}
