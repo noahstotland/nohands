@@ -108,7 +108,8 @@ git push -u origin feat/prompt-status-web-search
       public var pageFirst: Bool
       public static let app = WalkPolicy(budget: .milliseconds(150), maxNodes: 2000, pageFirst: false)
       public static let browser = WalkPolicy(budget: .milliseconds(600), maxNodes: 5000, pageFirst: true)
-      /// The policy for a walk: `browser` when the frontmost app is a browser, else the caller's own.
+      /// In a browser: pageFirst, with the larger of the caller's and `browser`'s budget and node cap (the task
+      /// loop's 1 s / 6000 walk must not shrink); elsewhere the caller's own.
       public static func pick(isBrowser: Bool, `default`: WalkPolicy) -> WalkPolicy
   }
   // NoHandsMac
@@ -117,7 +118,7 @@ git push -u origin feat/prompt-status-web-search
 
 - [ ] **Step 1: Write the failing Core test**
 
-`Tests/NoHandsCoreTests/WalkPolicyTests.swift`, `browserWalkOnlyInBrowsers`: table of `(isBrowser, default, expected)`: `(true, .app, .browser)`, `(false, .app, .app)`, `(false, WalkPolicy(budget: .seconds(1), maxNodes: 6000, pageFirst: false), that same value)`, `(true, that value, .browser)`.
+`Tests/NoHandsCoreTests/WalkPolicyTests.swift`, `browserWalkOnlyInBrowsers`: table of `(isBrowser, default, expected)`: `(true, .app, .browser)`, `(false, .app, .app)`, `(false, WalkPolicy(budget: .seconds(1), maxNodes: 6000, pageFirst: false), that same value)`, `(true, that value, the same budget and node cap with pageFirst: true)`.
 
 - [ ] **Step 2: Run it to see it fail**
 

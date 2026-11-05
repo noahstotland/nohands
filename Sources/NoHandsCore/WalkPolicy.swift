@@ -16,8 +16,10 @@ public struct WalkPolicy: Equatable, Sendable {
     public static let app = WalkPolicy(budget: .milliseconds(150), maxNodes: 2000, pageFirst: false)
     public static let browser = WalkPolicy(budget: .milliseconds(600), maxNodes: 5000, pageFirst: true)
 
-    /// `browser` when the frontmost app is a browser, else the caller's own.
+    /// In a browser: the page first, with the larger of the caller's budget and `browser`'s (a caller that
+    /// already walks for a second, like the task loop, keeps it). Elsewhere: the caller's own.
     public static func pick(isBrowser: Bool, default d: WalkPolicy) -> WalkPolicy {
-        isBrowser ? .browser : d
+        guard isBrowser else { return d }
+        return WalkPolicy(budget: max(d.budget, browser.budget), maxNodes: max(d.maxNodes, browser.maxNodes), pageFirst: true)
     }
 }
