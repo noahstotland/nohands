@@ -12,17 +12,23 @@ public struct ClaudeRequestBuilder: Sendable {
     }
 
     public func body(request: StepRequest) throws -> Data {
-        let user = Self.userMessage(request: request)
+        let userContent: [[String: Any]] = Self.userBlocks(request: request).map { ["type": "text", "text": $0] }
         let obj: [String: Any] = [
             "model": model,
             "max_tokens": 1024,
             "fallbacks": "default",
-            "system": IntentSchema.systemPrompt(for: request.observation.harness),
+            // The only breakpoint: the system prompt is the one prefix that is identical on every request. The
+            // user message starts with `Step: n of m`, which changes each step, so nothing in it is reusable.
+            "system": [[
+                "type": "text",
+                "text": IntentSchema.systemPrompt(for: request.observation.harness),
+                "cache_control": ["type": "ephemeral"],
+            ] as [String: Any]],
             "output_config": [
                 "effort": effort,
                 "format": ["type": "json_schema", "schema": IntentSchema.actionsJSONSchema] as [String: Any],
             ] as [String: Any],
-            "messages": [["role": "user", "content": user]],
+            "messages": [["role": "user", "content": userContent]],
         ]
         return try JSONSerialization.data(withJSONObject: obj)
     }
@@ -32,18 +38,22 @@ public struct ClaudeRequestBuilder: Sendable {
     }
 
     public static func userMessage(request r: StepRequest) -> String {
+        userBlocks(request: r).joined()
+    }
+
+    /// The user message in pieces, in order: goal and step, one block per history record (the first carries the
+    /// `History:` header), then the observation through the `Request:` line. Joined, they are `userMessage`.
+    public static func userBlocks(request r: StepRequest) -> [String] {
         let o = r.observation
         let goal = sanitize(r.goal, limit: 300)
-        var s = "Goal: \(goal)\nStep: \(r.step) of \(r.maxSteps)\n"
-        if !r.history.isEmpty {
-            s += "History:\n"
-            for (i, h) in r.history.enumerated() {
-                let outcome = h.failure.map { "FAILED: \(sanitize($0))" } ?? "ok"
-                s += "  \(i + 1). \(sanitize(h.intent)) -> \(ActionSummary.kinds(h.actions)) (\(outcome))\n"
-            }
+        var blocks = ["Goal: \(goal)\nStep: \(r.step) of \(r.maxSteps)\n"]
+        for (i, h) in r.history.enumerated() {
+            let outcome = h.failure.map { "FAILED: \(sanitize($0))" } ?? "ok"
+            blocks.append((i == 0 ? "History:\n" : "") + "  \(i + 1). \(sanitize(h.intent)) -> \(ActionSummary.kinds(h.actions)) (\(outcome))\n")
         }
-        s += "App: \(sanitize(o.app))   Window: \(sanitize(o.windowTitle).nonEmpty ?? "-")   URL: \(o.url.map { sanitize($0) } ?? "-")\n"
+        var s = "App: \(sanitize(o.app))   Window: \(sanitize(o.windowTitle).nonEmpty ?? "-")   URL: \(o.url.map { sanitize($0) } ?? "-")\n"
         s += "Mode: \(o.mode.rawValue)   Overlay: \(sanitize(o.overlay))   Harness: \(o.harness.rawValue)\n"
+        if let media = o.media { s += "Media: \(media.rawValue)\n" }
         if let surface = o.surface { s += "Surface: \(sanitize(surface))\n" }
         if let tabs = o.tabs, !tabs.windows.isEmpty { s += tabRules + "\n" + tabs.rendered + "\n" }
         s += "Visible elements:\n"
@@ -61,7 +71,8 @@ public struct ClaudeRequestBuilder: Sendable {
             for r in o.readings { s += "  \(sanitize(r, limit: readingLimit))\n" }
         }
         s += "\nRequest: \(r.step == 1 ? goal : "Continue toward the goal.")"
-        return s
+        blocks.append(s)
+        return blocks
     }
 
     /// Pop-up and video-page rules, sent with the `Tabs:` list only (a browser with a reading). In the user message

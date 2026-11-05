@@ -14,6 +14,8 @@ public enum DesktopWaitKind: String, Codable, Sendable, CaseIterable {
     case text, window, event, menu
     case menuClosed = "menu_closed"
     case element
+    /// Answered by NoHands itself (no agent-desktop condition exists), so it never becomes a `DesktopCommand`.
+    case mediaPlaying = "media_playing"
 }
 
 public enum DesktopEvent: String, Codable, Sendable, CaseIterable {
@@ -161,6 +163,7 @@ public enum DesktopCommand: Equatable, Sendable {
             case .menu: out.append("--menu")
             case .menuClosed: out.append("--menu-closed")
             case .element: out += ["--element", ref ?? "", "--predicate", value ?? "exists"]
+            case .mediaPlaying: break   // the executor answers it; never sent to agent-desktop
             }
             if let app { out += ["--app", app] }
             out += ["--timeout", String(timeoutMs)]

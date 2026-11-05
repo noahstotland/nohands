@@ -59,6 +59,9 @@ public struct CommandGrammar: Sendable {
             "delete word": chord(.delete, [.option]),
             "delete line": chord(.delete, [.command]),
 
+            "is it playing": [.checkMedia], "is the video playing": [.checkMedia],
+            "is anything playing": [.checkMedia],
+
             "grid": [.showGrid], "show grid": [.showGrid],
             "show numbers": [.showLabels], "show labels": [.showLabels],
             "hide grid": [.hideOverlay], "hide numbers": [.hideOverlay], "numbers": [.showLabels],

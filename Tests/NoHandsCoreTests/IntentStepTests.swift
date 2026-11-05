@@ -188,3 +188,40 @@ import Foundation
     #expect(ActionSummary.kind(.search("outdoor boys")) == "search(len=12)")
     #expect(ActionSummary.kind(.searchSite("outdoor boys", site: "youtube.com")) == "searchSite(len=12, site=youtube.com)")
 }
+
+@Test func claudeBodyCachesSystemPromptAndSplitsUserMessage() throws {
+    let record = { (i: String, f: String?) -> StepRecord in StepRecord(intent: i, actions: [.wait(ms: 100)], failure: f) }
+    for harness in [HarnessKind.native, .agentDesktop] {
+        var o = ScreenObservation(app: "Chrome", windowTitle: "W", mode: .command,
+                                  elements: [ObservedElement(number: 1, role: "AXLink", title: "A")])
+        o.harness = harness
+        let req = StepRequest(goal: "g", step: 4, maxSteps: 12,
+                              history: [record("one", nil), record("two", "bad"), record("three", nil)], observation: o)
+        let obj = try #require(JSONSerialization.jsonObject(with: ClaudeRequestBuilder(model: "m").body(request: req)) as? [String: Any])
+        let sys = try #require(obj["system"] as? [[String: Any]])
+        #expect(sys.count == 1)
+        #expect(sys[0]["text"] as? String == IntentSchema.systemPrompt(for: harness))
+        #expect((sys[0]["cache_control"] as? [String: String]) == ["type": "ephemeral"])
+        let content = try #require((obj["messages"] as? [[String: Any]])?[0]["content"] as? [[String: Any]])
+        let texts = content.compactMap { $0["text"] as? String }
+        #expect(texts.count == 2 + req.history.count)
+        #expect(texts[1].hasPrefix("History:\n  1. one")); #expect(texts[2].hasPrefix("  2. two")); #expect(texts[3].hasPrefix("  3. three"))
+        #expect(content.allSatisfy { $0["cache_control"] == nil })
+        #expect(texts.joined() == ClaudeRequestBuilder.userMessage(request: req))
+    }
+    // One-shot commands share the same cached system block.
+    let ctx = IntentContext(frontmostApp: "A", mode: .command, labeledElements: [])
+    let one = try #require(JSONSerialization.jsonObject(with: ClaudeRequestBuilder(model: "m").body(transcript: "go", context: ctx)) as? [String: Any])
+    #expect(((one["system"] as? [[String: Any]])?.first)?["cache_control"] != nil)
+}
+
+@Test func claudeUsageParsing() {
+    func usage(_ json: String) -> ClaudeUsage? { ClaudeUsage.from(response: Data(json.utf8)) }
+    #expect(usage(#"{"usage":{"input_tokens":12,"cache_read_input_tokens":2214,"cache_creation_input_tokens":5}}"#)
+            == ClaudeUsage(inputTokens: 12, cacheReadTokens: 2214, cacheWriteTokens: 5))
+    #expect(usage(#"{"usage":{"input_tokens":7}}"#) == ClaudeUsage(inputTokens: 7, cacheReadTokens: 0, cacheWriteTokens: 0))
+    #expect(usage(#"{"content":[]}"#) == nil)
+    #expect(usage("not json") == nil)
+    #expect(ClaudeUsage.logFragment(nil) == "cache=-")
+    #expect(ClaudeUsage.logFragment(ClaudeUsage(inputTokens: 612, cacheReadTokens: 2214, cacheWriteTokens: 0)) == "cache=2214/0 in=612")
+}

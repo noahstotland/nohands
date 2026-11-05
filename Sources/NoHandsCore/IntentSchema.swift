@@ -134,6 +134,7 @@ public enum IntentSchema {
       Finder, Mail, the App Store…); in a browser page without one, the address bar. Fields: text (the words to \
       search for, nothing else).
     - wait: pause for a loading page. Fields: ms (100-5000).
+    - wait with wait_for "media_playing": wait until media plays in the front window. Fields: timeout_ms (500-30000).
     - ignore: do nothing. No fields.
 
     Status:
@@ -141,6 +142,11 @@ public enum IntentSchema {
     - done: the goal is achieved or these actions achieve it; run them (may be empty) and finish.
     - stuck: you cannot make progress; run nothing and explain plainly in "intent" instead of guessing.
     - ignore: the request is not a computer action; run nothing (actions [{"kind":"ignore"}]).
+    A goal to play, watch, turn on, put on or listen to something is done only when the request shows "Media: \
+    playing". If the page shows a Play button, click it. If an ad countdown or "Skip ad" is showing, the video \
+    has not started yet (an ad can show "Pause"): wait a few seconds (wait with ms), click "Skip ad" when it \
+    appears, and look again; done only after the ad is gone and the request shows "Media: playing". "Media: \
+    none" means no player was found: decide from the screen.
     The request shows "Step n of max" and a History of earlier steps. Prefer deterministic routes: type a URL \
     (e.g. youtube.com/@veritasium/videos) over clicking through menus; use wait after navigation if the page is \
     not there yet; on YouTube the newest upload is the first video on a channel's Videos tab; set done once the \
@@ -194,7 +200,7 @@ public enum IntentSchema {
     - read_notifications: list Notification Center entries (arrive under "Read:"). dismiss_notifications: dismiss \
       them all. Fields: app_name (optional).
     - wait with wait_for: wait for a signal instead of a fixed time. Fields: wait_for (text, window, event, menu, \
-      menu_closed, element), value (the text, window title, or element predicate exists/enabled/visible/actionable), \
+      menu_closed, element, media_playing), value (the text, window title, or element predicate exists/enabled/visible/actionable), \
       event (window_opened, window_closed, app_launched, app_terminated, focus_changed, surface_appeared, \
       surface_dismissed), app_name (optional), target_number (element), timeout_ms (500-30000).
     Harness rules: when a "Surface:" line is present a menu, sheet, alert or popover is open; act on its elements \

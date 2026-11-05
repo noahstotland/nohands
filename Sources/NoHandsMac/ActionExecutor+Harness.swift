@@ -171,6 +171,8 @@ extension ActionExecutor {
         case .dismissNotifications(let app):
             guard let harness else { return Self.needsHarness }
             return outcome(await harness.act(.dismissAllNotifications(app: app)))
+        case .waitFor(.mediaPlaying, let timeoutMs):
+            return await waitForMediaPlaying(timeoutMs: timeoutMs)
         case .waitFor(let condition, let timeoutMs):
             guard let harness else {
                 try? await Task.sleep(for: .milliseconds(min(timeoutMs, 5000)))
@@ -188,6 +190,7 @@ extension ActionExecutor {
                 let r = try await element(t)
                 guard let ref = r.ref else { return Self.needsHarness }
                 command = .wait(.element, value: predicate, app: nil, ref: ref, timeoutMs: timeoutMs)
+            case .mediaPlaying: return nil   // handled above
             }
             switch await harness.act(command) {
             case .delivered: return nil

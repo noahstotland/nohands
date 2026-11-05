@@ -40,15 +40,15 @@ private func el(_ id: Int, _ title: String, x: CGFloat = 100) -> UIElementInfo {
 }
 
 @MainActor private func rig(_ resolver: FakeResolver, maxSteps: Int = 12, settleMs: Int = 3000) -> Rig {
-    let input = FakeInput(), ax = FakeElements(), overlay = FakeOverlay()
+    let input = FakeInput(), ax = FakeElements(), overlay = FakeOverlay(), audio = FakeAudio()
     ax.front = "Safari"
     ax.elements = [el(1, "Reload")]
     var config = AppConfig()
     config.maxTaskSteps = maxSteps
     config.settleMs = settleMs
-    let executor = ActionExecutor(input: input, ax: ax, overlay: overlay, config: config, frontTimeout: .milliseconds(100))
+    let executor = ActionExecutor(input: input, ax: ax, overlay: overlay, config: config, frontTimeout: .milliseconds(100), audio: audio)
     let runner = TaskRunner(config: config, resolver: resolver, executor: executor,
-                            observer: ScreenObserver(ax: ax, maxElements: config.maxObservedElements),
+                            observer: ScreenObserver(ax: ax, maxElements: config.maxObservedElements, audio: audio),
                             overlay: overlay, sleep: { _ in })
     let log = StatusLog()
     runner.onStatus = { log.texts.append($0.text) }
@@ -519,4 +519,31 @@ private func tab(_ id: String, _ title: String, active: Bool = false) -> Browser
     #expect(resolver.requests[3].history[2].failure == "blocked: tab 1 is not one this task opened")
     // A media goal gets the longer step cap.
     #expect(resolver.requests[0].maxSteps == 24)
+}
+
+@MainActor @Test func playGoalIsDoneOnlyWhenMediaPlays() async {
+    func button(_ title: String) -> [UIElementInfo] { [el(1, title)] }
+    let done = step("started it", .done)
+    // (goal, element titles on screen, titles after the first resolve, steps, outcome, requests, re-asked once)
+    let table: [(String, [String], [String]?, [IntentStep], TaskOutcome, Int, Bool)] = [
+        ("play the video", ["Play"], nil, [done], .stuck("not playing yet"), 2, true),
+        ("play the video", ["Play"], ["Pause (k)"], [done], .done("started it"), 2, true),
+        ("watch veritasium", ["Reload"], nil, [done], .done("started it"), 1, false),
+        ("scroll down", ["Play"], nil, [done], .done("started it"), 1, false),
+    ]
+    for (goal, shown, later, steps, outcome, requests, reasked) in table {
+        let resolver = FakeResolver(steps)
+        let r = rig(resolver)
+        r.ax.elements = shown.enumerated().map { el($0.offset + 1, $0.element) }
+        if let later {
+            let ax = r.ax
+            resolver.onResolve = { n in if n == 2 { ax.elements = later.enumerated().map { el($0.offset + 1, $0.element) } } }
+        }
+        #expect(await r.runner.run(goal: goal, mode: .command) == outcome, "\(goal) \(shown)")
+        #expect(resolver.requests.count == requests, "\(goal) \(shown)")
+        if reasked {
+            #expect(resolver.requests[1].history == [StepRecord(intent: "started it", actions: [], failure: "not playing yet")])
+            #expect(resolver.requests[1].observation.media == .paused)
+        }
+    }
 }

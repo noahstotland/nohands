@@ -210,6 +210,7 @@ var exitStatus: Int32 = 0
                                                overlay: .none, limit: config.observedElementCap)
             var shown = obs
             shown.harness = .agentDesktop
+            shown.media = MediaSignal.state(elements: snap.elements, audioPlaying: AudioOutputProbe().isPlaying)
             print("snapshot \(snap.snapshotID): \(snap.elements.count) refs, \(obs.elements.count) listed, complete=\(snap.complete)")
             print(ClaudeRequestBuilder.userMessage(request: StepRequest(goal: "-", step: 1, maxSteps: 12, history: [], observation: shown)))
         case "parse":

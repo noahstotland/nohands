@@ -121,6 +121,11 @@ extension OverlayController: OverlayPresenting {
     let clipboard: any ClipboardAccess
     public var onModeChange: ((Mode) -> Void)?
     private let frontTimeout: Duration
+    private let audio: any AudioOutputProbing
+    private let mediaPoll: Duration
+    /// The accessibility layer the media walk uses: one with a larger budget than `ax`, which does not reach a
+    /// browser player's buttons. Nil walks with `ax`.
+    private let mediaAX: (any ElementProviding)?
     /// How long an app that just came to the front may take to show a window (a cold launch on a loaded Mac).
     private let windowTimeout: Duration
     private var pressed: Set<MouseButton> = []
@@ -133,7 +138,12 @@ extension OverlayController: OverlayPresenting {
 
     public init(input: any InputSynthesizing, ax: any ElementProviding, overlay: any OverlayPresenting,
                 config: AppConfig, frontTimeout: Duration = .seconds(1.5), windowTimeout: Duration = .seconds(6),
-                harness: (any DesktopHarness)? = nil, clipboard: any ClipboardAccess = PasteboardClipboard()) {
+                harness: (any DesktopHarness)? = nil, clipboard: any ClipboardAccess = PasteboardClipboard(),
+                audio: any AudioOutputProbing = AudioOutputProbe(), mediaPoll: Duration = .milliseconds(500),
+                mediaAX: (any ElementProviding)? = nil) {
+        self.audio = audio
+        self.mediaAX = mediaAX
+        self.mediaPoll = mediaPoll
         self.frontTimeout = frontTimeout
         self.windowTimeout = windowTimeout
         self.input = input
@@ -269,6 +279,8 @@ extension OverlayController: OverlayPresenting {
                 }
             case .wait(let ms):
                 try? await Task.sleep(for: .milliseconds(ms))
+            case .checkMedia:
+                addReading("Media", await mediaState().rawValue)
             case .ignore:
                 break
             case .closeTab(let n):
@@ -323,6 +335,30 @@ extension OverlayController: OverlayPresenting {
             guard ax.browserTabIsSelected(id: id) else { return "couldn't select that tab" }
             try input.press(KeyChord(.w, [.command]))
             return nil
+        }
+    }
+
+    /// Whether media plays in the front window now, from a native walk of its elements (never agent-desktop).
+    /// The walk runs off the main actor (it can take its whole budget); screen rects are read here first.
+    func mediaState() async -> MediaState {
+        let provider = mediaAX ?? ax
+        let audio = self.audio
+        let screens = provider.screenRectsCG()
+        return await Task.detached {
+            MediaSignal.state(elements: provider.actionableElements(screens: screens), audioPlaying: audio.isPlaying)
+        }.value
+    }
+
+    /// Polls `mediaState()` until it is `playing` (nil) or `timeoutMs` passes ("wait timed out"). Cancellation
+    /// ends it at once.
+    func waitForMediaPlaying(timeoutMs: Int) async -> String? {
+        let deadline = ContinuousClock.now.advanced(by: .milliseconds(timeoutMs))
+        while true {
+            if Task.isCancelled { return Self.cancelled }
+            if await mediaState() == .playing { return nil }
+            let left = ContinuousClock.now.duration(to: deadline)
+            if left <= .zero { return "wait timed out" }
+            try? await Task.sleep(for: min(mediaPoll, left))
         }
     }
 

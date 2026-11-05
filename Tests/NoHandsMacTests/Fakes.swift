@@ -21,6 +21,12 @@ final class FakeInput: InputSynthesizing, @unchecked Sendable {
     func releaseAll() { calls.append("releaseAll") }
 }
 
+final class FakeAudio: AudioOutputProbing, @unchecked Sendable {
+    var playing = false
+    var asked = 0
+    func isPlaying() -> Bool { asked += 1; return playing }
+}
+
 final class FakeElements: ElementProviding, @unchecked Sendable {
     var elements: [UIElementInfo] = []
     var apps: Set<String> = []
@@ -126,7 +132,7 @@ final class FakeElements: ElementProviding, @unchecked Sendable {
 @MainActor func make() -> (ActionExecutor, FakeInput, FakeElements, FakeOverlay) {
     let i = FakeInput(), e = FakeElements(), o = FakeOverlay()
     return (ActionExecutor(input: i, ax: e, overlay: o, config: AppConfig(), frontTimeout: .milliseconds(150),
-                           windowTimeout: .milliseconds(300)), i, e, o)
+                           windowTimeout: .milliseconds(300), audio: FakeAudio()), i, e, o)
 }
 
 

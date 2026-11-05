@@ -58,11 +58,15 @@ public actor ClaudeIntentResolver: IntentResolving {
             throw IntentError.decode(.malformed("could not encode request"))
         }
 
+        let started = ContinuousClock.now
         let (data, http) = try await IntentHTTP.send(request, session: session, deadline: deadline)
         if !(200..<300).contains(http.statusCode) {
             let text = String(decoding: data.prefix(Self.bodyPrefixLimit * 4), as: UTF8.self)
             throw IntentError.http(http.statusCode, String(text.prefix(Self.bodyPrefixLimit)))
         }
+        // Counts and timing only; logged before decoding so a malformed step still shows its cache numbers.
+        let ms = Int(started.duration(to: .now) / .milliseconds(1))
+        PipelineLog.info("claude: step \(stepRequest.step) \(ms)ms \(ClaudeUsage.logFragment(ClaudeUsage.from(response: data)))")
         do {
             return try IntentDecoder.step(fromResponse: data)
         } catch let e as IntentDecodeError {
