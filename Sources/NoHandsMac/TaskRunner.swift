@@ -115,7 +115,7 @@ public enum TaskOutcome: Equatable, Sendable {
         }
         if observer.didJustExpose() { first = (await settle(mode: mode, from: first), first.ms, first.fromHarness) }
         var (observation, labels) = first.result
-        annotateTabs(&observation)
+        await annotateTabs(&observation)
         var settled = settleStart.duration(to: .now)
 
         for n in 1...maxSteps {
@@ -181,7 +181,7 @@ public enum TaskOutcome: Equatable, Sendable {
                 settleStart = ContinuousClock.now
                 pendingSurfaces = harness?.takeOpenSurfaces() ?? []
                 (observation, labels) = await settle(mode: mode, readings: readings)
-                annotateTabs(&observation)
+                await annotateTabs(&observation)
                 settled = settleStart.duration(to: .now)
             }
         }
@@ -198,20 +198,37 @@ public enum TaskOutcome: Equatable, Sendable {
 
     /// Turns the browser windows the observer read into the numbered `Tabs:` list. The first time a browser is seen
     /// in front its tabs become the user's; a window-less browser (a cold launch) waits for its first window.
-    private func annotateTabs(_ observation: inout ScreenObservation) {
+    ///
+    /// A browser first seen late (not in front at the task's first observation) may still be listing its windows and
+    /// tabs one at a time, as a cold launch or session restore does. It is read once more after a short pause and
+    /// the union of the two reads is the baseline; no step runs in between, so nothing the task opened is in it.
+    private func annotateTabs(_ observation: inout ScreenObservation) async {
         // Only the task's first observation shows the browser the user had in front; any other is a late arrival.
         let atStart = atTaskStart
         atTaskStart = false
         // The task's tab is marked at the first observation after the navigation; if that is not a browser, the page
         // went elsewhere and a later browser's front tab is not the task's.
-        guard let windows = observation.browserWindows else { observation.tabs = nil; markTaskTab = false; return }
+        guard var windows = observation.browserWindows else { observation.tabs = nil; markTaskTab = false; return }
         guard !windows.isEmpty else { observation.tabs = nil; return }
         // Keyed on the app the windows were read from, not the one named at the start of the observation.
         let app = observation.browserApp ?? observation.app
-        ledger.baseline(app: app, windows: windows, atStart: atStart)
+        var seenFirst: [BrowserWindow] = []
+        if !atStart, !ledger.hasBaseline(app: app) {
+            await sleep(Self.lateBrowserPause)
+            let observer = self.observer
+            let read = await Task.detached { () -> (app: String, windows: [BrowserWindow])? in observer.browserWindows() }.value
+            if let again = read, again.app == app, !again.windows.isEmpty {
+                seenFirst = windows
+                windows = again.windows
+            }
+        }
+        ledger.baseline(app: app, windows: windows, alsoSeen: seenFirst)
         if markTaskTab { ledger.markTaskTab(app: app, windows: windows); markTaskTab = false }
         observation.tabs = ledger.listing(app: app, windows: windows)
     }
+
+    /// The pause before the second read of a browser first seen late.
+    private static let lateBrowserPause: Duration = .milliseconds(300)
 
     typealias Observed = (observation: ScreenObservation, labels: [Int: UIElementInfo])
 

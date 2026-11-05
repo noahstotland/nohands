@@ -94,6 +94,10 @@ public struct ScreenObserver: Sendable {
         return (result.observation, result.labels, fromHarness)
     }
 
+    /// The frontmost browser's windows and tabs, read again on their own (the task runner's second look at a
+    /// browser it first saw late).
+    public func browserWindows() -> (app: String, windows: [BrowserWindow])? { ax.browserWindows() }
+
     /// Whether agent-desktop can read the frontmost app right now; decides a task's harness.
     public func probe() async -> Bool {
         guard let harness else { return false }

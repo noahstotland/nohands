@@ -523,6 +523,23 @@ private func tab(_ id: String, _ title: String, active: Bool = false) -> Browser
     #expect(resolver.requests[0].maxSteps == 24)
 }
 
+@MainActor @Test func aBrowserFirstSeenLateIsBaselinedBeforeTheNextStepSoItsPopUpIsNew() async throws {
+    let resolver = FakeResolver([step("click play", .continue, [.wait(ms: 1)]), step("look", .continue, [.wait(ms: 1)]), step("done", .done)])
+    let r = rig(resolver)   // the front app is not a browser at the task's start
+    let ax = r.ax
+    let user = BrowserWindow(id: "w1", title: "Inbox", front: true, tabs: [tab("t1", "Inbox", active: true)])
+    resolver.onResolve = { n in
+        if n == 1 { ax.browser = [user] }   // the browser comes up during the first step
+        if n == 2 { ax.browser = [BrowserWindow(id: "w1", title: "Inbox", front: true, tabs: [tab("t1", "Inbox", active: true)]),
+                                  BrowserWindow(id: "w2", title: "Casino", tabs: [tab("c1", "Casino")])] }   // 'click play' opened a pop-up
+    }
+    _ = await r.runner.run(goal: "x", mode: .command)
+    let seen = try #require(resolver.requests[1].observation.tabs)
+    #expect(seen.windows.count == 1 && seen.tab(1)?.new == false)
+    let popped = try #require(resolver.requests[2].observation.tabs)
+    #expect(popped.window(2)?.new == true && popped.tab(2)?.new == true)
+}
+
 @MainActor @Test func aNavigationThatFailedMarksNoTaskTab() async throws {
     let resolver = FakeResolver([step("open the game", .continue, [.openURL(URL(string: "https://stream.example")!, app: "Nonesuch")]),
                                  step("look", .done)])

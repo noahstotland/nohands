@@ -14,8 +14,11 @@ public struct BrowserWindow: Equatable, Sendable {
     public var title: String
     public var front: Bool
     public var tabs: [BrowserTab]
-    public init(id: String, title: String, front: Bool = false, tabs: [BrowserTab] = []) {
-        self.id = id; self.title = title; self.front = front; self.tabs = tabs
+    /// False when the read stopped before the end of the tab strip (the per-group cap or the read deadline): more
+    /// tabs may exist than `tabs` lists.
+    public var complete: Bool
+    public init(id: String, title: String, front: Bool = false, tabs: [BrowserTab] = [], complete: Bool = true) {
+        self.id = id; self.title = title; self.front = front; self.tabs = tabs; self.complete = complete
     }
 }
 
@@ -23,22 +26,23 @@ public struct BrowserWindow: Equatable, Sendable {
 /// per task. Each browser app gets a baseline the first time the task sees it in front: everything in it is the
 /// user's. A tab or window is `new` when neither its id nor its title was in the baseline; the title check keeps
 /// the user's tabs safe if the browser ever rebuilds its accessibility elements and every id changes. A window the
-/// baseline saw without a tab list (the read ran out of budget, or the browser hides its strip) cannot tell new
-/// tabs from the user's: the tabs it shows later join the baseline as the user's. A browser that was not in front
-/// when the task started (a cold launch or session restore lists its windows and tabs one at a time) has a short
-/// grace: its baseline is the union of its first two observations.
+/// baseline saw without a tab list, or with a cut-short one (the read ran out of budget, or the browser hides
+/// its strip) cannot tell new tabs from the user's: the tabs it shows later join the baseline as the user's, and a
+/// tab is only ever new in a window whose baseline read was complete. A browser that was not in front when the
+/// task started (a cold launch or session restore lists its windows and tabs one at a time) is baselined from two
+/// reads taken a moment apart, with no step in between (`baseline(alsoSeen:)`).
 public struct TabLedger: Sendable {
     private struct Baseline: Sendable {
         var windowIDs: Set<String> = [], tabIDs: Set<String> = []
         var titles: Set<String> = []
-        /// Baseline windows that had a tab list when they were recorded.
+        /// Baseline windows that had a complete tab list when they were recorded.
         var populatedWindowIDs: Set<String> = []
 
         mutating func record(_ w: BrowserWindow) {
             windowIDs.insert(w.id)
             titles.insert(w.title)
             for t in w.tabs { tabIDs.insert(t.id); titles.insert(t.title) }
-            if !w.tabs.isEmpty { populatedWindowIDs.insert(w.id) }
+            if w.complete, !w.tabs.isEmpty { populatedWindowIDs.insert(w.id) }
         }
 
         func isNew(_ t: BrowserTab, in w: BrowserWindow) -> Bool {
@@ -52,26 +56,25 @@ public struct TabLedger: Sendable {
         }
     }
     private var baselines: [String: Baseline] = [:]
-    /// Apps whose baseline still takes one more observation.
-    private var inGrace: Set<String> = []
     /// Per app: ids of tabs the task navigated (or of tabless windows).
     private var taskIDs: [String: Set<String>] = [:]
 
     public init() {}
 
-    /// Records `windows` as the user's the first time `app` is seen and returns true. Later calls change nothing
-    /// (false), except that tabs first shown by a baseline window that had none are taken as the user's too, and
-    /// that the second call for an app first seen after the task started (`atStart: false`) adds what it shows.
+    /// Whether `app` already has a baseline.
+    public func hasBaseline(app: String) -> Bool { baselines[app] != nil }
+
+    /// Records `windows` (and `alsoSeen`, a second read of the same moment) as the user's the first time `app` is
+    /// seen and returns true. Later calls change nothing (false), except that tabs first shown by a baseline window
+    /// that had no complete tab list are taken as the user's too.
     @discardableResult
-    public mutating func baseline(app: String, windows: [BrowserWindow], atStart: Bool = true) -> Bool {
+    public mutating func baseline(app: String, windows: [BrowserWindow], alsoSeen: [BrowserWindow] = []) -> Bool {
         guard var b = baselines[app] else {
             var b = Baseline()
-            for w in windows { b.record(w) }
+            for w in windows + alsoSeen { b.record(w) }
             baselines[app] = b
-            if !atStart { inGrace.insert(app) }
             return true
         }
-        if inGrace.remove(app) != nil { for w in windows { b.record(w) } }
         for w in windows where !w.tabs.isEmpty && b.windowIDs.contains(w.id) && !b.populatedWindowIDs.contains(w.id) {
             b.record(w)
         }
@@ -109,19 +112,22 @@ public struct TabLedger: Sendable {
             let isNew = windowNew(w)
             let isTask = tasks.contains(w.id) || w.tabs.contains { tasks.contains($0.id) }
             var shown: [TabListing.Tab] = []
+            var windowHidden = 0
             for (ti, t) in w.tabs.enumerated() {
                 let new = tabNew(t, in: w), task = tasks.contains(t.id)
                 let always = (wi == frontIndex && (ti < TabListing.frontTabCap || t.active)) || task
                 guard always || new else { continue }
                 // Past the cap, new tabs outside the front window's own listing are only counted.
-                if new { if always || newShown < TabListing.newCap { newShown += 1 } else { hiddenNew += 1; continue } }
+                if new, !always {
+                    if newShown < TabListing.newCap { newShown += 1 } else { hiddenNew += 1; windowHidden += 1; continue }
+                }
                 tabNumber += 1
                 shown.append(.init(number: tabNumber, id: t.id, title: TabListing.clean(t.title),
                                    active: t.active, new: new, task: task))
             }
             if wi != frontIndex, shown.isEmpty {
                 guard isNew else { hiddenWindows += 1; continue }
-                if newShown >= TabListing.newCap { if w.tabs.isEmpty { hiddenNew += 1 }; continue }
+                if newShown >= TabListing.newCap { if windowHidden == 0 { hiddenNew += 1 }; continue }
                 newShown += 1
             }
             out.append(.init(number: out.count + 1, id: w.id, title: TabListing.clean(w.title), front: wi == frontIndex,

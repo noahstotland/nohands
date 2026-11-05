@@ -46,14 +46,16 @@ private func flags(_ l: TabListing) -> String {
     let again = ledger.baseline(app: "Chrome", windows: after)
     #expect(!again)
     #expect(flags(ledger.listing(app: "Chrome", windows: after)) == "new:t3 task:t3")
-    // A browser first seen mid-task gets its own baseline from that moment, joined by its second observation
-    // (a cold launch lists its windows one at a time); what appears after that is new.
-    let first = ledger.baseline(app: "Safari", windows: after, atStart: false)
-    #expect(first)
-    let restored = after + [win("w5", "Restored", [tab("r1", "Restored")])]
-    #expect(ledger.baseline(app: "Safari", windows: restored, atStart: false) == false)
-    let popped = restored + [win("w6", "Casino", [tab("c1", "Casino")])]
-    ledger.baseline(app: "Safari", windows: popped, atStart: false)
+    // A browser first seen mid-task is baselined from two reads taken a moment apart (a cold launch lists its
+    // windows one at a time); what appears after that is new.
+    let early = after
+    let late = after + [win("w5", "Restored", [tab("r1", "Restored")])]
+    let recordedLate = ledger.baseline(app: "Safari", windows: late, alsoSeen: early)
+    #expect(recordedLate)
+    #expect(ledger.hasBaseline(app: "Safari"))
+    let popped = late + [win("w6", "Casino", [tab("c1", "Casino")])]
+    let recordedAgain = ledger.baseline(app: "Safari", windows: popped)
+    #expect(!recordedAgain)
     #expect(flags(ledger.listing(app: "Safari", windows: popped)) == "new:c1 w6 task:")
 }
 
@@ -68,6 +70,14 @@ private func flags(_ l: TabListing) -> String {
     // Once w1 has been read, a tab that then appears in it is new; so is one in the window that was populated all along.
     let popped = [win("w1", "Docs", front: true, later[0].tabs + [tab("t9", "You won!")]), win("w2", "Mail", [tab("m1", "Mail"), tab("m9", "Ad")])]
     #expect(flags(ledger.listing(app: "Chrome", windows: popped)) == "new:m9 t9 task:")
+
+    // A window whose baseline read was cut short (more tabs than the read listed) never has new tabs.
+    var cut = TabLedger()
+    cut.baseline(app: "Chrome", windows: [BrowserWindow(id: "w1", title: "Docs", front: true, tabs: [tab("t1", "Inbox"), tab("t2", "Docs", active: true)], complete: false)])
+    let more = [BrowserWindow(id: "w1", title: "Docs", front: true, tabs: [tab("t1", "Inbox"), tab("t2", "Docs", active: true), tab("t3", "Far right")], complete: false)]
+    #expect(flags(cut.listing(app: "Chrome", windows: more)) == "new: task:")
+    cut.baseline(app: "Chrome", windows: more)
+    #expect(flags(cut.listing(app: "Chrome", windows: more + [win("w2", "Casino", [tab("c1", "Casino")])])) == "new:c1 w2 task:")
 
     // A pop-up window that took focus is not the task's tab: the new active tab in the user's window is.
     ledger.markTaskTab(app: "Chrome", windows: [win("w3", "Casino", front: true, [tab("c1", "Casino", active: true)]),

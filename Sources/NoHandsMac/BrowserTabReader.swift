@@ -50,15 +50,16 @@ extension AXQuery {
             visited = 0
             deadline = min(overall, ContinuousClock.now.advanced(by: Self.tabBudget))
             var tabs: [BrowserTab] = []
+            var complete = true
             if let group = tabGroup(in: w, depth: 1) {
                 for t in Self.elements(group, kAXChildrenAttribute) where Self.tabRoles.contains(Self.string(t, kAXRoleAttribute) ?? "") {
-                    if tabs.count >= Self.tabMaxPerGroup || ContinuousClock.now >= overall { break }
+                    if tabs.count >= Self.tabMaxPerGroup || ContinuousClock.now >= overall { complete = false; break }
                     let title = Self.string(t, kAXTitleAttribute) ?? Self.string(t, kAXDescriptionAttribute) ?? ""
                     tabs.append(BrowserTab(id: browserToken(for: t, prefix: "t"), title: title, active: Self.isSelected(t)))
                 }
             }
             windows.append(BrowserWindow(id: browserToken(for: w, prefix: "w"), title: Self.string(w, kAXTitleAttribute) ?? "",
-                                         front: focused.map { CFEqual($0, w) } ?? false, tabs: tabs))
+                                         front: focused.map { CFEqual($0, w) } ?? false, tabs: tabs, complete: complete))
         }
         return (app.localizedName ?? app.bundleIdentifier ?? "Browser", windows)
     }
