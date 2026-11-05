@@ -178,9 +178,14 @@ public final class MicrophoneCapture: @unchecked Sendable {
         guard isCurrent(gen) else { return }
         pending.removeAll()
         converter = nil
+        let echoWasOn = engine.inputNode.isVoiceProcessingEnabled
         do {
             try installTapAndStart(generation: gen)
-            if isCurrent(gen) { onEvent?(.restarted) }
+            if isCurrent(gen) {
+                onEvent?(.restarted)
+                // The rebuild fell back to the plain input; say so, since start() reported the earlier state.
+                if echoWasOn, echoCancellation, !engine.inputNode.isVoiceProcessingEnabled { onEvent?(.echoCancellation(false)) }
+            }
         } catch {
             if let delay = RestartBackoff().delay(afterFailures: failures + 1) {
                 queue.asyncAfter(deadline: .now() + delay) { [weak self] in
@@ -223,7 +228,8 @@ public final class MicrophoneCapture: @unchecked Sendable {
     /// Copies channel 0 only, as a mono buffer at the source sample rate. A voice-processing input can be
     /// multichannel; channel 0 is the processed voice, and converting every channel would mix in the rest.
     private static func copy(_ src: AVAudioPCMBuffer) -> AVAudioPCMBuffer? {
-        guard let mono = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: src.format.sampleRate, channels: 1, interleaved: false),
+        guard !src.format.isInterleaved,
+              let mono = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: src.format.sampleRate, channels: 1, interleaved: false),
               let dst = AVAudioPCMBuffer(pcmFormat: mono, frameCapacity: src.frameLength),
               let s = src.floatChannelData, let d = dst.floatChannelData else { return nil }
         dst.frameLength = src.frameLength

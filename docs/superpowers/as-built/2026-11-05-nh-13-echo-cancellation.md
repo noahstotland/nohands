@@ -6,7 +6,7 @@
 
 ## Differs from the spec
 
-- The spec says the converter takes channel 0 of a multichannel voice-processing format. What shipped copies channel 0 only into a mono buffer in the tap itself, before conversion. This also applies with `echoCancellation` off: a multichannel microphone that used to be mixed down now uses channel 0.
+- The spec says the converter takes channel 0 of a multichannel voice-processing format. What shipped copies channel 0 only into a mono buffer in the tap itself, before conversion. This also applies with `echoCancellation` off. The old path handed every channel to `AVAudioConverter`, which may already have used channel 0 for a mono output, so the change may be invisible for a multichannel microphone; it was not measured.
 
 - The spec says to add the key to existing `AppConfigTests` table rows. No existing row fit, so a new test, `echoCancellationDefaultsOnAndParses`, covers the default and `false`.
 
