@@ -1,6 +1,8 @@
 # NH-42: Close pop-ups, overlays and tabs a page opened, until the video plays — Design
 
-**Date:** 2026-11-05  **Status:** Draft  **Ticket:** [NH-42](https://github.com/noahstotland/nohands/issues/42)
+**Date:** 2026-11-05  **Ticket:** [NH-42](https://github.com/noahstotland/nohands/issues/42)
+**Status:** Shipped
+**Shipped:** in PR #65, with differences: [as-built](../as-built/2026-11-05-nh-42-close-popups-until-video-plays.md)
 
 ## Intent
 
