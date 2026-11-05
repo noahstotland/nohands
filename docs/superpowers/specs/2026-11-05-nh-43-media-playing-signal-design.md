@@ -2,6 +2,7 @@
 
 **Date:** 2026-11-05  **Status:** Shipped  **Ticket:** [NH-43](https://github.com/noahstotland/nohands/issues/43)
 **Shipped:** in PR #63, as specified
+
 ## Intent
 
 "Turn on the latest Outdoor Boys video" is done when the video plays, not when its page has loaded. Today the
