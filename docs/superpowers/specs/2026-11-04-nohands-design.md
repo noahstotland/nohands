@@ -55,6 +55,8 @@ mic (AVAudioEngine, 16 kHz mono Float32)
 
 Mode is shown in the menu bar: `mic` icon + `CMD` / `DICT` / `ZZZ` text.
 
+The menu ends with a group above Quit: **Start at Login** (a checkbox backed by `SMAppService.mainApp`, read from the system each time the menu opens) and **Open config.json…** (creates the file with mode 600 if missing, opens it in the default editor, and says to restart NoHands to apply changes).
+
 ## 6. Command grammar (deterministic)
 
 Input is normalized first: lowercased, ASR punctuation stripped (`.,!?`), whitespace collapsed. Numbers may be digits or words ("forty two"); in a number slot, "to"/"too" → 2 and "for" → 4 (common ASR homophones).

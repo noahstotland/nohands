@@ -59,6 +59,8 @@ scripts/bundle.sh && open build/NoHands.app
 CODESIGN_IDENTITY="Apple Development: Your Name (TEAMID)" scripts/bundle.sh
 ```
 
+**Start at Login:** the menu's Start at Login item registers the app as a login item (System Settings > General > Login Items) and shows a tick while it is on; the state is read from macOS each time the menu opens. If you turned NoHands off in Login Items, the item says `allow in Login Items` and opens that pane. It is disabled when NoHands runs without an app bundle (`swift run`); use `build/NoHands.app`. The login item is tied to the app's path and signature, so a rebuild may need re-ticking or re-approval.
+
 **Logs:** each utterance logs one line, `[asr=…ms total=…ms] <transcript> -> <what it did>`, plus warm-up results, warnings and errors, through the unified log:
 
 ```bash
@@ -143,7 +145,7 @@ In dictation mode, say `period`, `comma`, `question mark`, `new line`, `new para
 
 ## Configuration
 
-Optional file at `~/.config/nohands/config.json`. Every key may be omitted. For the bundled app this file is the way to supply the API key: `ANTHROPIC_API_KEY` in the environment overrides the file, but it only reaches the app when you run the binary from a terminal or set it with `launchctl setenv ANTHROPIC_API_KEY ...`. The file holds a secret, so run `chmod 600 ~/.config/nohands/config.json`; NoHands logs a warning at launch if it contains a key and is readable by other users. Invalid JSON falls back to defaults and is flagged in the menu.
+Optional file at `~/.config/nohands/config.json`. Every key may be omitted. For the bundled app this file is the way to supply the API key: `ANTHROPIC_API_KEY` in the environment overrides the file, but it only reaches the app when you run the binary from a terminal or set it with `launchctl setenv ANTHROPIC_API_KEY ...`. The file holds a secret, so run `chmod 600 ~/.config/nohands/config.json`; NoHands logs a warning at launch if it contains a key and is readable by other users. Invalid JSON falls back to defaults and is flagged in the menu. The menu's Open config.json… creates the file (`{}`, mode 600, in a `~/.config/nohands` folder of mode 700) if it is missing and opens it in your default editor; an existing file is never changed. Changes apply after a restart.
 
 ```json
 {
