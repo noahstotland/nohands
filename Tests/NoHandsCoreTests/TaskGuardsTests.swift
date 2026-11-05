@@ -62,3 +62,15 @@ import Foundation
     #expect(p.interrupt() == .exitNow)
     #expect(InterruptPolicy.exitStatus == 130)
 }
+
+@Test func settleComparesSurfaceAndValuesButNotNumbers() {
+    let a = ScreenObservation(app: "A", mode: .command, elements: [ObservedElement(number: 1, role: "textfield", title: "q", value: "x")])
+    var b = a
+    #expect(Settle.same(a, b))
+    b.elements[0].value = "y"
+    #expect(!Settle.same(a, b))
+    b = a; b.surface = "menu"
+    #expect(!Settle.same(a, b))
+    b = a; b.elements[0].number = 7
+    #expect(Settle.same(a, b))
+}

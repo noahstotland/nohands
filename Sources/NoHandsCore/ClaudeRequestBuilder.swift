@@ -43,16 +43,31 @@ public struct ClaudeRequestBuilder: Sendable {
             }
         }
         s += "App: \(sanitize(o.app))   Window: \(sanitize(o.windowTitle).nonEmpty ?? "-")   URL: \(o.url.map { sanitize($0) } ?? "-")\n"
-        s += "Mode: \(o.mode.rawValue)   Overlay: \(sanitize(o.overlay))\n"
+        s += "Mode: \(o.mode.rawValue)   Overlay: \(sanitize(o.overlay))   Harness: \(o.harness.rawValue)\n"
+        if let surface = o.surface { s += "Surface: \(sanitize(surface))\n" }
+        if !o.windows.isEmpty { s += "Windows: " + o.windows.map { "\"\(sanitize($0))\"" }.joined(separator: ", ") + "\n" }
         s += "Visible elements:\n"
         for e in o.elements {
             var role = sanitize(e.role).lowercased()
             if role.hasPrefix("ax") { role.removeFirst(2) }
-            s += "  \(e.number) [\(role)] \(sanitize(e.title))\n"
+            s += "  \(e.number) [\(role)] \(sanitize(e.title))"
+            let states = shownStates.filter { e.states.contains($0) }
+            if !states.isEmpty { s += " (" + states.joined(separator: ", ") + ")" }
+            if let v = e.value, !v.isEmpty { s += " = \"\(sanitize(v, limit: valueLimit))\"" }
+            s += "\n"
+        }
+        if !o.readings.isEmpty {
+            s += "Read:\n"
+            for r in o.readings { s += "  \(sanitize(r, limit: readingLimit))\n" }
         }
         s += "\nRequest: \(r.step == 1 ? goal : "Continue toward the goal.")"
         return s
     }
+
+    /// agent-desktop state tokens worth the model's attention, in display order.
+    static let shownStates = ["checked", "selected", "expanded", "collapsed", "disabled", "focused", "offscreen"]
+    static let valueLimit = 60
+    static let readingLimit = 300
 
     static func sanitize(_ s: String, limit: Int = 80) -> String {
         let mapped = String(String.UnicodeScalarView(s.unicodeScalars.map {
