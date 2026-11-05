@@ -49,7 +49,7 @@ mic (AVAudioEngine with voice processing / echo cancellation unless `echoCancell
 
 | Mode | Entered by | Behavior |
 |---|---|---|
-| `command` (default) | launch, "command mode", "stop dictating", "wake up" | every utterance is a command |
+| `command` (default) | launch, "command mode", "stop dictating", "wake up" | every utterance is a command (with `attentionWord` set, only those that start with it) |
 | `dictation` | "start dictating", "dictation mode" | every utterance is typed, except "stop dictating" / "command mode", "scratch that" and "delete word" |
 | `sleep` | "go to sleep" | everything ignored except "wake up" |
 
