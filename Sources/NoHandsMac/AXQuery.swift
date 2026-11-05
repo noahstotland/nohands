@@ -110,6 +110,71 @@ public final class AXQuery: @unchecked Sendable {
         NSWorkspace.shared.frontmostApplication?.localizedName
     }
 
+    static let otherBrowserBundleIDs: Set<String> = [
+        "com.apple.Safari", "com.apple.SafariTechnologyPreview", "org.mozilla.firefox", "org.mozilla.firefoxdeveloperedition",
+        "com.operasoftware.Opera", "org.chromium.Chromium", "com.google.Chrome.beta", "com.google.Chrome.dev",
+        "com.kagi.kagimacOS", "app.zen-browser.zen",
+    ]
+
+    public func frontmostIsBrowser() -> Bool {
+        guard let id = NSWorkspace.shared.frontmostApplication?.bundleIdentifier else { return false }
+        return Self.chromiumBundleIDs.contains(id) || Self.otherBrowserBundleIDs.contains(id)
+    }
+
+    /// A search box gets its own, larger walk: a page's field sits deep in the tree, behind the browser's
+    /// toolbar, and the command is worth most of a second.
+    static let searchBudget: Duration = .milliseconds(800)
+    static let searchMaxNodes = 4000
+
+    /// The page's search box (inside the first web area) when there is one, else the window's (a native
+    /// search field, or a text field named "search"). Menus and the address bar are never candidates.
+    public func searchFieldFrame() -> CGRect? {
+        guard let f = focusedWindow() else { return nil }
+        exposeChromiumTree(f.app, f.appEl)
+        let screens = Self.screenRectsCG()
+        var visited = 0
+        let deadline = ContinuousClock.now.advanced(by: Self.searchBudget)
+        func names(_ el: AXUIElement) -> [String] {
+            [kAXTitleAttribute, kAXDescriptionAttribute, "AXPlaceholderValue", kAXIdentifierAttribute]
+                .compactMap { Self.string(el, $0) }
+        }
+        func find(_ el: AXUIElement, depth: Int, skippingWebAreas: Bool) -> CGRect? {
+            guard depth <= Self.maxDepth, visited < Self.searchMaxNodes, ContinuousClock.now < deadline else { return nil }
+            visited += 1
+            AXUIElementSetMessagingTimeout(el, 0.05)
+            let role = Self.string(el, kAXRoleAttribute) ?? ""
+            if role == "AXMenuBar" || role == "AXMenuItem" || role == "AXMenu" { return nil }
+            if skippingWebAreas && role == "AXWebArea" { return nil }
+            if SearchField.roles.contains(role) {
+                let subrole = Self.string(el, kAXSubroleAttribute)
+                if SearchField.matches(role: role, subrole: subrole, names: names(el)),
+                   let frame = Self.frame(el), frame.width > 0, frame.height > 0, screens.contains(where: { $0.intersects(frame) }) {
+                    return frame
+                }
+            }
+            for c in Self.elements(el, kAXChildrenAttribute) {
+                if let hit = find(c, depth: depth + 1, skippingWebAreas: skippingWebAreas) { return hit }
+            }
+            return nil
+        }
+        // The page first: a browser's own toolbar also has text fields ("Address and search bar").
+        func firstWebArea(_ el: AXUIElement, depth: Int) -> AXUIElement? {
+            guard depth <= Self.maxDepth, visited < Self.searchMaxNodes, ContinuousClock.now < deadline else { return nil }
+            visited += 1
+            AXUIElementSetMessagingTimeout(el, 0.05)
+            if Self.string(el, kAXRoleAttribute) == "AXWebArea" { return el }
+            for c in Self.elements(el, kAXChildrenAttribute) {
+                if let w = firstWebArea(c, depth: depth + 1) { return w }
+            }
+            return nil
+        }
+        if let web = firstWebArea(f.window, depth: 1) {
+            if let hit = find(web, depth: 1, skippingWebAreas: false) { return hit }
+            visited = 0
+        }
+        return find(f.window, depth: 1, skippingWebAreas: true)
+    }
+
     public func element(for id: Int) -> AXUIElement? {
         lock.withLock { elements[id] }
     }

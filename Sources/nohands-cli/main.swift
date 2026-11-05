@@ -282,6 +282,7 @@ var exitStatus: Int32 = 0
                                         observer: observer, overlay: overlay, harness: harness)
                 let t0 = ContinuousClock.now
                 var last = t0
+                runner.onStatus = { status in if status.isFinal { print("status: \(sanitized(status.text))") } }
                 runner.onStep = { n, step, settle, failure in
                     let now = ContinuousClock.now
                     print("step \(n): \(sanitized(step.intent)) -> \(ActionSummary.kinds(step.actions)) (settle \(ms(settle)) ms, step \(ms(last.duration(to: now))) ms)")

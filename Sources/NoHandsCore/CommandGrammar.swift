@@ -159,15 +159,36 @@ public struct CommandGrammar: Sendable {
             return [.openApp(rest.joined(separator: " "))]
         case "go", "search":
             let prefix = first == "go" ? ["go", "to"] : ["search", "for"]
-            guard Array(tokens.prefix(2)) == prefix else { return nil }
-            // Raw payload (speaker's casing, no DictationFormatter), trailing ASR punctuation trimmed.
-            var payload = transcript.split(whereSeparator: { $0.isWhitespace }).dropFirst(2).joined(separator: " ")
-            while let last = payload.last, ".,!?".contains(last) { payload.removeLast() }
-            guard !payload.isEmpty else { return nil }
+            // Raw words (speaker's casing, no DictationFormatter), trailing ASR punctuation trimmed.
+            var rawWords = transcript.split(whereSeparator: { $0.isWhitespace }).map(String.init)
+            while let last = rawWords.last?.last, ".,!?".contains(last) {
+                rawWords[rawWords.count - 1].removeLast()
+                if rawWords[rawWords.count - 1].isEmpty { rawWords.removeLast() }
+            }
+            guard rawWords.count == tokens.count else { return nil }   // punctuation-only words: leave it to the model
+            // "search youtube for cats": the site's own results page.
+            if first == "search", tokens.count > 1, tokens[1] != "for" {
+                guard let at = tokens.firstIndex(of: "for"), at > 1, at < tokens.count - 1,
+                      let url = SiteSearch.url(site: tokens[1..<at].joined(separator: " "),
+                                               query: rawWords[(at + 1)...].joined(separator: " ")) else { return nil }
+                return [.openURL(url, app: nil)]
+            }
+            guard Array(tokens.prefix(2)) == prefix, tokens.count > 2 else { return nil }
+            let payload = rawWords[2...].joined(separator: " ")
             // "go to youtube" / "go to example.org": open the site in the default browser instead of typing into
             // whatever app is frontmost. Other payloads still go through the address bar.
-            if first == "go", let url = WebAddress.url(for: payload) { return [.openURL(url, app: nil)] }
-            return [.pressKey(KeyChord(.l, [.command])), .typeText(payload), .pressKey(KeyChord(.return))]
+            if first == "go" {
+                if let url = WebAddress.url(for: payload) { return [.openURL(url, app: nil)] }
+                return [.pressKey(KeyChord(.l, [.command])), .typeText(payload), .pressKey(KeyChord(.return))]
+            }
+            // "search for cats on youtube": that site's results page, wherever you are.
+            if let on = tokens[2...].lastIndex(where: { $0 == "on" || $0 == "in" }), on > 2, on < tokens.count - 1,
+               let url = SiteSearch.url(site: tokens[(on + 1)...].joined(separator: " "),
+                                        query: rawWords[2..<on].joined(separator: " ")) {
+                return [.openURL(url, app: nil)]
+            }
+            // "search for cats": the frontmost app's or page's own search box.
+            return [.search(payload)]
         case "type":
             guard tokens.count > 1 else { return nil }
             // Payload comes from the raw transcript so ASR casing/punctuation survives.

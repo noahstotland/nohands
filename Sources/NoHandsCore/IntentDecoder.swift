@@ -129,6 +129,7 @@ public enum IntentDecoder {
             return .openURL(url, app: nonBlank(o["app_name"]))
         case "move_window":
             return (o["placement"] as? String).flatMap(WindowPlacement.init(rawValue:)).map(Action.moveWindow)
+        case "search": return nonBlank(o["text"]).map(Action.search)
         case "wait":
             if o["wait_for"] != nil { return waitFor(o) }
             switch optInt(o, "ms") {

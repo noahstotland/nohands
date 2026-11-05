@@ -24,8 +24,13 @@ private func el(_ id: Int, _ title: String, x: CGFloat = 100) -> UIElementInfo {
     UIElementInfo(id: id, frame: CGRect(x: x, y: CGFloat(id) * 40, width: 80, height: 30), title: title, role: "AXButton")
 }
 
+/// What `onStatus` reported, in order (the prompt's row as the user reads it).
+@MainActor private final class StatusLog { var texts: [String] = [] }
+
 @MainActor private struct Rig {
     var runner: TaskRunner
+    var log: StatusLog
+    var statuses: [String] { log.texts }
     var resolver: FakeResolver
     var input: FakeInput
     var ax: FakeElements
@@ -45,7 +50,9 @@ private func el(_ id: Int, _ title: String, x: CGFloat = 100) -> UIElementInfo {
     let runner = TaskRunner(config: config, resolver: resolver, executor: executor,
                             observer: ScreenObserver(ax: ax, maxElements: config.maxObservedElements),
                             overlay: overlay, sleep: { _ in })
-    return Rig(runner: runner, resolver: resolver, input: input, ax: ax, overlay: overlay)
+    let log = StatusLog()
+    runner.onStatus = { log.texts.append($0.text) }
+    return Rig(runner: runner, log: log, resolver: resolver, input: input, ax: ax, overlay: overlay)
 }
 
 private func step(_ intent: String, _ status: StepStatus, _ actions: [Action] = []) -> IntentStep {
@@ -62,14 +69,14 @@ private func step(_ intent: String, _ status: StepStatus, _ actions: [Action] = 
     #expect(req.goal == "type hi" && req.step == 1 && req.maxSteps == 12 && req.history.isEmpty)
     #expect(req.observation.app == "Safari")
     #expect(req.observation.elements.map(\.title) == ["Reload"])
-    #expect(r.overlay.huds == ["step 1 · type hi", "done · type hi"])
+    #expect(r.statuses == ["step 1 · type hi", "done · type hi (1 step)"])
     #expect(r.releaseAllCalls == 0)
 }
 
 @MainActor @Test func doneWithEmptyIntentShowsPlainDone() async {
     let r = rig(FakeResolver([step("", .done)]))
     #expect(await r.runner.run(goal: "x", mode: .command) == .done(""))
-    #expect(r.overlay.huds.last == "done")
+    #expect(r.statuses.last == "done (1 step)")
 }
 
 @MainActor @Test func continueThenDoneObservesTwiceAndCarriesHistory() async {
@@ -85,7 +92,7 @@ private func step(_ intent: String, _ status: StepStatus, _ actions: [Action] = 
     #expect(second.step == 2)
     #expect(second.history == [StepRecord(intent: "open search", actions: [.typeText("a")], failure: nil)])
     #expect(second.observation.elements.map(\.title) == ["Reload", "Search"])
-    #expect(r.overlay.huds == ["step 1 · open search", "step 2 · finished", "done · finished"])
+    #expect(r.statuses == ["step 1 · open search", "step 2 · finished", "done · finished (2 steps)"])
 }
 
 @MainActor @Test func labelsOfObservedScreenAreUsedForExecution() async {
@@ -103,7 +110,7 @@ private func step(_ intent: String, _ status: StepStatus, _ actions: [Action] = 
     #expect(resolver.requests.count == 2)
     #expect(resolver.requests[1].history == [StepRecord(intent: "open it", actions: [.openApp("Nope")],
                                                         failure: "no app named Nope")])
-    #expect(r.overlay.huds.last == "stuck: gave up")
+    #expect(r.statuses == ["step 1 · open it", "step 1 · open it ✗ no app named Nope", "stuck: gave up (1 step)"])
 }
 
 @MainActor @Test func stepCapEndsAsStuck() async {
@@ -115,7 +122,7 @@ private func step(_ intent: String, _ status: StepStatus, _ actions: [Action] = 
     #expect(resolver.requests.count == 3)
     #expect(resolver.requests.map(\.step) == [1, 2, 3])
     #expect(resolver.requests.allSatisfy { $0.maxSteps == 3 })
-    #expect(r.overlay.huds.last == "stuck: step limit reached")
+    #expect(r.statuses.last == "stuck: step limit reached (3 steps)")
 }
 
 @MainActor @Test func threeIdenticalStepsEndAsStuck() async {
@@ -139,7 +146,7 @@ private func step(_ intent: String, _ status: StepStatus, _ actions: [Action] = 
     #expect(r.typed == ["type:1"])
     #expect(resolver.requests.count == 2)
     #expect(r.releaseAllCalls == 1)
-    #expect(r.overlay.huds.last == "stopped")
+    #expect(r.statuses.last == "stopped (1 step)")
 }
 
 @MainActor @Test func cancelInterruptsWaitAction() async {
@@ -165,7 +172,7 @@ private func step(_ intent: String, _ status: StepStatus, _ actions: [Action] = 
 @MainActor @Test func resolverErrorIsFailedWithHUDText() async {
     let r = rig(FakeResolver(results: [.failure(.timeout)]))
     #expect(await r.runner.run(goal: "x", mode: .command) == .failed("timed out"))
-    #expect(r.overlay.huds.last == "timed out")
+    #expect(r.statuses == ["timed out"])
     #expect(r.releaseAllCalls == 1)
 }
 
@@ -173,14 +180,14 @@ private func step(_ intent: String, _ status: StepStatus, _ actions: [Action] = 
     let r = rig(FakeResolver([step("chatter", .ignore, [.typeText("no")])]))
     #expect(await r.runner.run(goal: "hello there", mode: .command) == .ignored)
     #expect(r.input.calls == ["releaseAll"])
-    #expect(r.overlay.huds == [PipelineText.didntCatch])
+    #expect(r.statuses == [PipelineText.didntCatch])
 }
 
 @MainActor @Test func stuckRunsNothing() async {
     let r = rig(FakeResolver([step("no such button", .stuck, [.typeText("no")])]))
     #expect(await r.runner.run(goal: "press it", mode: .command) == .stuck("no such button"))
     #expect(r.input.calls == ["releaseAll"])
-    #expect(r.overlay.huds == ["stuck: no such button"])
+    #expect(r.statuses == ["stuck: no such button"])
 }
 
 @MainActor @Test func settleZeroObservesOnceAndStillRuns() async {
@@ -252,7 +259,7 @@ private actor SleepCounter {
     #expect(resolver.requests.count == 3)
     #expect(resolver.requests[2].history.count == 2)
     #expect(r.releaseAllCalls == 1)
-    #expect(r.overlay.huds.last == "stuck: repeating the same action")
+    #expect(r.statuses.last == "stuck: repeating the same action (2 steps)")
 }
 
 @MainActor @Test func onStepReportsEachExecutedStepWithFailure() async {
@@ -341,7 +348,7 @@ private actor WalkLog {
 @MainActor @Test func ignoreAfterEarlierStepsShowsStoppedWithIntent() async {
     let r = rig(FakeResolver([step("type a", .continue, [.typeText("a")]), step("cannot find the button", .ignore)]))
     #expect(await r.runner.run(goal: "x", mode: .command) == .ignored)
-    #expect(r.overlay.huds.last == "stopped: cannot find the button")
+    #expect(r.statuses.last == "stopped: cannot find the button (1 step)")
     #expect(r.releaseAllCalls == 1)
 }
 
@@ -418,7 +425,9 @@ private func harnessSnapshot() -> DesktopSnapshot {
     let runner = TaskRunner(config: config, resolver: resolver, executor: executor,
                             observer: ScreenObserver(ax: ax, maxElements: 120, harness: harness),
                             overlay: overlay, sleep: { _ in }, harness: harness)
-    return Rig(runner: runner, resolver: resolver, input: input, ax: ax, overlay: overlay)
+    let log = StatusLog()
+    runner.onStatus = { log.texts.append($0.text) }
+    return Rig(runner: runner, log: log, resolver: resolver, input: input, ax: ax, overlay: overlay)
 }
 
 @MainActor @Test func readingsFlowIntoTheNextObservation() async {
@@ -437,7 +446,7 @@ private func harnessSnapshot() -> DesktopSnapshot {
     let h = FakeHarness(); h.snapshotResults = [harnessSnapshot()]; h.readResult = "hello world"
     let r = harnessRig(FakeResolver([step("read it", .done, [.readClipboard])]), harness: h)
     #expect(await r.runner.run(goal: "read the clipboard", mode: .command) == .done("read it"))
-    #expect(r.overlay.huds.last == "read it — clipboard: hello world")
+    #expect(r.statuses.last == "read it — clipboard: hello world (1 step)")
 }
 
 @MainActor @Test func sessionStartsAndEndsWhenTracing() async {
