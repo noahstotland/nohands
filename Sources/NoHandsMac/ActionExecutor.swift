@@ -27,9 +27,16 @@ public protocol ElementProviding: Sendable {
     func setFocusedWindowFrame(_ frame: CGRect) -> Bool
     /// Screen areas a window may occupy (minus menu bar and Dock), CG coordinates, same order as `screenRectsCG()`.
     func visibleScreenRectsCG() -> [CGRect]
+    /// The frame (CG coordinates) of the search box in the frontmost window, when it shows one: a page's own
+    /// search field first, else the app's. Never a browser's address bar.
+    func searchFieldFrame() -> CGRect?
+    /// Whether the frontmost app is a web browser (its address bar searches the web).
+    func frontmostIsBrowser() -> Bool
 }
 
 extension ElementProviding {
+    public func searchFieldFrame() -> CGRect? { nil }
+    public func frontmostIsBrowser() -> Bool { false }
     public func focusedWindowTitle() -> String? { nil }
     public func webURL() -> String? { nil }
     public func didJustExpose() -> Bool { false }
@@ -52,7 +59,11 @@ extension AXQuery: ElementProviding {
     func showGrid(_ grid: GridModel)
     func showLabels(_ labels: [Int: UIElementInfo])
     func hide()
+    /// A transient notice that is not about a prompt (loading, listening, an error).
     func showHUD(_ text: String, duration: Duration)
+    /// The prompt's row on the board at the top of the screen: its words and how far it has got. Reporting an
+    /// unknown id adds the row; reporting a known one updates it.
+    func report(_ id: Int, text: String, status: PromptStatus)
     func screenBoundsCG(containing point: CGPoint) -> CGRect
 }
 
@@ -114,9 +125,9 @@ extension OverlayController: OverlayPresenting {
         readings.append(String("\(label): \(text)".prefix(Self.readingLimit)))
     }
 
-    /// Executes in order; stops at the first failure and shows it in the HUD. Returns the failure message if any.
-    /// Any mouse button pressed by this call is released before a failure is returned.
-    /// Returns `cancelled` (without a HUD) when the calling task is cancelled before an action.
+    /// Executes in order; stops at the first failure. Returns the failure message if any (the caller shows it on
+    /// the prompt's row). Any mouse button pressed by this call is released before a failure is returned.
+    /// Returns `cancelled` when the calling task is cancelled before an action.
     @discardableResult
     public func execute(_ actions: [Action], labels: [Int: UIElementInfo]? = nil) async -> String? {
         pressed = []
@@ -132,7 +143,6 @@ extension OverlayController: OverlayPresenting {
             if let message = await run(action, isLast: i == actions.count - 1) {
                 if !pressed.isEmpty { input.releaseAll() }
                 pressed = []
-                overlay.showHUD(message, duration: .seconds(1.5))
                 return message
             }
         }
@@ -216,6 +226,10 @@ extension OverlayController: OverlayPresenting {
                 let target = placement.frame(in: screen, current: current)
                 guard ax.setFocusedWindowFrame(target) else { return "couldn't move window" }
                 hideStaleOverlay()
+            case .search(let query):
+                guard query.count <= Self.maxTypedCharacters else { return "text too long" }
+                if let failure = try search(query) { return failure }
+                hideStaleOverlay()
             case .wait(let ms):
                 try? await Task.sleep(for: .milliseconds(ms))
             case .ignore:
@@ -237,6 +251,35 @@ extension OverlayController: OverlayPresenting {
     }
 
     func hideStaleOverlay() { if overlay.state != .none { overlay.hide() } }
+
+    /// "search for <query>": the frontmost window's own search box (a YouTube page's, Finder's) gets the query
+    /// and Return; without one, a site with a known results page is navigated to it in the current tab; any
+    /// other browser page searches from the address bar. Returns the failure for an app with nothing to search.
+    private func search(_ query: String) throws -> String? {
+        if let box = ax.searchFieldFrame() {
+            try input.click(at: CGPoint(x: box.midX, y: box.midY), button: .left, count: 1)
+            try input.press(KeyChord(.a, [.command]))
+            try input.type(query)
+            try input.press(KeyChord(.return))
+            return nil
+        }
+        let pageURL = ax.webURL()
+        if let host = pageURL.flatMap({ URL(string: $0)?.host }), let results = SiteSearch.url(host: host, query: query) {
+            try addressBar(results.absoluteString)
+            return nil
+        }
+        guard pageURL != nil || ax.frontmostIsBrowser() else {
+            return "nothing to search in \(ax.frontmostAppName() ?? "the frontmost app")"
+        }
+        try addressBar(query)
+        return nil
+    }
+
+    private func addressBar(_ text: String) throws {
+        try input.press(KeyChord(.l, [.command]))
+        try input.type(text)
+        try input.press(KeyChord(.return))
+    }
 
     /// The screen a window belongs to: the one holding its centre, else the one it overlaps most, else the first.
     nonisolated static func screen(holding window: CGRect, among screens: [CGRect]) -> CGRect? {

@@ -16,12 +16,17 @@ import NoHandsCore
     public var onError: ((String) -> Void)?
 
     private struct Job: Sendable {
+        /// The prompt's row on the board.
+        var id: Int
         var transcript: String
         var trace: LatencyTrace
+        /// The row is already on the board (the merge window showed the words as they were spoken).
+        var shown = false
     }
 
     /// An utterance that routed to the LLM and runs as a task.
     private struct PendingTask {
+        var id: Int
         var goal: String
         var transcript: String
         var trace: LatencyTrace
@@ -59,6 +64,24 @@ import NoHandsCore
     private var droppedJob: Job?
     /// A held job is replayed after the task only if it was spoken within this window.
     static let heldJobMaxAge: Duration = .seconds(60)
+    /// Prompt rows are numbered in the order heard.
+    private var nextPromptID = 0
+    /// The row the merge window opened for words still being spoken; the job they become takes it over.
+    private var listeningID: Int?
+
+    private func newPromptID() -> Int {
+        nextPromptID += 1
+        return nextPromptID
+    }
+
+    /// The merge window is holding `text` for more words: show it as a prompt that is still being spoken.
+    private func listening(_ text: String) {
+        guard !stopped else { return }
+        let id = listeningID ?? newPromptID()
+        listeningID = id
+        overlay.report(id, text: text, status: .listening)
+    }
+
 
     /// The outcome of the most recent task (for tests and diagnostics).
     private(set) var lastTaskOutcome: TaskOutcome?
@@ -135,10 +158,11 @@ import NoHandsCore
             merger: UtteranceMerger(windowMs: config.mergeWindowMs, unfinishedWindowMs: config.mergeWindowUnfinishedMs),
             isComplete: { Self.isComplete($0, mode: $1, grammar: grammar) },
             onHold: { [weak self] text in
-                Task { @MainActor in self?.overlay.showHUD(text + " …") }
+                Task { @MainActor in self?.listening(text) }
             },
             emit: { text, trace in
-                if case .dropped = jobCont.yield(Job(transcript: text, trace: trace)) {
+                // The row id is given on the main actor when the job is handled (see `handle`).
+                if case .dropped = jobCont.yield(Job(id: 0, transcript: text, trace: trace)) {
                     PipelineLog.warning("busy: dropped oldest queued utterance")
                     Task { @MainActor [weak self] in self?.overlay.showHUD(PipelineText.skippedBusy) }
                 }
@@ -280,7 +304,9 @@ import NoHandsCore
     /// Routes one transcript and executes it. Internal so tests can drive the pipeline without audio.
     /// Returns once the utterance is handled; an LLM utterance only starts a task (see `waitForTask()`).
     func handle(transcript text: String, trace: LatencyTrace) async {
-        let job = Job(transcript: text, trace: trace)
+        // The words the merge window was showing become this prompt's row; otherwise it gets a new one.
+        let job = Job(id: listeningID ?? newPromptID(), transcript: text, trace: trace, shown: listeningID != nil)
+        listeningID = nil
         if activeTask != nil { busy(job); return }
         if let pending = await process(job) { startTask(pending) }
     }
@@ -298,11 +324,12 @@ import NoHandsCore
             if let held = heldJob { droppedJob = held }
             heldJob = nil
             runner?.cancel()
-            activeTask?.cancel()   // the runner shows "stopped" when it unwinds
+            activeTask?.cancel()   // the task's row shows "stopped" when the runner unwinds
+            overlay.report(job.id, text: job.transcript, status: .done(PipelineText.stopping))
             PipelineLog.utterance(trace: job.trace, transcript: job.transcript, outcome: "stop", detail: "stop")
         } else {
             heldJob = job
-            overlay.showHUD(PipelineText.held(job.transcript), duration: .seconds(3))
+            overlay.report(job.id, text: job.transcript, status: .held)
             PipelineLog.utterance(trace: job.trace, transcript: job.transcript, outcome: "held", detail: "held")
         }
     }
@@ -315,7 +342,7 @@ import NoHandsCore
         let maxAge = held ? Self.heldJobMaxAge : StaleJobPolicy.defaultMaxAge
         if let spoke = trace.speechEnd, StaleJobPolicy.isStale(age: spoke.duration(to: .now), maxAge: maxAge) {
             PipelineLog.warning("busy: skipped (stale) utterance (older than \(maxAge))")
-            overlay.showHUD(held ? PipelineText.dropped(text) : PipelineText.skippedBusy)
+            overlay.report(job.id, text: text, status: .dropped(held ? PipelineText.dropped : PipelineText.skippedBusy))
             return nil
         }
         lastTranscript = text
@@ -326,24 +353,33 @@ import NoHandsCore
         var detail = PipelineText.summary(routing, detailed: true)     // private: with payloads
 
         switch routing {
-        case .ignore:
-            break   // nothing on the HUD (this also keeps sleep silent)
+        case .ignore(let reason):
+            // Nothing on the board (this also keeps sleep silent), unless the merge window already put the words
+            // there: that row must not stay "listening".
+            if job.shown { overlay.report(job.id, text: text, status: .ignored(reason == "sleeping" ? "asleep" : "")) }
         case .execute(let actions):
-            overlay.showHUD(text)
-            guard canExecute else { outcome += " (cancelled)"; detail += " (cancelled)"; break }
+            overlay.report(job.id, text: text, status: .heard)
+            guard canExecute else {
+                overlay.report(job.id, text: text, status: .dropped(PipelineText.cancelled))
+                outcome += " (cancelled)"; detail += " (cancelled)"; break
+            }
             if let failure = await executor.execute(actions) {
+                overlay.report(job.id, text: text, status: .failed(failure))
                 outcome += " FAILED"
                 detail += " FAILED(\(failure))"
+            } else {
+                overlay.report(job.id, text: text, status: .done(""))
             }
         case .resolveWithLLM(let phrase):
-            overlay.showHUD(text)
+            overlay.report(job.id, text: text, status: .heard)
             if runner == nil {
-                showNoResolverHint()
+                overlay.report(job.id, text: text, status: .ignored(noResolverHint()))
                 outcome += " (no resolver)"; detail += " (no resolver)"
             } else if !canExecute {
+                overlay.report(job.id, text: text, status: .dropped(PipelineText.cancelled))
                 outcome += " (cancelled)"; detail += " (cancelled)"
             } else {
-                return PendingTask(goal: phrase, transcript: text, trace: trace)
+                return PendingTask(id: job.id, goal: phrase, transcript: text, trace: trace)
             }
         }
 
@@ -372,7 +408,7 @@ import NoHandsCore
             heldJob = nil
             droppedJob = nil
             if let lost, !stopped {
-                overlay.showHUD(PipelineText.dropped(lost.transcript))
+                overlay.report(lost.id, text: lost.transcript, status: .dropped(PipelineText.dropped))
                 PipelineLog.utterance(trace: lost.trace, transcript: lost.transcript, outcome: "dropped", detail: "dropped")
             }
             activeTask = nil
@@ -380,7 +416,11 @@ import NoHandsCore
     }
 
     private func runTask(_ pending: PendingTask, runner: TaskRunner) async {
-        let outcome = await runner.run(goal: pending.goal, mode: modeMachine.mode)   // shows its own HUDs
+        // The runner's step and finish lines go on this prompt's row.
+        let id = pending.id, text = pending.transcript
+        runner.onStatus = { [weak self] status in self?.overlay.report(id, text: text, status: status) }
+        let outcome = await runner.run(goal: pending.goal, mode: modeMachine.mode)
+        runner.onStatus = nil
         lastTaskOutcome = outcome
         var trace = pending.trace
         trace.actionsDone = .now
@@ -391,13 +431,11 @@ import NoHandsCore
         publishStatus()
     }
 
-    private func showNoResolverHint() {
-        if llmOffShown {
-            overlay.showHUD(PipelineText.didntCatch)
-        } else {
-            llmOffShown = true
-            overlay.showHUD(config.intentBackend == .off ? PipelineText.llmDisabled : PipelineText.llmOff)
-        }
+    /// Why an unmatched utterance ran nothing: the LLM-off hint once, then "didn't catch that".
+    private func noResolverHint() -> String {
+        if llmOffShown { return PipelineText.didntCatch }
+        llmOffShown = true
+        return config.intentBackend == .off ? PipelineText.llmDisabled : PipelineText.llmOff
     }
 
     /// Outcome kind for the log; `detailed` adds the model's text (private log field only).

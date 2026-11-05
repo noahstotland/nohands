@@ -50,6 +50,9 @@ public enum TaskOutcome: Equatable, Sendable {
     /// Diagnostics hook (the CLI prints steps with it; the app leaves it nil). Called after each executed step with
     /// the step number, the step, how long the settle before it took, and the executor's failure (nil on success).
     public var onStep: ((_ n: Int, _ step: IntentStep, _ settle: Duration, _ failure: String?) -> Void)?
+    /// The prompt's status as the task goes: each step as it starts, a step's failure, and the finish line. The
+    /// pipeline puts it on the prompt's row; the CLI prints it.
+    public var onStatus: ((PromptStatus) -> Void)?
 
     public init(config: AppConfig, resolver: any IntentResolving, executor: ActionExecutor,
                 observer: ScreenObserver, overlay: any OverlayPresenting,
@@ -118,7 +121,7 @@ public enum TaskOutcome: Equatable, Sendable {
             }
 
             if isCancelled { return await finish(.stopped) }
-            overlay.showHUD("step \(n) · \(step.intent)", duration: .seconds(4))
+            onStatus?(.running("step \(n) · \(step.intent)"))
             // Code-level guard: never close a tab/window or quit an app the goal did not ask to close or quit.
             // A blocked step runs nothing and is recorded as a failed step so the model can react.
             let failure: String?
@@ -134,6 +137,7 @@ public enum TaskOutcome: Equatable, Sendable {
             }
             stepsRun = n
             onStep?(n, step, settled, failure)
+            if let failure, failure != ActionExecutor.cancelled { onStatus?(.running("step \(n) · \(step.intent) ✗ \(failure)")) }
             if isCancelled { return await finish(.stopped) }
             // A `done` whose actions failed did not achieve the goal: record the failure and let the model react
             // (repeat detection above covers both `continue` and `done`, so a stubborn failing batch ends as stuck).
@@ -231,11 +235,22 @@ public enum TaskOutcome: Equatable, Sendable {
 
     static func stoppedHUD(_ intent: String) -> String { intent.isEmpty ? PipelineText.stopped : "stopped: \(intent)" }
 
-    /// `hud` overrides the outcome's usual finish HUD.
+    /// The finish line as a prompt status: the outcome's kind, `text`, and how many steps ran.
+    static func finalStatus(_ outcome: TaskOutcome, text: String, steps: Int) -> PromptStatus {
+        let line = steps > 0 ? "\(text) (\(steps) step\(steps == 1 ? "" : "s"))" : text
+        switch outcome {
+        case .done: return .done(line)
+        case .stuck, .failed: return .failed(line)
+        case .stopped: return .stopped(line)
+        case .ignored: return .ignored(line)
+        }
+    }
+
+    /// `hud` overrides the outcome's usual finish line.
     private func finish(_ outcome: TaskOutcome, hud: String? = nil) async -> TaskOutcome {
         // Spec Safety: a held mouse button is released on any exit; a successful `done` keeps what it did.
         if case .done = outcome {} else { executor.releaseAll() }
-        overlay.showHUD(hud ?? PipelineText.hud(for: outcome))
+        onStatus?(Self.finalStatus(outcome, text: hud ?? PipelineText.hud(for: outcome), steps: stepsRun))
         // The HUD is already up; ending the traced session is quick bookkeeping.
         if let id = sessionID, let harness {
             sessionID = nil

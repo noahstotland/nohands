@@ -140,11 +140,25 @@ let g = CommandGrammar()
     #expect(g.parse("go to example.org/docs") == [.openURL(URL(string: "https://example.org/docs")!, app: nil)])
     let nav: [Action] = [.pressKey(KeyChord(.l, [.command])), .typeText("my dashboard"), .pressKey(KeyChord(.return))]
     #expect(g.parse("go to my dashboard") == nav)
-    #expect(g.parse("Search for cute cats.") == [.pressKey(KeyChord(.l, [.command])), .typeText("cute cats"),
-                                                .pressKey(KeyChord(.return))])
     #expect(g.parse("go to sleep") == [.setMode(.sleep)])   // exact phrase still wins
     #expect(g.parse("go to") == nil)
     #expect(g.parse("search for") == nil)
+}
+
+@Test func searchForUsesTheFrontAppOrTheNamedSite() {
+    // The frontmost app's or page's own search box (the executor picks the box, the results page, or the address bar).
+    #expect(g.parse("Search for cute cats.") == [.search("cute cats")])
+    #expect(g.parse("search for Outdoor Boys") == [.search("Outdoor Boys")])
+    #expect(g.parse("search for cats in the kitchen") == [.search("cats in the kitchen")])   // not a site
+    // A named site: its results page, wherever you are.
+    let yt = URL(string: "https://www.youtube.com/results?search_query=outdoor%20boys")!
+    #expect(g.parse("search for outdoor boys on youtube") == [.openURL(yt, app: nil)])
+    #expect(g.parse("search for outdoor boys on YouTube.") == [.openURL(yt, app: nil)])
+    #expect(g.parse("search youtube for outdoor boys") == [.openURL(yt, app: nil)])
+    #expect(g.parse("search google maps for coffee") == [.openURL(URL(string: "https://www.google.com/maps/search/coffee")!, app: nil)])
+    #expect(g.parse("search youtube for") == nil)
+    #expect(g.parse("search for on youtube") == [.search("on youtube")])   // no words before "on"
+    #expect(g.parse("search the web for cats") == nil)   // not a known site: the model decides
 }
 
 @Test func fillerWordsStrippedForExactCommands() {
