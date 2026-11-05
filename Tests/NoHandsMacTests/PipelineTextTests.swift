@@ -14,6 +14,7 @@ import NoHandsCore
 @Test func routingSummaries() {
     #expect(PipelineText.summary(.ignore(reason: "sleeping")) == "ignore(sleeping)")
     #expect(PipelineText.summary(.resolveWithLLM("x")) == "llm")
+    #expect(PipelineText.summary(.reject("can't spell \"k9\"")) == "reject")   // a spoken secret stays out of the public log
     #expect(PipelineText.summary(.execute([.setMode(.sleep)])).hasPrefix("execute ["))
 }
 

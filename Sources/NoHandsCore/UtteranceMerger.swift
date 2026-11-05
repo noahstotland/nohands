@@ -18,9 +18,12 @@ public struct UtteranceMerger: Sendable {
         "switch", "show", "hide", "find", "search", "um", "uh", "er", "like", "no", "wait", "actually",
     ]
 
-    /// True when the transcript ends in a word that leaves the command hanging.
+    /// True when the transcript ends in a word that leaves the command hanging, or is a `spell` phrase: spelling
+    /// pauses between letters, and a split phrase would type half a password and send the rest to the model.
     public static func isUnfinished(_ transcript: String) -> Bool {
-        guard let last = transcript.split(whereSeparator: { $0.isWhitespace }).last else { return false }
+        let words = transcript.split(whereSeparator: { $0.isWhitespace })
+        if words.first?.lowercased().trimmingCharacters(in: .punctuationCharacters) == "spell" { return true }
+        guard let last = words.last else { return false }
         let word = last.lowercased().trimmingCharacters(in: .punctuationCharacters)
         return danglingWords.contains(word)
     }

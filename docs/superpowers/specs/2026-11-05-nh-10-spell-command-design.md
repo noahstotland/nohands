@@ -1,7 +1,7 @@
 # NH-10: Spell command for letter-by-letter typing — Design
 
 **Date:** 2026-11-05  **Status:** Shipped  **Ticket:** [NH-10](https://github.com/noahstotland/nohands/issues/10)
-**Shipped:** in PR #26, as specified
+**Shipped:** in PR #26, with differences: [as-built](../as-built/2026-11-05-nh-10-spell-command.md)
 
 ## Intent
 

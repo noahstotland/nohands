@@ -6,6 +6,7 @@ import Testing
     #expect(UtteranceMerger.isUnfinished("Open"))
     #expect(UtteranceMerger.isUnfinished("scroll down and"))
     #expect(UtteranceMerger.isUnfinished("um"))
+    #expect(UtteranceMerger.isUnfinished("Spell capital kilo nine"))   // spelling pauses: held for the longer window
     #expect(!UtteranceMerger.isUnfinished("click the back button"))
     #expect(!UtteranceMerger.isUnfinished("go back"))
     #expect(!UtteranceMerger.isUnfinished(""))
