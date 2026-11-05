@@ -37,7 +37,7 @@ actor MergeBuffer {
 
     func transcript(_ text: String, trace: LatencyTrace) {
         speechActive = false
-        // A stop phrase or a dictation escape is never merged: it must reach the pipeline on its own, at once.
+        // A stop phrase or a dictation command is never merged: it must reach the pipeline on its own, at once.
         if StopWords.isStop(text) {
             // In command mode a stop also cancels what was still being said; in dictation the words already
             // spoken are kept (typed) before the stop.
@@ -46,7 +46,7 @@ actor MergeBuffer {
             flush()
             return
         }
-        if mode == .dictation && ModeMachine.isDictationEscape(text) {
+        if mode == .dictation && ModeMachine.isDictationCommand(text) {
             flush()
             pending = Pending(transcript: text, trace: trace)
             flush()

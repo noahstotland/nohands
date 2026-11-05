@@ -115,12 +115,12 @@ import NoHandsCore
     }
 
     /// Skips the merge window: a complete grammar command in command mode, a stop phrase in any mode, and the
-    /// dictation escape phrases in dictation mode. Internal so tests build their MergeBuffer the same way.
+    /// dictation commands (escape phrases, "scratch that", "delete word") in dictation mode. Internal so tests build their MergeBuffer the same way.
     nonisolated static func isComplete(_ transcript: String, mode: Mode, grammar: CommandGrammar) -> Bool {
         if StopWords.isStop(transcript) { return true }
         switch mode {
         case .command: return grammar.parse(transcript) != nil
-        case .dictation: return ModeMachine.isDictationEscape(transcript)
+        case .dictation: return ModeMachine.isDictationCommand(transcript)
         case .sleep: return false
         }
     }
@@ -262,6 +262,7 @@ import NoHandsCore
         for job in [heldJob].compactMap({ $0 }) + droppedJobs { reportDropped(job, log: false) }
         heldJob = nil
         droppedJobs = []
+        modeMachine.forgetDictationRecord()   // "scratch that" after a pause must not delete text it never typed
         runner?.cancel()
         activeTask?.cancel()    // also covers a cancel() that lands before run() starts (run() clears its flag)
         if let merge { Task { await merge.reset() } }
