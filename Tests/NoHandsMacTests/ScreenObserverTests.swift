@@ -100,3 +100,20 @@ import NoHandsCore
         #expect(native.harness == .native && native.elements.map(\.title) == ["Native"] && h.calls.isEmpty)
     }
 }
+
+@Test func taskObservationReportsMediaFromEveryElementAndAsksAudioOnlyWithoutAControl() async {
+    let f = FakeElements(), audio = FakeAudio()
+    f.front = "Safari"
+    func media(_ titles: [String], maxElements: Int = 1) async -> MediaState? {
+        f.elements = titles.enumerated().map { UIElementInfo(id: $0.offset, frame: CGRect(x: 0, y: $0.offset * 40, width: 10, height: 10), title: $0.element, role: "AXButton") }
+        return await ScreenObserver(ax: f, maxElements: maxElements, audio: audio)
+            .observe(mode: .command, overlay: .none, harnessKind: .native).observation.media
+    }
+    // The Pause control is past the element cap and still counts.
+    #expect(await media(["Reload", "Pause (k)"]) == .playing && audio.asked == 0)
+    #expect(await media(["Reload", "Play"]) == .paused && audio.asked == 0)
+    #expect(await media(["Reload"]) == MediaState.none && audio.asked == 1)
+    audio.playing = true
+    #expect(await media(["Reload"]) == .playing)
+    #expect(ScreenObserver(ax: f, maxElements: 1, audio: audio).observe(mode: .command, overlay: .none).observation.media == nil)
+}

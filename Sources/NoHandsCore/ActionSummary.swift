@@ -27,6 +27,7 @@ public enum ActionSummary {
         case .search(let q): "search(len=\(q.count))"
         case .searchSite(let q, let site): "searchSite(len=\(q.count), site=\(site))"
         case .wait: "wait"
+        case .checkMedia: "checkMedia"
         case .ignore: "ignore"
         case .setValue(_, let t): "setValue(len=\(t.count))"
         case .typeInto(_, let t): "typeInto(len=\(t.count))"
@@ -59,6 +60,7 @@ public enum ActionSummary {
         case .menu: "menu"
         case .menuClosed: "menu_closed"
         case .element: "element"
+        case .mediaPlaying: "media_playing"
         }
     }
 }

@@ -28,6 +28,8 @@ public enum ElementTarget: Equatable, Codable, Sendable { case label(Int), named
 public enum WaitCondition: Equatable, Codable, Sendable {
     case text(String), window(String), event(DesktopEvent), menu, menuClosed
     case element(ElementTarget, predicate: String)
+    /// Media plays in the front window; polled by NoHands, not by agent-desktop.
+    case mediaPlaying
 }
 
 public enum Action: Equatable, Codable, Sendable {
@@ -55,6 +57,9 @@ public enum Action: Equatable, Codable, Sendable {
     /// the default browser. `site` is a `SiteSearch.templates` key ("youtube.com"), never free text.
     case searchSite(String, site: String)
     case wait(ms: Int)
+    /// Report whether media is playing in the front window as a reading. Grammar only ("is it playing"); the
+    /// model has no kind for it.
+    case checkMedia
     case ignore
 
     // Harness actions (agent-desktop semantics; each has a native fallback or fails with "needs agent-desktop").

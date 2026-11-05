@@ -222,6 +222,7 @@ public enum IntentDecoder {
             condition = .event(e)
         case .menu: condition = .menu
         case .menuClosed: condition = .menuClosed
+        case .mediaPlaying: condition = .mediaPlaying
         case .element:
             guard let t = elementTarget(o) else { return nil }
             condition = .element(t, predicate: nonBlank(o["value"]) ?? nonBlank(o["predicate"]) ?? "exists")

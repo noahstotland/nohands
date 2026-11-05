@@ -23,6 +23,7 @@ public enum TaskOutcome: Equatable, Sendable {
 @MainActor public final class TaskRunner {
     static let stepLimit = "step limit reached"
     static let repeating = "repeating the same action"
+    static let notPlaying = "not playing yet"
     static let pollInterval = 250
     static let minSettleMs = 300
 
@@ -83,6 +84,7 @@ public enum TaskOutcome: Equatable, Sendable {
         let maxSteps = max(1, config.maxTaskSteps)
         var history: [StepRecord] = []
         var repeats = RepeatDetector(limit: 3)
+        var askedAgainForMedia = false
         // Observe once. Settle first only when that walk just exposed a Chromium page tree (it fills in ~0.5 s
         // later); otherwise the screen is already what the user sees and the model is asked at once.
         _ = observer.didJustExpose()   // clear a flag left over from a walk after the previous task's last step
@@ -143,7 +145,21 @@ public enum TaskOutcome: Equatable, Sendable {
             // (repeat detection above covers both `continue` and `done`, so a stubborn failing batch ends as stuck).
             let readings = executor.takeReadings()
             if step.status == .done && failure == nil {
-                return await finish(.done(step.intent), hud: readings.first.map { "\(step.intent) — \($0.prefix(80))" })
+                let finished = TaskOutcome.done(step.intent)
+                let hud = readings.first.map { "\(step.intent) — \($0.prefix(80))" }
+                guard MediaSignal.wantsPlayback(goal: goal) else { return await finish(finished, hud: hud) }
+                // A goal to play something is done when it plays, not when the page loaded: look once more at the
+                // screen after this step's actions. A visible Play button sends the model round once more.
+                settleStart = ContinuousClock.now
+                pendingSurfaces = harness?.takeOpenSurfaces() ?? []
+                (observation, labels) = await settle(mode: mode, readings: readings)
+                settled = settleStart.duration(to: .now)
+                if isCancelled { return await finish(.stopped) }
+                guard observation.media == .paused else { return await finish(finished, hud: hud) }
+                if askedAgainForMedia || n == maxSteps { return await finish(.stuck(Self.notPlaying)) }
+                askedAgainForMedia = true
+                history.append(StepRecord(intent: step.intent, actions: step.actions, failure: Self.notPlaying))
+                continue
             }
             history.append(StepRecord(intent: step.intent, actions: step.actions, failure: failure))
             if n < maxSteps {

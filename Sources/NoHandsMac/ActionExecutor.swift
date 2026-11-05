@@ -94,6 +94,8 @@ extension OverlayController: OverlayPresenting {
     let clipboard: any ClipboardAccess
     public var onModeChange: ((Mode) -> Void)?
     private let frontTimeout: Duration
+    private let audio: any AudioOutputProbing
+    private let mediaPoll: Duration
     /// How long an app that just came to the front may take to show a window (a cold launch on a loaded Mac).
     private let windowTimeout: Duration
     private var pressed: Set<MouseButton> = []
@@ -104,7 +106,10 @@ extension OverlayController: OverlayPresenting {
 
     public init(input: any InputSynthesizing, ax: any ElementProviding, overlay: any OverlayPresenting,
                 config: AppConfig, frontTimeout: Duration = .seconds(1.5), windowTimeout: Duration = .seconds(6),
-                harness: (any DesktopHarness)? = nil, clipboard: any ClipboardAccess = PasteboardClipboard()) {
+                harness: (any DesktopHarness)? = nil, clipboard: any ClipboardAccess = PasteboardClipboard(),
+                audio: any AudioOutputProbing = AudioOutputProbe(), mediaPoll: Duration = .milliseconds(500)) {
+        self.audio = audio
+        self.mediaPoll = mediaPoll
         self.frontTimeout = frontTimeout
         self.windowTimeout = windowTimeout
         self.input = input
@@ -239,6 +244,8 @@ extension OverlayController: OverlayPresenting {
                 }
             case .wait(let ms):
                 try? await Task.sleep(for: .milliseconds(ms))
+            case .checkMedia:
+                addReading("Media", mediaState().rawValue)
             case .ignore:
                 break
             case .setValue, .typeInto, .clearField, .selectOption, .setChecked, .setExpanded, .focusElement, .scrollTo,
@@ -254,6 +261,24 @@ extension OverlayController: OverlayPresenting {
             return Self.needsHarness
         } catch {
             return "couldn't post input event"
+        }
+    }
+
+    /// Whether media plays in the front window now, from a native walk of its elements (never agent-desktop).
+    func mediaState() -> MediaState {
+        MediaSignal.state(elements: ax.actionableElements(), audioPlaying: audio.isPlaying)
+    }
+
+    /// Polls `mediaState()` until it is `playing` (nil) or `timeoutMs` passes ("wait timed out"). Cancellation
+    /// ends it at once.
+    func waitForMediaPlaying(timeoutMs: Int) async -> String? {
+        let deadline = ContinuousClock.now.advanced(by: .milliseconds(timeoutMs))
+        while true {
+            if Task.isCancelled { return Self.cancelled }
+            if mediaState() == .playing { return nil }
+            let left = ContinuousClock.now.duration(to: deadline)
+            if left <= .zero { return "wait timed out" }
+            try? await Task.sleep(for: min(mediaPoll, left))
         }
     }
 

@@ -40,6 +40,8 @@ public struct ScreenObservation: Equatable, Sendable {
     public var windows: [String] = []
     /// Text the model asked to read in the previous step (clipboard, an element value, notifications).
     public var readings: [String] = []
+    /// Whether media plays in the front window; nil when not observed (the one-shot path), which prints no line.
+    public var media: MediaState? = nil
     public init(app: String, windowTitle: String = "", url: String? = nil, mode: Mode,
                 overlay: String = "none", elements: [ObservedElement] = []) {
         self.app = app; self.windowTitle = windowTitle; self.url = url
