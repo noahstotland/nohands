@@ -51,6 +51,9 @@ public enum Action: Equatable, Codable, Sendable {
     /// Search in the frontmost app or site: its own search box when it shows one, else the site's search
     /// page, else a browser's address bar.
     case search(String)
+    /// Search for words on a named site: inside that site when it is the page in front, else its results page in
+    /// the default browser. `site` is a `SiteSearch.templates` key ("youtube.com"), never free text.
+    case searchSite(String, site: String)
     case wait(ms: Int)
     case ignore
 

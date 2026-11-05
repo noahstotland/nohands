@@ -33,10 +33,26 @@ public enum SiteSearch {
 
     /// The search results page for `query` on the site at `host`; nil for a site with no known search page.
     public static func url(host: String, query: String) -> URL? {
-        let h = host.lowercased()
-        let match = templates.keys.filter { h == $0 || h.hasSuffix("." + $0) }.max { $0.count < $1.count }
-        guard let match, let q = encoded(query) else { return nil }
+        guard let match = templateKey(forHost: host), let q = encoded(query) else { return nil }
         return URL(string: templates[match]! + q)
+    }
+
+    /// The template key `host` belongs to (exactly or as a subdomain; the longest match wins), else nil.
+    static func templateKey(forHost host: String) -> String? {
+        let h = host.lowercased()
+        return templates.keys.filter { h == $0 || h.hasSuffix("." + $0) }.max { $0.count < $1.count }
+    }
+
+    /// The template key for a spoken site name ("youtube", "google maps") or a domain; nil for a site with no
+    /// known search page.
+    public static func site(spoken: String) -> String? {
+        WebAddress.url(for: spoken)?.host.flatMap(templateKey(forHost:))
+    }
+
+    /// Whether the page at `host` is on `site` (a template key): "www.youtube.com" is on "youtube.com",
+    /// "notyoutube.com" is not, and "maps.google.com" is on "maps.google.com" but not on "google.com".
+    public static func isOn(site: String, host: String) -> Bool {
+        templateKey(forHost: host) == site
     }
 
     /// The search results page for `query` on a spoken site name ("youtube", "google maps") or a domain.

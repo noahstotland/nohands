@@ -23,6 +23,22 @@ import CoreGraphics
     #expect(SiteSearch.url(site: "example.org", query: "cats") == nil)
 }
 
+@Test func siteLookupAndIsOn() {
+    let sites: [(spoken: String, key: String?)] = [
+        ("youtube", "youtube.com"), ("YouTube.com", "youtube.com"), ("google maps", "maps.google.com"),
+        ("the kitchen", nil), ("example.org", nil),
+    ]
+    for c in sites { #expect(SiteSearch.site(spoken: c.spoken) == c.key, "\(c)") }
+    let hosts: [(site: String, host: String, on: Bool)] = [
+        ("youtube.com", "youtube.com", true), ("youtube.com", "www.youtube.com", true),
+        ("youtube.com", "M.YouTube.com", true), ("youtube.com", "notyoutube.com", false),
+        ("youtube.com", "youtube.com.evil.org", false), ("youtube.com", "www.google.com", false),
+        ("google.com", "www.google.com", true), ("google.com", "maps.google.com", false),   // longer template wins
+        ("maps.google.com", "maps.google.com", true),
+    ]
+    for c in hosts { #expect(SiteSearch.isOn(site: c.site, host: c.host) == c.on, "\(c)") }
+}
+
 @Test func searchFieldMatching() {
     let cases: [(role: String, subrole: String?, names: [String], hit: Bool)] = [
         ("AXTextField", nil, ["Search"], true),                             // YouTube's box (placeholder)

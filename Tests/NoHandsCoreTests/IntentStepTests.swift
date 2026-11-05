@@ -186,4 +186,5 @@ import Foundation
     #expect(IntentSchema.kinds.contains("search"))
     #expect(IntentSchema.systemPrompt.contains("- search:"))
     #expect(ActionSummary.kind(.search("outdoor boys")) == "search(len=12)")
+    #expect(ActionSummary.kind(.searchSite("outdoor boys", site: "youtube.com")) == "searchSite(len=12, site=youtube.com)")
 }

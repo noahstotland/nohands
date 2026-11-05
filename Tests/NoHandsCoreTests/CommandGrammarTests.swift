@@ -150,12 +150,13 @@ let g = CommandGrammar()
     #expect(g.parse("Search for cute cats.") == [.search("cute cats")])
     #expect(g.parse("search for Outdoor Boys") == [.search("Outdoor Boys")])
     #expect(g.parse("search for cats in the kitchen") == [.search("cats in the kitchen")])   // not a site
-    // A named site: its results page, wherever you are.
-    let yt = URL(string: "https://www.youtube.com/results?search_query=outdoor%20boys")!
-    #expect(g.parse("search for outdoor boys on youtube") == [.openURL(yt, app: nil)])
-    #expect(g.parse("search for outdoor boys on YouTube.") == [.openURL(yt, app: nil)])
-    #expect(g.parse("search youtube for outdoor boys") == [.openURL(yt, app: nil)])
-    #expect(g.parse("search google maps for coffee") == [.openURL(URL(string: "https://www.google.com/maps/search/coffee")!, app: nil)])
+    // A named site: searched in place when it is open, else its results page (the executor decides).
+    let yt: [Action] = [.searchSite("outdoor boys", site: "youtube.com")]
+    #expect(g.parse("search for outdoor boys on youtube") == yt)
+    #expect(g.parse("search for outdoor boys on YouTube.") == yt)
+    #expect(g.parse("search for outdoor boys in youtube") == yt)
+    #expect(g.parse("search youtube for outdoor boys") == yt)
+    #expect(g.parse("search google maps for coffee") == [.searchSite("coffee", site: "maps.google.com")])
     #expect(g.parse("search youtube for") == nil)
     #expect(g.parse("search for on youtube") == [.search("on youtube")])   // no words before "on"
     #expect(g.parse("search the web for cats") == nil)   // not a known site: the model decides

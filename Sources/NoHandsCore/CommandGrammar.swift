@@ -178,12 +178,11 @@ public struct CommandGrammar: Sendable {
                 if rawWords[rawWords.count - 1].isEmpty { rawWords.removeLast() }
             }
             guard rawWords.count == tokens.count else { return nil }   // punctuation-only words: leave it to the model
-            // "search youtube for cats": the site's own results page.
+            // "search youtube for cats": that site (the executor searches it in place when it is open).
             if first == "search", tokens.count > 1, tokens[1] != "for" {
                 guard let at = tokens.firstIndex(of: "for"), at > 1, at < tokens.count - 1,
-                      let url = SiteSearch.url(site: tokens[1..<at].joined(separator: " "),
-                                               query: rawWords[(at + 1)...].joined(separator: " ")) else { return nil }
-                return [.openURL(url, app: nil)]
+                      let site = SiteSearch.site(spoken: tokens[1..<at].joined(separator: " ")) else { return nil }
+                return [.searchSite(rawWords[(at + 1)...].joined(separator: " "), site: site)]
             }
             guard Array(tokens.prefix(2)) == prefix, tokens.count > 2 else { return nil }
             let payload = rawWords[2...].joined(separator: " ")
@@ -193,11 +192,10 @@ public struct CommandGrammar: Sendable {
                 if let url = WebAddress.url(for: payload) { return [.openURL(url, app: nil)] }
                 return [.pressKey(KeyChord(.l, [.command])), .typeText(payload), .pressKey(KeyChord(.return))]
             }
-            // "search for cats on youtube": that site's results page, wherever you are.
+            // "search for cats on youtube": that site, wherever you are.
             if let on = tokens[2...].lastIndex(where: { $0 == "on" || $0 == "in" }), on > 2, on < tokens.count - 1,
-               let url = SiteSearch.url(site: tokens[(on + 1)...].joined(separator: " "),
-                                        query: rawWords[2..<on].joined(separator: " ")) {
-                return [.openURL(url, app: nil)]
+               let site = SiteSearch.site(spoken: tokens[(on + 1)...].joined(separator: " ")) {
+                return [.searchSite(rawWords[2..<on].joined(separator: " "), site: site)]
             }
             // "search for cats": the frontmost app's or page's own search box.
             return [.search(payload)]
