@@ -256,23 +256,37 @@ extension OverlayController: OverlayPresenting {
     /// and Return; without one, a site with a known results page is navigated to it in the current tab; any
     /// other browser page searches from the address bar. Returns the failure for an app with nothing to search.
     private func search(_ query: String) throws -> String? {
-        if let box = ax.searchFieldFrame() {
-            try input.click(at: CGPoint(x: box.midX, y: box.midY), button: .left, count: 1)
-            try input.press(KeyChord(.a, [.command]))
-            try input.type(query)
-            try input.press(KeyChord(.return))
+        // One public log line per search naming the route and why earlier routes were skipped. The query is
+        // never in it (transcripts are private); a thrown input error is logged as a warning naming the route.
+        var route = "searchField"
+        do {
+            if let box = ax.searchFieldFrame() {
+                try input.click(at: CGPoint(x: box.midX, y: box.midY), button: .left, count: 1)
+                try input.press(KeyChord(.a, [.command]))
+                try input.type(query)
+                try input.press(KeyChord(.return))
+                PipelineLog.info("search: route=searchField")
+                return nil
+            }
+            let pageURL = ax.webURL()
+            if let host = pageURL.flatMap({ URL(string: $0)?.host }), let results = SiteSearch.url(host: host, query: query) {
+                route = "siteURL"
+                try addressBar(results.absoluteString)
+                PipelineLog.info("search: route=siteURL host=\(host) (no search field)")
+                return nil
+            }
+            guard pageURL != nil || ax.frontmostIsBrowser() else {
+                PipelineLog.info("search: route=none (not a browser, no search field)")
+                return "nothing to search in \(ax.frontmostAppName() ?? "the frontmost app")"
+            }
+            route = "addressBar"
+            try addressBar(query)
+            PipelineLog.info("search: route=addressBar (no search field, no known site)")
             return nil
+        } catch {
+            PipelineLog.warning("search: route=\(route) failed to post input", detail: "\(error)")
+            throw error
         }
-        let pageURL = ax.webURL()
-        if let host = pageURL.flatMap({ URL(string: $0)?.host }), let results = SiteSearch.url(host: host, query: query) {
-            try addressBar(results.absoluteString)
-            return nil
-        }
-        guard pageURL != nil || ax.frontmostIsBrowser() else {
-            return "nothing to search in \(ax.frontmostAppName() ?? "the frontmost app")"
-        }
-        try addressBar(query)
-        return nil
     }
 
     private func addressBar(_ text: String) throws {
