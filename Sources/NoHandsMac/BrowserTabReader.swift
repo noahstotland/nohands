@@ -52,7 +52,10 @@ extension AXQuery {
             var tabs: [BrowserTab] = []
             var complete = true
             if let group = tabGroup(in: w, depth: 1) {
-                for t in Self.elements(group, kAXChildrenAttribute) where Self.tabRoles.contains(Self.string(t, kAXRoleAttribute) ?? "") {
+                for t in Self.elements(group, kAXChildrenAttribute) {
+                    // A role read that fails (a busy browser) means this tab may have been missed: not a complete read.
+                    guard let role = Self.string(t, kAXRoleAttribute) else { complete = false; continue }
+                    guard Self.tabRoles.contains(role) else { continue }
                     if tabs.count >= Self.tabMaxPerGroup || ContinuousClock.now >= overall { complete = false; break }
                     let title = Self.string(t, kAXTitleAttribute) ?? Self.string(t, kAXDescriptionAttribute) ?? ""
                     tabs.append(BrowserTab(id: browserToken(for: t, prefix: "t"), title: title, active: Self.isSelected(t)))

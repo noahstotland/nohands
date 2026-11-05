@@ -79,6 +79,12 @@ private func flags(_ l: TabListing) -> String {
     cut.baseline(app: "Chrome", windows: more)
     #expect(flags(cut.listing(app: "Chrome", windows: more + [win("w2", "Casino", [tab("c1", "Casino")])])) == "new:c1 w2 task:")
 
+    // One complete read and one cut-short read of the same window: the window is not fully read.
+    var mixed = TabLedger()
+    let full = BrowserWindow(id: "w1", title: "Docs", front: true, tabs: [tab("t1", "Inbox")])
+    mixed.baseline(app: "Chrome", windows: [full], alsoSeen: [BrowserWindow(id: "w1", title: "Docs", front: true, tabs: [tab("t1", "Inbox")], complete: false)])
+    #expect(flags(mixed.listing(app: "Chrome", windows: [BrowserWindow(id: "w1", title: "Docs", front: true, tabs: [tab("t1", "Inbox"), tab("t50", "Far")])])) == "new: task:")
+
     // A pop-up window that took focus is not the task's tab: the new active tab in the user's window is.
     ledger.markTaskTab(app: "Chrome", windows: [win("w3", "Casino", front: true, [tab("c1", "Casino", active: true)]),
                                                  win("w1", "Game", [tab("t1", "Inbox"), tab("t8", "Game", active: true)]), popped[1]])

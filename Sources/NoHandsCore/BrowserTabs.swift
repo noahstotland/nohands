@@ -37,12 +37,16 @@ public struct TabLedger: Sendable {
         var titles: Set<String> = []
         /// Baseline windows that had a complete tab list when they were recorded.
         var populatedWindowIDs: Set<String> = []
+        /// Baseline windows any read of which was cut short.
+        var partialWindowIDs: Set<String> = []
 
         mutating func record(_ w: BrowserWindow) {
             windowIDs.insert(w.id)
             titles.insert(w.title)
             for t in w.tabs { tabIDs.insert(t.id); titles.insert(t.title) }
-            if w.complete, !w.tabs.isEmpty { populatedWindowIDs.insert(w.id) }
+            // A window counts as fully read only if every read of it was complete.
+            if !w.complete { partialWindowIDs.insert(w.id); populatedWindowIDs.remove(w.id) }
+            else if !w.tabs.isEmpty, !partialWindowIDs.contains(w.id) { populatedWindowIDs.insert(w.id) }
         }
 
         func isNew(_ t: BrowserTab, in w: BrowserWindow) -> Bool {
@@ -64,7 +68,7 @@ public struct TabLedger: Sendable {
     /// Whether `app` already has a baseline.
     public func hasBaseline(app: String) -> Bool { baselines[app] != nil }
 
-    /// Records `windows` (and `alsoSeen`, a second read of the same moment) as the user's the first time `app` is
+    /// Records `windows` (and `alsoSeen`, the earlier of two reads taken 300 ms apart) as the user's the first time `app` is
     /// seen and returns true. Later calls change nothing (false), except that tabs first shown by a baseline window
     /// that had no complete tab list are taken as the user's too.
     @discardableResult
