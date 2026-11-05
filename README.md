@@ -99,7 +99,7 @@ The script installs Ollama with Homebrew if needed, starts it, pulls the model a
 | `go back`, `go forward`, `next tab`, `previous tab` | Browser and tab navigation |
 | `go to <site>` | A site name or domain opens in your default browser; other text goes to the address bar, typed and followed by Return |
 | `search for <words>` | Searches where you are: the search box of the page or app in front (YouTube, Amazon, GitHub, Finder, Mail…) gets the words and Return; a page without one but with a known results page (YouTube, Google, Amazon, Reddit, Wikipedia…) is navigated to it in the current tab; any other browser page searches from the address bar. In an app with nothing to search, the row says so and nothing is typed. A search box outside the front window is not used, and words that start with a script or browser scheme (`javascript:`, `file:`, `chrome:`), or any other `scheme:text` with no space after the colon, are refused with `can't search for that` |
-| `search for <words> on <site>`, `search <site> for <words>` | Opens that site's results page in your default browser, wherever you are |
+| `search for <words> on <site>`, `search <site> for <words>` | When that site is the page in front, it is searched there: its search box gets the words and Return, else its results page opens in the same tab. Otherwise its results page opens in your default browser |
 | `click`, `double click`, `right click`, `middle click` | Clicks at the pointer |
 | `click 42` | Clicks label or grid cell 42 |
 | `click save` | Clicks the element named "save" |

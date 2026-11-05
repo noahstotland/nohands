@@ -25,6 +25,7 @@ public enum ActionSummary {
         case .openURL: "openURL"
         case .moveWindow(let p): "moveWindow(\(p.rawValue))"
         case .search(let q): "search(len=\(q.count))"
+        case .searchSite(let q, let site): "searchSite(len=\(q.count), site=\(site))"
         case .wait: "wait"
         case .ignore: "ignore"
         case .setValue(_, let t): "setValue(len=\(t.count))"

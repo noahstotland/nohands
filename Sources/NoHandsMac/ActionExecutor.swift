@@ -215,11 +215,7 @@ extension OverlayController: OverlayPresenting {
                 hideStaleOverlay()
                 if let failure = await waitReady(name, moreActionsFollow: !isLast) { return failure }
             case .openURL(let url, let app):
-                guard let handler = ax.open(url: url, appNamed: app) else {
-                    return app.map { "no app named \($0)" } ?? "no browser for \(url.host ?? "that address")"
-                }
-                hideStaleOverlay()
-                if !handler.isEmpty, let failure = await waitReady(handler, moreActionsFollow: !isLast) { return failure }
+                if let failure = await openURLAction(url, app: app, isLast: isLast) { return failure }
             case .moveWindow(let placement):
                 guard let current = ax.focusedWindowFrame() else { return "no window to move" }
                 guard let screen = Self.screen(holding: current, among: ax.visibleScreenRectsCG()) else { return "no screen" }
@@ -230,6 +226,17 @@ extension OverlayController: OverlayPresenting {
                 guard query.count <= Self.maxTypedCharacters else { return "text too long" }
                 if let failure = try search(query) { return failure }
                 hideStaleOverlay()
+            case .searchSite(let query, let site):
+                guard query.count <= Self.maxTypedCharacters else { return "text too long" }
+                guard let typed = SiteSearch.typable(query) else { return "can't search for that" }
+                if let host = ax.webURL().flatMap({ URL(string: $0)?.host }), SiteSearch.isOn(site: site, host: host) {
+                    if let failure = try search(typed, site: site) { return failure }
+                    hideStaleOverlay()
+                } else {
+                    guard let url = SiteSearch.url(host: site, query: typed) else { return "can't search for that" }
+                    PipelineLog.info("search: route=openURL site=\(site) (site not in front)")
+                    if let failure = await openURLAction(url, app: nil, isLast: isLast) { return failure }
+                }
             case .wait(let ms):
                 try? await Task.sleep(for: .milliseconds(ms))
             case .ignore:
@@ -252,13 +259,26 @@ extension OverlayController: OverlayPresenting {
 
     func hideStaleOverlay() { if overlay.state != .none { overlay.hide() } }
 
+    /// Open `url` in the named browser or the default one, then wait for it to come to the front when more
+    /// actions follow. Returns the failure, or nil.
+    private func openURLAction(_ url: URL, app: String?, isLast: Bool) async -> String? {
+        guard let handler = ax.open(url: url, appNamed: app) else {
+            return app.map { "no app named \($0)" } ?? "no browser for \(url.host ?? "that address")"
+        }
+        hideStaleOverlay()
+        if !handler.isEmpty, let failure = await waitReady(handler, moreActionsFollow: !isLast) { return failure }
+        return nil
+    }
+
     /// "search for <query>": the frontmost window's own search box (a YouTube page's, Finder's) gets the query
     /// and Return; without one, a site with a known results page is navigated to it in the current tab; any
     /// other browser page searches from the address bar. Returns the failure for an app with nothing to search.
-    private func search(_ query: String) throws -> String? {
+    /// `site` (a `SiteSearch.templates` key, from "search for X on <site>") only adds `site=` to the log line.
+    private func search(_ query: String, site: String? = nil) throws -> String? {
         // One public log line per search naming the route and why earlier routes were skipped. The query is
         // never in it (transcripts are private); a thrown input error is logged as a warning naming the route.
         var route = "searchField"
+        let siteLog = site.map { " site=\($0) (site open)" } ?? ""
         do {
             guard let typed = SiteSearch.typable(query) else { return "can't search for that" }
             // A field outside the focused window (scrolled out of view, another app's) is not clicked: Cmd-A and the
@@ -269,14 +289,14 @@ extension OverlayController: OverlayPresenting {
                 try input.press(KeyChord(.a, [.command]))
                 try input.type(typed)
                 try input.press(KeyChord(.return))
-                PipelineLog.info("search: route=searchField")
+                PipelineLog.info("search: route=searchField\(siteLog)")
                 return nil
             }
             let pageURL = ax.webURL()
             if let host = pageURL.flatMap({ URL(string: $0)?.host }), let results = SiteSearch.url(host: host, query: typed) {
                 route = "siteURL"
                 try addressBar(results.absoluteString)
-                PipelineLog.info("search: route=siteURL (no search field, known site)")
+                PipelineLog.info("search: route=siteURL\(siteLog.isEmpty ? " (no search field, known site)" : siteLog)")
                 return nil
             }
             guard pageURL != nil || ax.frontmostIsBrowser() else {

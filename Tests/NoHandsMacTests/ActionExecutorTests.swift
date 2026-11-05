@@ -320,3 +320,41 @@ private let reload = UIElementInfo(id: 1, frame: CGRect(x: 100, y: 100, width: 8
     #expect(await x.execute([.search("cats")]) == "nothing to search in Calculator")
     #expect(i.calls.isEmpty)
 }
+
+@MainActor @Test func searchSiteSearchesTheOpenSiteElseOpensItsResultsPage() async {
+    let (x, i, e, _) = make()
+    let action = Action.searchSite("outdoor boys", site: "youtube.com")
+    let results = URL(string: "https://www.youtube.com/results?search_query=outdoor%20boys")!
+    e.front = "Google Chrome"; e.isBrowser = true; e.defaultBrowser = "Safari"
+
+    // The site is in front with a search box: click it and type there; nothing is opened.
+    e.url = "https://www.youtube.com/watch?v=1"
+    e.searchBox = CGRect(x: 200, y: 120, width: 200, height: 30)
+    #expect(await x.execute([action]) == nil)
+    #expect(i.calls == ["click:300,135", "press", "type:outdoor boys", "press"])
+    #expect(e.opened.isEmpty)
+
+    // In front with no box reachable: the results URL goes into the current tab's address bar.
+    i.calls = []
+    e.searchBox = nil
+    #expect(await x.execute([action]) == nil)
+    #expect(i.calls == ["press", "type:\(results.absoluteString)", "press"])
+    #expect(e.opened.isEmpty)
+
+    // Another site, or a page-less app, in front: the results page opens in the default browser, no keystrokes.
+    for (front, url) in [("Google Chrome", "https://example.org/"), ("Finder", nil)] as [(String, String?)] {
+        i.calls = []; e.opened = []
+        e.front = front; e.url = url; e.searchBox = CGRect(x: 200, y: 120, width: 200, height: 30)
+        #expect(await x.execute([action]) == nil, "\(front)")
+        #expect(e.opened.map(\.url) == [results] && e.opened.map(\.app) == [nil], "\(front)")
+        #expect(i.calls.isEmpty, "\(front)")
+    }
+
+    // Text a browser would run or open is refused on both paths: nothing typed or opened.
+    i.calls = []; e.opened = []
+    for url in ["https://www.youtube.com/", "https://example.org/"] {
+        e.url = url
+        #expect(await x.execute([.searchSite("javascript:alert(1)", site: "youtube.com")]) == "can't search for that")
+    }
+    #expect(i.calls.isEmpty && e.opened.isEmpty)
+}
