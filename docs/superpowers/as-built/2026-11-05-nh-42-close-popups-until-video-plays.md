@@ -13,3 +13,6 @@
 - The unused `ScreenObservation.windows` field is removed (replaced by the tab listing).
 - The media-playing signal (NH-43) is wired: rules end on the `Media:` line reading playing.
 - A step with a failed action after `open_url` marks no task tab, so the task's own page could show as `new`.
+- A browser that was not in front when the task started gets its baseline from the union of its first two observations (`TabLedger.baseline(atStart: false)`), so windows and tabs a cold launch or session restore lists one at a time are the user's. The browser in front at the task's first observation keeps the single-read baseline; a pop-up opened in the one-observation gap counts as the user's (safe side).
+- The tab read is bounded: at most 40 tabs per tab group, the read deadline is checked inside the tab loop, and the listing shows at most 10 new tabs and windows beyond the front window's own, then `+N more new`.
+- The command-W path checks for cancellation after its 100 ms pause, so a spoken stop never lets command-W go out.

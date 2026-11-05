@@ -46,10 +46,15 @@ private func flags(_ l: TabListing) -> String {
     let again = ledger.baseline(app: "Chrome", windows: after)
     #expect(!again)
     #expect(flags(ledger.listing(app: "Chrome", windows: after)) == "new:t3 task:t3")
-    // A browser first seen mid-task gets its own baseline from that moment.
-    let first = ledger.baseline(app: "Safari", windows: after)
+    // A browser first seen mid-task gets its own baseline from that moment, joined by its second observation
+    // (a cold launch lists its windows one at a time); what appears after that is new.
+    let first = ledger.baseline(app: "Safari", windows: after, atStart: false)
     #expect(first)
-    #expect(flags(ledger.listing(app: "Safari", windows: after)) == "new: task:")
+    let restored = after + [win("w5", "Restored", [tab("r1", "Restored")])]
+    #expect(ledger.baseline(app: "Safari", windows: restored, atStart: false) == false)
+    let popped = restored + [win("w6", "Casino", [tab("c1", "Casino")])]
+    ledger.baseline(app: "Safari", windows: popped, atStart: false)
+    #expect(flags(ledger.listing(app: "Safari", windows: popped)) == "new:c1 w6 task:")
 }
 
 @Test func tabsOfAWindowReadEmptyAtBaselineAreTheUsersAndTheTaskTabSkipsAPopUpWindow() {
@@ -121,6 +126,13 @@ private func flags(_ l: TabListing) -> String {
     #expect(lines[at + 25] == "  window 2 (new) \"Casino\"" && lines[at + 26] == "    tab 23 \"Casino\" (new)")
     #expect(lines[at + 27] == "  +1 other windows")
     #expect(l.tab(21)?.id == "n1" && l.window(2)?.id == "w2" && l.tab(99) == nil)
+    // Past ten new tabs and windows beyond the front window's, the rest are only counted.
+    var capped = TabLedger()
+    capped.baseline(app: "Chrome", windows: mine)
+    let flood = (1...12).map { win("p\($0)", "Ad \($0)", [tab("a\($0)", "Ad \($0)")]) }
+    let floodList = capped.listing(app: "Chrome", windows: mine + flood)
+    #expect(floodList.windows.count == 11 && floodList.hiddenNew == 2)
+    #expect(floodList.rendered.hasSuffix("\n  +2 more new"))
     let plain = ScreenObservation(app: "Finder", mode: .command)
     #expect(!ClaudeRequestBuilder.userMessage(request: StepRequest(goal: "g", step: 1, maxSteps: 3, history: [], observation: plain)).contains("Tab"))
 }

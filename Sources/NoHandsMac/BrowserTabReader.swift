@@ -13,6 +13,8 @@ extension AXQuery {
     static let tabTotalBudget: Duration = .milliseconds(1500)
     static let tabMaxNodes = 600
     static let tabMaxDepth = 8
+    /// Tabs read per tab group; a strip longer than this is cut (the rest are not listed or counted).
+    static let tabMaxPerGroup = 40
     static let tabRoles: Set<String> = ["AXRadioButton", "AXTab"]
 
     func frontmostBrowserPID() -> pid_t? {
@@ -50,6 +52,7 @@ extension AXQuery {
             var tabs: [BrowserTab] = []
             if let group = tabGroup(in: w, depth: 1) {
                 for t in Self.elements(group, kAXChildrenAttribute) where Self.tabRoles.contains(Self.string(t, kAXRoleAttribute) ?? "") {
+                    if tabs.count >= Self.tabMaxPerGroup || ContinuousClock.now >= overall { break }
                     let title = Self.string(t, kAXTitleAttribute) ?? Self.string(t, kAXDescriptionAttribute) ?? ""
                     tabs.append(BrowserTab(id: browserToken(for: t, prefix: "t"), title: title, active: Self.isSelected(t)))
                 }

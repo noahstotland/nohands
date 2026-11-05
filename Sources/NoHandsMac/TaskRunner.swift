@@ -47,6 +47,8 @@ public enum TaskOutcome: Equatable, Sendable {
     private var ledger = TabLedger()
     /// Set after a step that navigated: the next browser observation's active tab is the task's.
     private var markTaskTab = false
+    /// True until the task's first observation has been annotated.
+    private var atTaskStart = true
     private var cancelled = false
     /// Steps whose actions were executed in the current (or last) `run`.
     public private(set) var stepsRun = 0
@@ -89,6 +91,7 @@ public enum TaskOutcome: Equatable, Sendable {
         let maxSteps = max(1, MediaGoal.matches(goal) ? config.maxMediaTaskSteps : config.maxTaskSteps)
         ledger = TabLedger()
         markTaskTab = false
+        atTaskStart = true
         observer.resetBrowserTokens()
         var history: [StepRecord] = []
         var repeats = RepeatDetector(limit: 3)
@@ -196,13 +199,16 @@ public enum TaskOutcome: Equatable, Sendable {
     /// Turns the browser windows the observer read into the numbered `Tabs:` list. The first time a browser is seen
     /// in front its tabs become the user's; a window-less browser (a cold launch) waits for its first window.
     private func annotateTabs(_ observation: inout ScreenObservation) {
+        // Only the task's first observation shows the browser the user had in front; any other is a late arrival.
+        let atStart = atTaskStart
+        atTaskStart = false
         // The task's tab is marked at the first observation after the navigation; if that is not a browser, the page
         // went elsewhere and a later browser's front tab is not the task's.
         guard let windows = observation.browserWindows else { observation.tabs = nil; markTaskTab = false; return }
         guard !windows.isEmpty else { observation.tabs = nil; return }
         // Keyed on the app the windows were read from, not the one named at the start of the observation.
         let app = observation.browserApp ?? observation.app
-        ledger.baseline(app: app, windows: windows)
+        ledger.baseline(app: app, windows: windows, atStart: atStart)
         if markTaskTab { ledger.markTaskTab(app: app, windows: windows); markTaskTab = false }
         observation.tabs = ledger.listing(app: app, windows: windows)
     }

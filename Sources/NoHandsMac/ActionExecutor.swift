@@ -340,6 +340,8 @@ extension OverlayController: OverlayPresenting {
             guard ax.browserTabIsInFrontWindow(id: id) else { return cannot }
             if let failure = Self.failure(ax.selectBrowserTab(id: id), gone: gone, noControl: "can't select that tab") { return failure }
             try? await Task.sleep(for: .milliseconds(100))
+            // A spoken stop during the pause must not let command-W go out.
+            if Task.isCancelled { return Self.cancelled }
             guard ax.browserTabIsSelected(id: id) else { return "couldn't select that tab" }
             guard ax.browserTabIsInFrontWindow(id: id) else { return cannot }
             try input.press(KeyChord(.w, [.command]))
