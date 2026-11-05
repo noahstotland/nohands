@@ -45,15 +45,27 @@ public enum SiteSearch {
         return url(host: host, query: query)
     }
 
-    /// What a search may type: runs of whitespace (tabs and newlines would become Tab and Return presses) collapse
-    /// to one space. `forAddressBar` also refuses text that starts with a non-http scheme such as `javascript:`,
-    /// which a browser would run or open instead of search for. Nil for blank or refused text.
-    public static func typable(_ query: String, forAddressBar: Bool = false) -> String? {
-        let q = query.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+    /// Schemes a browser runs or opens instead of searching for, refused whatever follows the colon.
+    static let refusedSchemes: Set<String> = [
+        "javascript", "vbscript", "data", "file", "blob", "view-source", "about",
+        "chrome", "edge", "brave", "opera", "vivaldi",
+    ]
+
+    /// What a search may type, on every route: control and format characters are dropped and runs of whitespace
+    /// (tabs and newlines would become Tab and Return presses) collapse to one space. Text that starts with a
+    /// scheme is refused when it is one a browser runs or opens ("javascript:", "file:", "chrome:"), or a
+    /// non-http scheme glued to its payload ("foo:bar"); "note: buy milk" is plain words. Nil for blank or
+    /// refused text.
+    public static func typable(_ query: String) -> String? {
+        let kept = query.unicodeScalars.filter { s in
+            s.properties.isWhitespace || (s.properties.generalCategory != .control && s.properties.generalCategory != .format)
+        }
+        let q = String(String.UnicodeScalarView(kept)).split(whereSeparator: \.isWhitespace).joined(separator: " ")
         guard !q.isEmpty else { return nil }
-        if forAddressBar, let scheme = q.range(of: "^[A-Za-z][A-Za-z0-9+.-]*:(?=\\S)", options: .regularExpression),
-           !["http:", "https:"].contains(q[scheme].lowercased()) {
-            return nil
+        if let m = q.range(of: "^[A-Za-z][A-Za-z0-9+.-]*:", options: .regularExpression) {
+            let scheme = q[m].dropLast().lowercased()
+            let glued = q[m.upperBound...].first.map { !$0.isWhitespace } ?? false
+            if refusedSchemes.contains(scheme) || (glued && scheme != "http" && scheme != "https") { return nil }
         }
         return q
     }

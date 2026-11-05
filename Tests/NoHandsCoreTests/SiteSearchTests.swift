@@ -46,19 +46,25 @@ import CoreGraphics
 }
 
 @Test func typableSearchText() {
-    let cases: [(text: String, bar: Bool, out: String?)] = [
-        ("outdoor  boys", false, "outdoor boys"),
-        ("cats\nand\tdogs", false, "cats and dogs"),               // tabs and newlines would be key presses
-        ("   ", false, nil),
-        ("javascript:alert(1)", true, nil),
-        ("data:text/html,x", true, nil),
-        ("file:///etc/hosts", true, nil),
-        ("JavaScript:alert(1)", true, nil),
-        ("javascript:alert(1)", false, "javascript:alert(1)"),      // a page's own box searches it as text
-        ("https://example.org", true, "https://example.org"),
-        ("note: buy milk", true, "note: buy milk"),                 // a colon followed by a space is plain words
+    let cases: [(text: String, out: String?)] = [
+        ("outdoor  boys", "outdoor boys"),
+        ("cats\nand\tdogs", "cats and dogs"),                 // tabs and newlines would be key presses
+        ("   ", nil),
+        ("javascript:alert(1)", nil),
+        ("javascript: alert(1)", nil),                         // a space after the colon is still a script
+        ("javascript:\talert(1)", nil),
+        ("JavaScript:\u{00A0}alert(1)", nil),
+        ("\u{01}javascript:alert(1)", nil),                    // control characters are dropped first
+        ("\u{200B}javascript:alert(1)", nil),
+        ("data: text/html,x", nil),
+        ("file:///etc/hosts", nil),
+        ("chrome://settings", nil),
+        ("foo:bar", nil),                                      // any non-http scheme glued to its payload
+        ("https://example.org", "https://example.org"),
+        ("note: buy milk", "note: buy milk"),                  // a colon followed by a space is plain words
+        ("ratio 3:1", "ratio 3:1"),
     ]
     for c in cases {
-        #expect(SiteSearch.typable(c.text, forAddressBar: c.bar) == c.out, "\(c)")
+        #expect(SiteSearch.typable(c.text) == c.out, "\(c)")
     }
 }
