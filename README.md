@@ -180,7 +180,7 @@ A request the fast grammar does not understand runs as a task: NoHands looks at 
 
 **Stopping a task.** Say "stop" (or "cancel", "never mind", "abort", "stop the task"; repeats and fillers such as "stop stop" or "no, stop" count too). It aborts the request or action in flight; the task's row shows `stopped` and the stop's own row `stopping the task`. From the CLI, Ctrl-C stops `nohands-cli task` the same way; a second Ctrl-C quits at once.
 
-**Talking while a task runs.** Anything else you say while a task runs is held, and its row shows `held · runs after this task (say stop to cancel)`. Only the newest utterance is kept: saying something else replaces it. It runs once the task ends, unless it is more than 60 seconds old by then or you said "stop" (which drops it along with the task); either way its row shows `dropped` and nothing from it runs.
+**Talking while a task runs.** Anything else you say while a task runs is held, and its row shows `held · runs after this task (say stop to cancel)`. Only the newest utterance is kept: saying something else replaces it, and the replaced utterance's row shows `dropped`. It runs once the task ends, unless it is more than 60 seconds old by then or you said "stop" (which drops it along with the task); either way its row shows `dropped` and nothing from it runs.
 
 **Config.** `maxTaskSteps` (default 12), `llmDeadlineMs` (12000, per model call), `settleMs` (3000) and `maxObservedElements` (120); with the local backend, `localLlmDeadlineMs` (30000) and `localMaxObservedElements` (40) apply instead of the last two. See [Configuration](#configuration).
 
