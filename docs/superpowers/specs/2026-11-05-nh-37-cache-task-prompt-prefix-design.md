@@ -1,6 +1,7 @@
 # NH-37: Cache the task loop's prompt prefix on the Claude path — Design
 
-**Date:** 2026-11-05  **Status:** Shipped  **Ticket:** [NH-37](https://github.com/noahstotland/nohands/issues/37)
+**Date:** 2026-11-05  **Ticket:** [NH-37](https://github.com/noahstotland/nohands/issues/37)
+**Status:** Shipped
 **Shipped:** in PR #62, as specified
 
 ## Intent
