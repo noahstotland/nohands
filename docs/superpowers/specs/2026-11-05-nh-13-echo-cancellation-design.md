@@ -1,6 +1,7 @@
 # NH-13: Echo cancellation on the microphone input — Design
 
-**Date:** 2026-11-05  **Status:** Draft  **Ticket:** [NH-13](https://github.com/noahstotland/nohands/issues/13)
+**Date:** 2026-11-05  **Status:** Shipped  **Ticket:** [NH-13](https://github.com/noahstotland/nohands/issues/13)
+**Shipped:** in PR #24, with differences: [as-built](../as-built/2026-11-05-nh-13-echo-cancellation.md)
 
 ## Intent
 
