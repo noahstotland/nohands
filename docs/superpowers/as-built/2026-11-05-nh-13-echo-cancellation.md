@@ -7,7 +7,8 @@
 ## Differs from the spec
 
 - The spec says the converter takes channel 0 of a multichannel voice-processing format. What shipped copies channel 0 only into a mono buffer in the tap itself, before conversion. This also applies with `echoCancellation` off: a multichannel microphone that used to be mixed down now uses channel 0.
-- The spec's `reportedEcho` flag was not needed: `.echoCancellation(Bool)` is emitted from `start()`, which rebuilds never pass through.
+
+- The spec says to add the key to existing `AppConfigTests` table rows. No existing row fit, so a new test, `echoCancellationDefaultsOnAndParses`, covers the default and `false`.
 
 ## Checks that didn't run
 
