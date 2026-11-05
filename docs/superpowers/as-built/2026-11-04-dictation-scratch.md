@@ -9,6 +9,7 @@
 - The spec says the only Mac change is one line in `VoicePipeline.isComplete`. `MergeBuffer.transcript` also had to use `ModeMachine.isDictationCommand`: it merges a new transcript into the held one before `isComplete` is asked, so without the change "scratch that" spoken inside the merge window would be appended to the held fragment and typed. It now flushes the held text first and passes the phrase on alone, like "stop dictating".
 - The spec says a spoken "stop" halts a long run of backspaces. It does not: dictation actions run in the serial consumer, so "stop" is the next job, and the backspaces are posted back to back and finish first. The spec's wording is corrected; Pause still cancels.
 - The spec does not clear the scratch record on pause. `VoicePipeline.stop()` now calls `ModeMachine.forgetDictationRecord()`, so after a pause "scratch that" does nothing instead of deleting text it never typed (an utterance routed but cancelled, or text the user typed by hand meanwhile).
+- The spec's "HUD text" call is stale: NH-3 replaced the HUD with prompt-board rows. Each command now gets its own row (the phrase, then done, or failed with the reason), and a "scratch that" with nothing to take back is ignored and shows no row. NH-3 also touched `VoicePipeline.stop()`, so the branch conflicted there (resolved in de4b985) rather than merging cleanly as the spec expected.
 
 ## Checks that didn't run
 
