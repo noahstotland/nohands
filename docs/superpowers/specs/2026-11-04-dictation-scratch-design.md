@@ -70,7 +70,8 @@ NH-3 (`feat/nh-3-prompt-board-search`) also edits `VoicePipeline.swift`; this si
 cleanly unless NH-3 changes `isComplete` itself.
 
 No executor or input-synthesizer change: `.pressKey` is already executed in order with `Task` cancellation checks
-between actions, so a spoken "stop" still halts a long backspace run.
+between actions. The run of backspaces is posted back to back, so it finishes before a spoken "stop" could arrive;
+Pause (`stop()`) still cancels through those checks. The scratch record is cleared on pause (see as-built).
 
 ### Docs
 
@@ -86,8 +87,9 @@ own in dictation.
 
 - No network, no new action type, no decoder or guard bypass: the actions are produced by the on-device grammar
   path only and are the existing `.pressKey` case.
-- Stop handling is unchanged: `StopWords.isStop` is checked first in `isComplete`, and the executor checks
-  cancellation between each backspace.
+- Stop handling is unchanged: `StopWords.isStop` is checked first in `isComplete` and in `MergeBuffer`. Dictation
+  actions run in the pipeline's serial consumer, so a spoken "stop" is the next job, not an interrupt; the
+  backspaces finish in milliseconds. Pause cancels through the executor's checks.
 - The backspaces go to the frontmost app, like every dictated keystroke.
 
 ## Testing

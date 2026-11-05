@@ -37,6 +37,10 @@ public struct ModeMachine: Sendable {
         return phrase == "scratch that" || phrase == "delete word"
     }
 
+    /// Drops the "scratch that" record. The pipeline calls it on pause: what was routed may never have been typed,
+    /// and the user may edit by hand before resuming, so the record no longer matches the screen.
+    public mutating func forgetDictationRecord() { session.forgetLast() }
+
     /// Applies mode transitions contained in the result and returns what the executor should do.
     public mutating func route(_ transcript: String) -> Routing {
         let tokens = CommandGrammar.normalize(transcript)

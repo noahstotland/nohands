@@ -237,6 +237,7 @@ import NoHandsCore
         executor.releaseAll()   // release a held mouse button and drop any grid/labels overlay
         heldJob = nil
         droppedJob = nil
+        modeMachine.forgetDictationRecord()   // "scratch that" after a pause must not delete text it never typed
         runner?.cancel()
         activeTask?.cancel()    // also covers a cancel() that lands before run() starts (run() clears its flag)
         if let merge { Task { await merge.reset() } }

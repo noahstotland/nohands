@@ -88,4 +88,7 @@ import Testing
     #expect(m.route("there") == .execute([.typeText(" There")]))   // context restored to "Hello."
     _ = m.route("delete word")                                      // clears the record
     #expect(m.route("scratch that") == nothing)
+    _ = m.route("again")
+    m.forgetDictationRecord()                                       // pause: the screen may have changed
+    #expect(m.route("scratch that") == nothing)
 }
