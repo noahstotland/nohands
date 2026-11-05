@@ -61,7 +61,16 @@ let g = CommandGrammar()
     #expect(g.parse("open safari") == [.openApp("safari")])
     #expect(g.parse("open visual studio code") == [.openApp("visual studio code")])
     // Compound requests fall through to the LLM instead of being read as an app name.
-    #expect(g.parse("open youtube on chrome") == nil)
+    // Known websites open in the default browser (or the named one) without a round trip to the model.
+    let yt = URL(string: "https://www.youtube.com")!
+    #expect(g.parse("open youtube") == [.openURL(yt, app: nil)])
+    #expect(g.parse("Open YouTube.") == [.openURL(yt, app: nil)])
+    #expect(g.parse("open youtube on chrome") == [.openURL(yt, app: "chrome")])
+    #expect(g.parse("open youtube in google chrome") == [.openURL(yt, app: "google chrome")])
+    #expect(g.parse("open youtube.com") == [.openURL(URL(string: "https://youtube.com")!, app: nil)])
+    #expect(g.parse("open youtube and search for cats") == nil)
+    #expect(g.parse("open documents") == [.openApp("documents")])
+    #expect(g.parse("open documents in finder") == nil)
     #expect(g.parse("open google chrome and go to youtube") == nil)
 }
 
@@ -126,11 +135,52 @@ let g = CommandGrammar()
     #expect(g.parse("go forward") == [.pressKey(KeyChord(.rightBracket, [.command]))])
     #expect(g.parse("next tab") == [.pressKey(KeyChord(.tab, [.control]))])
     #expect(g.parse("previous tab") == [.pressKey(KeyChord(.tab, [.control, .shift]))])
-    let nav: [Action] = [.pressKey(KeyChord(.l, [.command])), .typeText("youtube"), .pressKey(KeyChord(.return))]
-    #expect(g.parse("go to youtube") == nav)
+    // A site name or domain opens in the default browser; anything else still goes through the address bar.
+    #expect(g.parse("go to youtube") == [.openURL(URL(string: "https://www.youtube.com")!, app: nil)])
+    #expect(g.parse("go to example.org/docs") == [.openURL(URL(string: "https://example.org/docs")!, app: nil)])
+    let nav: [Action] = [.pressKey(KeyChord(.l, [.command])), .typeText("my dashboard"), .pressKey(KeyChord(.return))]
+    #expect(g.parse("go to my dashboard") == nav)
     #expect(g.parse("Search for cute cats.") == [.pressKey(KeyChord(.l, [.command])), .typeText("cute cats"),
                                                 .pressKey(KeyChord(.return))])
     #expect(g.parse("go to sleep") == [.setMode(.sleep)])   // exact phrase still wins
     #expect(g.parse("go to") == nil)
     #expect(g.parse("search for") == nil)
+}
+
+@Test func fillerWordsStrippedForExactCommands() {
+    let closeTab: [Action] = [.pressKey(KeyChord(.w, [.command]))]
+    #expect(g.parse("close the current tab") == closeTab)
+    #expect(g.parse("close this tab") == closeTab)
+    #expect(g.parse("Close the tab.") == closeTab)
+    #expect(g.parse("close current tab") == closeTab)
+    #expect(g.parse("close the window") == [.pressKey(KeyChord(.w, [.command, .shift]))])
+    #expect(g.parse("close this window") == [.pressKey(KeyChord(.w, [.command, .shift]))])
+    #expect(g.parse("hide the grid") == [.hideOverlay])
+    #expect(g.parse("go to sleep") == [.setMode(.sleep)])
+    // Only exact entries benefit: pattern rules keep their original tokens.
+    #expect(g.parse("click the save") == [.click(.element(named: "save"), button: .left, count: 1)])
+    #expect(g.parse("type the word") == [.typeText("The word")])
+    #expect(g.parse("close the current tab and open a new one") == nil)
+    #expect(g.parse("the") == nil)
+    // Pattern rules win over filler stripping: "to" is the homophone of two here, and "open the" is an app name.
+    #expect(g.parse("click to") == [.click(.numbered(2), button: .left, count: 1)])
+    #expect(g.parse("press the enter") == nil)
+    #expect(g.parse("scroll to the down") == nil)
+}
+
+@Test func windowPlacementCommands() {
+    #expect(g.parse("left half") == [.moveWindow(.leftHalf)])
+    #expect(g.parse("right half") == [.moveWindow(.rightHalf)])
+    #expect(g.parse("snap left") == [.moveWindow(.leftHalf)])
+    #expect(g.parse("snap to the left") == [.moveWindow(.leftHalf)])
+    #expect(g.parse("snap to the right side") == [.moveWindow(.rightHalf)])
+    #expect(g.parse("top left") == [.moveWindow(.topLeft)])
+    #expect(g.parse("bottom right") == [.moveWindow(.bottomRight)])
+    #expect(g.parse("maximize") == [.moveWindow(.maximize)])
+    #expect(g.parse("maximize the window") == [.moveWindow(.maximize)])
+    #expect(g.parse("fill the screen") == [.moveWindow(.maximize)])
+    #expect(g.parse("center the window") == [.moveWindow(.center)])
+    // Rich phrasing is the model's job.
+    #expect(g.parse("make the window half width and snap to the left side of the screen") == nil)
+    #expect(g.parse("left") == [.pressKey(KeyChord(.left))])
 }

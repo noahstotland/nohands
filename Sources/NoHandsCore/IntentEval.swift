@@ -61,6 +61,8 @@ public enum IntentEval {
         switch (a, b) {
         case (.typeText(let x), .typeText(let y)): return normalizeText(x) == normalizeText(y)
         case (.openApp(let x), .openApp(let y)): return normalizeApp(x) == normalizeApp(y)
+        case (.openURL(let u, let x), .openURL(let v, let y)):
+            return normalizeText(u.absoluteString) == normalizeText(v.absoluteString) && x.map(normalizeApp) == y.map(normalizeApp)
         default: return a == b
         }
     }

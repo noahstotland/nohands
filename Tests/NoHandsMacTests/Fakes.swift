@@ -53,6 +53,37 @@ final class FakeElements: ElementProviding, @unchecked Sendable {
     func didJustExpose() -> Bool { defer { justExposed = false }; return justExposed }
     func screenRectsCG() -> [CGRect] { [CGRect(x: 0, y: 0, width: 1000, height: 800)] }
     func activate(appNamed: String) -> Bool { apps.contains(appNamed) }
+
+    /// URL opens: the default browser's name, URLs opened, and whether the frontmost app has a window.
+    var defaultBrowser: String? = "Safari"
+    var opened: [(url: URL, app: String?)] = []
+    var hasWindow = true
+    /// When > 0, `frontmostHasWindow()` reports false that many times, then true.
+    var windowAppearsAfterChecks = 0
+    func open(url: URL, appNamed: String?) -> String? {
+        if let appNamed, !apps.contains(appNamed) { return nil }
+        opened.append((url, appNamed))
+        return appNamed ?? defaultBrowser
+    }
+    func frontmostHasWindow() -> Bool {
+        if windowAppearsAfterChecks > 0 { windowAppearsAfterChecks -= 1; return false }
+        return hasWindow
+    }
+
+    /// Window geometry: the focused window's frame (nil = no window), frames set, visible screen areas, and
+    /// whether the app accepts the move.
+    var windowFrame: CGRect? = CGRect(x: 100, y: 100, width: 400, height: 300)
+    var placed: [CGRect] = []
+    var visibleScreens: [CGRect] = [CGRect(x: 0, y: 25, width: 1000, height: 775)]
+    var acceptsMove = true
+    func focusedWindowFrame() -> CGRect? { windowFrame }
+    func setFocusedWindowFrame(_ frame: CGRect) -> Bool {
+        guard windowFrame != nil, acceptsMove else { return false }
+        placed.append(frame)
+        windowFrame = frame
+        return true
+    }
+    func visibleScreenRectsCG() -> [CGRect] { visibleScreens }
 }
 
 @MainActor final class FakeOverlay: OverlayPresenting {
@@ -67,9 +98,95 @@ final class FakeElements: ElementProviding, @unchecked Sendable {
 
 @MainActor func make() -> (ActionExecutor, FakeInput, FakeElements, FakeOverlay) {
     let i = FakeInput(), e = FakeElements(), o = FakeOverlay()
-    return (ActionExecutor(input: i, ax: e, overlay: o, config: AppConfig(), frontTimeout: .milliseconds(150)), i, e, o)
+    return (ActionExecutor(input: i, ax: e, overlay: o, config: AppConfig(), frontTimeout: .milliseconds(150),
+                           windowTimeout: .milliseconds(300)), i, e, o)
 }
 
+
+/// A `DesktopCommandRunning` that answers from scripted envelopes keyed by subcommand name (consumed in order; the
+/// last one repeats) and records every argv.
+final class ScriptedClient: DesktopCommandRunning, @unchecked Sendable {
+    private let lock = NSLock()
+    var responses: [String: [DesktopEnvelope]] = [:]
+    var calls: [[String]] = []
+    var environments: [[String: String]] = []
+
+    func run(_ argv: [String], deadline: Duration?, isObservation: Bool, environment: [String: String]) async -> DesktopEnvelope {
+        lock.withLock {
+            calls.append(argv)
+            environments.append(environment)
+            let name = argv.first { !$0.hasPrefix("-") } ?? ""
+            guard var list = responses[name], !list.isEmpty else {
+                return .processFailure(command: name, message: "unscripted \(name)", observation: isObservation)
+            }
+            let e = list.removeFirst()
+            if !list.isEmpty { responses[name] = list }
+            return e
+        }
+    }
+}
+
+func envelope(_ json: String) -> DesktopEnvelope { DesktopEnvelope.decode(Data(json.utf8))! }
+func okEnvelope(_ command: String, data: String = "{}") -> DesktopEnvelope {
+    envelope(#"{"version":"2.6","ok":true,"command":"\#(command)","data":\#(data)}"#)
+}
+func errorEnvelope(_ command: String, code: String, delivery: String = "not_delivered", details: String = "{}") -> DesktopEnvelope {
+    envelope(#"{"version":"2.6","ok":false,"command":"\#(command)","error":{"code":"\#(code)","message":"\#(code) happened","details":\#(details),"disposition":{"delivery":"\#(delivery)","retry":"\#(delivery == "not_delivered" ? "safe" : "unsafe")"}}}"#)
+}
+
+/// A scripted `DesktopHarness`: records calls as strings and answers from preset results.
+final class FakeHarness: DesktopHarness, @unchecked Sendable {
+    private let lock = NSLock()
+    let kind: HarnessKind = .agentDesktop
+    var calls: [String] = []
+    /// Snapshot results consumed in order (the last one repeats); nil means "no snapshot" (native fallback).
+    var snapshotResults: [DesktopSnapshot?] = [nil]
+    var findResult: DesktopFindMatch?
+    /// Act results consumed in order; the last one repeats.
+    var actResults: [HarnessActionResult] = [.delivered(verified: true)]
+    var readResult: String?
+    var windows: [DesktopWindowCandidate] = []
+    var surfacesToReport: [String] = []
+    /// Surfaces every `act` leaves open (as agent-desktop reports in `data.surfaces`).
+    var surfacesAfterAct: [String] = []
+    var sessionID: String? = "sess-1"
+
+    func snapshot(app: String, surface: DesktopSurface?, timeoutMs: Int) async -> DesktopSnapshot? {
+        lock.withLock {
+            calls.append("snapshot:" + (surface?.rawValue ?? app))
+            let r = snapshotResults.first
+            if snapshotResults.count > 1 { snapshotResults.removeFirst() }
+            return r ?? nil
+        }
+    }
+    func find(app: String?, surface: DesktopSurface?, name: String) async -> DesktopFindMatch? {
+        lock.withLock { calls.append("find:\(surface?.rawValue ?? "window"):\(app ?? "-"):\(name)"); return findResult }
+    }
+    func act(_ command: DesktopCommand) async -> HarnessActionResult {
+        lock.withLock {
+            calls.append("act:" + command.argv(headed: false, session: nil).joined(separator: " "))
+            let r = actResults.first ?? .delivered(verified: true)
+            if actResults.count > 1 { actResults.removeFirst() }
+            surfacesToReport = surfacesAfterAct
+            return r
+        }
+    }
+    func read(_ command: DesktopCommand) async -> String? {
+        lock.withLock { calls.append("read:" + command.argv(headed: false, session: nil).joined(separator: " ")); return readResult }
+    }
+    func listWindows(app: String) async -> [DesktopWindowCandidate] {
+        lock.withLock { calls.append("windows:\(app)"); return windows }
+    }
+    func takeOpenSurfaces() -> [String] {
+        lock.withLock { defer { surfacesToReport = [] }; return surfacesToReport }
+    }
+    func startSession(name: String) async -> String? {
+        lock.withLock { calls.append("session:start"); return sessionID }
+    }
+    func endSession(_ id: String) async {
+        lock.withLock { calls.append("session:end:\(id)") }
+    }
+}
 
 /// A manually advanced clock for `TaskRunner(now:)`.
 final class FakeClock: @unchecked Sendable {

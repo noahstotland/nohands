@@ -101,6 +101,15 @@
    {
     "actions": [
      {
+      "kind": "open_url",
+      "url": "https://www.youtube.com",
+      "app_name": "Google Chrome"
+     }
+    ]
+   },
+   {
+    "actions": [
+     {
       "kind": "open_app",
       "app_name": "Google Chrome"
      },

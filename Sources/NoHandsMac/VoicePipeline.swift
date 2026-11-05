@@ -72,12 +72,13 @@ import NoHandsCore
     /// resolver, executor, observer and overlay.
     public init(config: AppConfig, transcriber: any Transcribing, resolver: (any IntentResolving)?,
                 executor: ActionExecutor, overlay: any OverlayPresenting, ax: any ElementProviding = AXQuery(),
-                observer: ScreenObserver? = nil, taskRunner: TaskRunner? = nil) {
+                observer: ScreenObserver? = nil, taskRunner: TaskRunner? = nil, harness: (any DesktopHarness)? = nil) {
         self.config = config
         self.transcriber = transcriber
-        let observer = observer ?? ScreenObserver(ax: ax, maxElements: config.maxObservedElements)
+        let observer = observer ?? ScreenObserver(ax: ax, maxElements: config.observedElementCap, harness: harness,
+                                                  snapshotTimeoutMs: config.agentDesktopSnapshotMs)
         self.runner = taskRunner ?? resolver.map {
-            TaskRunner(config: config, resolver: $0, executor: executor, observer: observer, overlay: overlay)
+            TaskRunner(config: config, resolver: $0, executor: executor, observer: observer, overlay: overlay, harness: harness)
         }
         self.executor = executor
         self.overlay = overlay

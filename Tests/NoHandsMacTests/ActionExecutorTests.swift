@@ -201,3 +201,79 @@ private let reload = UIElementInfo(id: 1, frame: CGRect(x: 100, y: 100, width: 8
     #expect(await task.value == "cancelled")
     #expect(input.calls.isEmpty)
 }
+
+@MainActor @Test func openURLUsesDefaultBrowserOrNamedApp() async {
+    let (x, i, e, _) = make()
+    let yt = URL(string: "https://www.youtube.com")!
+    e.defaultBrowser = "Safari"; e.front = "Safari"
+    #expect(await x.execute([.openURL(yt, app: nil)]) == nil)
+    #expect(e.opened.map(\.app) == [nil])
+    #expect(e.opened.first?.url == yt)
+    // Named browser that exists: opened there, then further actions wait for it to be frontmost.
+    e.apps = ["Google Chrome"]; e.front = "Google Chrome"
+    #expect(await x.execute([.openURL(yt, app: "Google Chrome"), .typeText("x")]) == nil)
+    #expect(i.calls == ["type:x"])
+    // Named browser that does not exist.
+    #expect(await x.execute([.openURL(yt, app: "Nope")]) == "no app named Nope")
+    // Not in front in time and more actions follow: fail before typing anywhere.
+    e.front = "Finder"
+    #expect(await x.execute([.openURL(yt, app: "Google Chrome"), .typeText("y")]) == "app did not come to front")
+    #expect(i.calls == ["type:x"])
+}
+
+@MainActor @Test func openAppWaitsForAWindowBeforeTyping() async {
+    let (x, i, e, _) = make()
+    e.apps = ["Google Chrome"]; e.front = "Google Chrome"
+    // Chrome launched cold: frontmost but no window yet. Keystrokes would go nowhere, so fail instead.
+    e.hasWindow = false
+    #expect(await x.execute([.openApp("Google Chrome"), .pressKey(KeyChord(.l, [.command]))]) == "no window in Google Chrome")
+    #expect(i.calls.isEmpty)
+    // Last action: no window needed.
+    #expect(await x.execute([.openApp("Google Chrome")]) == nil)
+    // Window appears while waiting.
+    e.hasWindow = true
+    e.windowAppearsAfterChecks = 2
+    #expect(await x.execute([.openApp("Google Chrome"), .pressKey(KeyChord(.l, [.command]))]) == nil)
+    #expect(i.calls.count == 1)
+}
+
+@MainActor @Test func moveWindowUsesTheScreenHoldingTheWindow() async {
+    let (x, _, e, o) = make()
+    e.visibleScreens = [CGRect(x: 0, y: 25, width: 1000, height: 775), CGRect(x: 1000, y: 0, width: 2000, height: 1000)]
+    e.windowFrame = CGRect(x: 1200, y: 100, width: 400, height: 300)   // on the second screen
+    #expect(await x.execute([.moveWindow(.leftHalf)]) == nil)
+    #expect(e.placed == [CGRect(x: 1000, y: 0, width: 1000, height: 1000)])
+    // Centre keeps the size; a window on the first screen uses that screen.
+    e.windowFrame = CGRect(x: 100, y: 100, width: 400, height: 300)
+    #expect(await x.execute([.moveWindow(.center)]) == nil)
+    #expect(e.placed.last == CGRect(x: 300, y: 263, width: 400, height: 300))
+    // A stale overlay is dropped once the window moved.
+    o.state = .labels([:])
+    #expect(await x.execute([.moveWindow(.maximize)]) == nil)
+    #expect(o.state == .none)
+    #expect(e.placed.last == CGRect(x: 0, y: 25, width: 1000, height: 775))
+}
+
+@MainActor @Test func moveWindowFailures() async {
+    let (x, _, e, o) = make()
+    e.windowFrame = nil
+    #expect(await x.execute([.moveWindow(.leftHalf)]) == "no window to move")
+    e.windowFrame = CGRect(x: 100, y: 100, width: 400, height: 300)
+    e.acceptsMove = false
+    #expect(await x.execute([.moveWindow(.leftHalf)]) == "couldn't move window")
+    e.acceptsMove = true
+    e.visibleScreens = []
+    #expect(await x.execute([.moveWindow(.leftHalf)]) == "no screen")
+    #expect(e.placed.isEmpty)
+    #expect(o.huds.count == 3)
+}
+
+@Test func screenHoldingWindowPrefersCentreThenOverlap() {
+    let a = CGRect(x: 0, y: 0, width: 1000, height: 800), b = CGRect(x: 1000, y: 0, width: 1000, height: 800)
+    #expect(ActionExecutor.screen(holding: CGRect(x: 900, y: 0, width: 400, height: 100), among: [a, b]) == b)
+    #expect(ActionExecutor.screen(holding: CGRect(x: 700, y: 0, width: 400, height: 100), among: [a, b]) == a)
+    // Centre off every screen (window dragged above the top edge): the biggest overlap wins.
+    #expect(ActionExecutor.screen(holding: CGRect(x: 1500, y: -500, width: 400, height: 600), among: [a, b]) == b)
+    #expect(ActionExecutor.screen(holding: CGRect(x: 5000, y: 5000, width: 10, height: 10), among: [a, b]) == a)
+    #expect(ActionExecutor.screen(holding: a, among: []) == nil)
+}

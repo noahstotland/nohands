@@ -68,7 +68,7 @@ import Foundation
       1. Go to the channel. -> [openApp, wait] (ok)
       2. Click Videos. -> [click] (FAILED: no such element)
     App: Google Chrome   Window: Veritasium - YouTube   URL: -
-    Mode: command   Overlay: none
+    Mode: command   Overlay: none   Harness: native
     Visible elements:
       3 [button] Back
       9 [link] Veritasium — How Electricity Actually Works
@@ -128,4 +128,54 @@ import Foundation
     #expect(!m.contains(String(repeating: "t", count: 81)))
     let legacy = ClaudeRequestBuilder.userMessage(transcript: goal, context: IntentContext(frontmostApp: "A", mode: .command, labeledElements: []))
     #expect(legacy.hasSuffix("Request: " + goal))
+}
+
+@Test func openURLDecodesAndNormalizes() throws {
+    let yt = URL(string: "https://www.youtube.com")!
+    #expect(try IntentDecoder.actions(fromPayloadText: #"{"actions":[{"kind":"open_url","url":"youtube"}]}"#) == [.openURL(yt, app: nil)])
+    #expect(try IntentDecoder.actions(fromPayloadText: #"{"actions":[{"kind":"open_url","url":"https://www.youtube.com","app_name":"Google Chrome"}]}"#)
+            == [.openURL(yt, app: "Google Chrome")])
+    #expect(try IntentDecoder.actions(fromPayloadText: #"{"actions":[{"kind":"open_url","url":"reddit.com/r/swift","app_name":" "}]}"#)
+            == [.openURL(URL(string: "https://reddit.com/r/swift")!, app: nil)])
+    // Non-web schemes and empty URLs are dropped, never executed.
+    #expect(try IntentDecoder.actions(fromPayloadText: #"{"actions":[{"kind":"open_url","url":"file:///etc"},{"kind":"open_url"}]}"#) == [])
+    #expect(IntentSchema.kinds.contains("open_url"))
+    #expect(IntentSchema.systemPrompt.contains("- open_url:"))
+    #expect(ActionSummary.kind(.openURL(yt, app: "Safari")) == "openURL")
+}
+
+@Test func evalTreatsEquivalentURLsAsMatching() {
+    let a: [Action] = [.openURL(URL(string: "https://www.youtube.com/")!, app: "chrome")]
+    let b: [Action] = [.openURL(URL(string: "https://youtube.com")!, app: "Google Chrome")]
+    #expect(IntentEval.matches(a, anyOf: [b]))
+    #expect(!IntentEval.matches(a, anyOf: [[.openURL(URL(string: "https://youtube.com")!, app: nil)]]))
+}
+
+@Test func requestShowsHarnessSurfaceWindowsStatesValuesAndReadings() {
+    var o = ScreenObservation(app: "Notes", mode: .command, elements: [
+        ObservedElement(number: 1, role: "button", title: "Save", states: ["disabled"]),
+        ObservedElement(number: 2, role: "textfield", title: "Name", value: "cats"),
+        ObservedElement(number: 3, role: "checkbox", title: "Remember me", states: ["offscreen", "checked"])])
+    o.harness = .agentDesktop; o.surface = "sheet"; o.windows = ["Inbox", "Draft\nX"]; o.readings = ["clipboard: hi"]
+    let s = ClaudeRequestBuilder.userMessage(request: StepRequest(goal: "g", step: 1, maxSteps: 3, history: [], observation: o))
+    #expect(s.contains("Mode: command   Overlay: none   Harness: agent-desktop\nSurface: sheet\nWindows: \"Inbox\", \"Draft X\"\nVisible elements:\n"))
+    #expect(s.contains("  1 [button] Save (disabled)\n  2 [textfield] Name = \"cats\"\n  3 [checkbox] Remember me (checked, offscreen)\n"))
+    #expect(s.contains("Read:\n  clipboard: hi\n\nRequest: g"))
+}
+
+@Test func requestCutsValuesAndReadings() {
+    var o = ScreenObservation(app: "Notes", mode: .command, elements: [
+        ObservedElement(number: 1, role: "textfield", title: "Body", value: String(repeating: "v", count: 100))])
+    o.readings = [String(repeating: "r", count: 400)]
+    let s = ClaudeRequestBuilder.userMessage(request: StepRequest(goal: "g", step: 1, maxSteps: 3, history: [], observation: o))
+    #expect(s.contains("  1 [textfield] Body = \"" + String(repeating: "v", count: 60) + "\"\n"))
+    #expect(s.contains("Read:\n  " + String(repeating: "r", count: 300) + "\n"))
+}
+
+@Test func nativeRequestHasNoHarnessSections() {
+    let o = ScreenObservation(app: "Finder", mode: .command, elements: [ObservedElement(number: 1, role: "button", title: "Back")])
+    let s = ClaudeRequestBuilder.userMessage(request: StepRequest(goal: "g", step: 1, maxSteps: 3, history: [], observation: o))
+    #expect(s.contains("Mode: command   Overlay: none   Harness: native\nVisible elements:\n  1 [button] Back\n\nRequest: g"))
+    #expect(!s.contains("Surface:") && !s.contains("Read:") && !s.contains("Windows:"))
+    #expect(o.harness == .native && o.surface == nil && o.windows.isEmpty && o.readings.isEmpty)
 }

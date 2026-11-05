@@ -22,8 +22,41 @@ public enum ActionSummary {
         case .hideOverlay: "hideOverlay"
         case .setMode(let m): "setMode(\(m.rawValue))"
         case .openApp: "openApp"
+        case .openURL: "openURL"
+        case .moveWindow(let p): "moveWindow(\(p.rawValue))"
         case .wait: "wait"
         case .ignore: "ignore"
+        case .setValue(_, let t): "setValue(len=\(t.count))"
+        case .typeInto(_, let t): "typeInto(len=\(t.count))"
+        case .clearField: "clearField"
+        case .selectOption: "selectOption"
+        case .setChecked: "setChecked"
+        case .setExpanded: "setExpanded"
+        case .focusElement: "focusElement"
+        case .scrollTo: "scrollTo"
+        case .scrollIn: "scrollIn"
+        case .drag: "drag"
+        case .clickIn(let s, _): "clickIn(\(s.rawValue))"
+        case .menuItem: "menuItem"
+        case .closeApp: "closeApp"
+        case .windowAction(let op, _, _): "windowAction(\(op.rawValue))"
+        case .clipboardSet(let t): "clipboardSet(len=\(t.count))"
+        case .readClipboard: "readClipboard"
+        case .readValue: "readValue"
+        case .readNotifications: "readNotifications"
+        case .dismissNotifications: "dismissNotifications"
+        case .waitFor(let c, _): "waitFor(\(Self.waitKind(c)))"
+        }
+    }
+
+    static func waitKind(_ c: WaitCondition) -> String {
+        switch c {
+        case .text: "text"
+        case .window: "window"
+        case .event: "event"
+        case .menu: "menu"
+        case .menuClosed: "menu_closed"
+        case .element: "element"
         }
     }
 }

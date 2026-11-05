@@ -21,6 +21,15 @@ public enum MoveTarget: Equatable, Codable, Sendable {
     case relative(dx: Int, dy: Int)
 }
 
+/// An element the harness acts on: a number from the request's element list, or a name looked up live.
+public enum ElementTarget: Equatable, Codable, Sendable { case label(Int), named(String) }
+
+/// What an agent-desktop `wait` blocks on.
+public enum WaitCondition: Equatable, Codable, Sendable {
+    case text(String), window(String), event(DesktopEvent), menu, menuClosed
+    case element(ElementTarget, predicate: String)
+}
+
 public enum Action: Equatable, Codable, Sendable {
     case typeText(String)
     case pressKey(KeyChord)
@@ -35,6 +44,35 @@ public enum Action: Equatable, Codable, Sendable {
     case hideOverlay
     case setMode(Mode)
     case openApp(String)
+    /// Open a web address in the default browser (`app` nil) or in the named browser.
+    case openURL(URL, app: String?)
+    /// Move and resize the frontmost app's focused window on its screen.
+    case moveWindow(WindowPlacement)
     case wait(ms: Int)
     case ignore
+
+    // Harness actions (agent-desktop semantics; each has a native fallback or fails with "needs agent-desktop").
+    case setValue(ElementTarget, String)
+    case typeInto(ElementTarget, String)
+    case clearField(ElementTarget)
+    case selectOption(ElementTarget, String)
+    /// nil toggles.
+    case setChecked(ElementTarget, Bool?)
+    case setExpanded(ElementTarget, Bool)
+    case focusElement(ElementTarget)
+    case scrollTo(ElementTarget)
+    case scrollIn(ElementTarget, Direction, amount: Int)
+    case drag(from: MoveTarget, to: MoveTarget)
+    /// Click a named item in a surface (menubar, dock, sheet, …).
+    case clickIn(DesktopSurface, name: String)
+    /// Run a menu bar command by name ("Save As…" or "File > Save As…").
+    case menuItem(String)
+    case closeApp(String)
+    case windowAction(DesktopWindowOp, app: String?, title: String?)
+    case clipboardSet(String)
+    case readClipboard
+    case readValue(ElementTarget)
+    case readNotifications
+    case dismissNotifications(app: String?)
+    case waitFor(WaitCondition, timeoutMs: Int)
 }

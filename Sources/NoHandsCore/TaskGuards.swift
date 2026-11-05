@@ -59,13 +59,16 @@ public struct RepeatDetector: Sendable {
 /// Whether two observations show the same screen state.
 public enum Settle {
     public static func same(_ a: ScreenObservation, _ b: ScreenObservation) -> Bool {
-        a.app == b.app && a.windowTitle == b.windowTitle && a.url == b.url
+        a.app == b.app && a.windowTitle == b.windowTitle && a.url == b.url && a.surface == b.surface
             && signature(a.elements) == signature(b.elements)
     }
 
+    /// Numbers (and refs) are left out: a re-snapshot renumbers the same screen.
     private static func signature(_ elements: [ObservedElement]) -> [String: Int] {
         var counts: [String: Int] = [:]
-        for e in elements { counts[e.role + "\u{1F}" + e.title, default: 0] += 1 }
+        for e in elements {
+            counts[e.role + "\u{1F}" + e.title + "\u{1F}" + (e.value ?? "") + "\u{1F}" + e.states.joined(separator: ","), default: 0] += 1
+        }
         return counts
     }
 }

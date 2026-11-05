@@ -9,23 +9,41 @@ public protocol ElementProviding: Sendable {
     func actionableElements(screens: [CGRect]) -> [UIElementInfo]
     func screenRectsCG() -> [CGRect]
     func activate(appNamed: String) -> Bool
+    /// Opens `url` in the named app, or in the default handler when nil. Returns the handling app's name
+    /// ("" if unknown) so the caller can wait for it; nil when the named app does not exist.
+    func open(url: URL, appNamed: String?) -> String?
     func frontmostAppName() -> String?
+    /// Whether the frontmost app has a focused window (a cold-launched browser is frontmost before it has one).
+    func frontmostHasWindow() -> Bool
     func focusedWindowTitle() -> String?
     func webURL() -> String?
     /// True once right after a walk first exposed the frontmost Chromium app's page tree (which appears a moment
     /// later): the caller should re-observe before trusting the element list. Reading it clears it.
     func didJustExpose() -> Bool
+    /// The frontmost app's focused window frame in CG (top-left origin) coordinates; nil when it has none.
+    func focusedWindowFrame() -> CGRect?
+    /// Moves and resizes the focused window to `frame` (CG coordinates). False when there is no window or the
+    /// app refused.
+    func setFocusedWindowFrame(_ frame: CGRect) -> Bool
+    /// Screen areas a window may occupy (minus menu bar and Dock), CG coordinates, same order as `screenRectsCG()`.
+    func visibleScreenRectsCG() -> [CGRect]
 }
 
 extension ElementProviding {
     public func focusedWindowTitle() -> String? { nil }
     public func webURL() -> String? { nil }
     public func didJustExpose() -> Bool { false }
+    public func open(url: URL, appNamed: String?) -> String? { nil }
+    public func frontmostHasWindow() -> Bool { true }
     public func actionableElements(screens: [CGRect]) -> [UIElementInfo] { actionableElements() }
+    public func focusedWindowFrame() -> CGRect? { nil }
+    public func setFocusedWindowFrame(_ frame: CGRect) -> Bool { false }
+    public func visibleScreenRectsCG() -> [CGRect] { screenRectsCG() }
 }
 
 extension AXQuery: ElementProviding {
     public func screenRectsCG() -> [CGRect] { AXQuery.screenRectsCG() }
+    public func visibleScreenRectsCG() -> [CGRect] { AXQuery.visibleScreenRectsCG() }
 }
 
 /// What the executor needs from the overlay (OverlayController conforms).
@@ -52,23 +70,48 @@ extension OverlayController: OverlayPresenting {
     static let pointerUnknown = "pointer position unknown"
     public static let cancelled = "cancelled"
 
-    private let input: any InputSynthesizing
-    private let ax: any ElementProviding
+    static let needsHarness = "needs agent-desktop"
+    public static let elementChanged = "element changed, look again"
+    static let readingLimit = 300
+
+    let input: any InputSynthesizing
+    let ax: any ElementProviding
     private let overlay: any OverlayPresenting
     private let config: AppConfig
+    /// agent-desktop, when installed and chosen; nil runs every action natively.
+    let harness: (any DesktopHarness)?
+    let clipboard: any ClipboardAccess
     public var onModeChange: ((Mode) -> Void)?
     private let frontTimeout: Duration
+    /// How long an app that just came to the front may take to show a window (a cold launch on a loaded Mac).
+    private let windowTimeout: Duration
     private var pressed: Set<MouseButton> = []
     /// Label snapshot of the current LLM-derived batch; `.label(n)` resolves only against this.
-    private var labelSnapshot: [Int: UIElementInfo]?
+    var labelSnapshot: [Int: UIElementInfo]?
+    /// Text the model asked to read (`read_*` actions) since the last `takeReadings()`.
+    public private(set) var readings: [String] = []
 
     public init(input: any InputSynthesizing, ax: any ElementProviding, overlay: any OverlayPresenting,
-                config: AppConfig, frontTimeout: Duration = .seconds(1.5)) {
+                config: AppConfig, frontTimeout: Duration = .seconds(1.5), windowTimeout: Duration = .seconds(6),
+                harness: (any DesktopHarness)? = nil, clipboard: any ClipboardAccess = PasteboardClipboard()) {
         self.frontTimeout = frontTimeout
+        self.windowTimeout = windowTimeout
         self.input = input
         self.ax = ax
         self.overlay = overlay
         self.config = config
+        self.harness = harness
+        self.clipboard = clipboard
+    }
+
+    /// The readings collected so far; the task loop moves them into the next observation.
+    public func takeReadings() -> [String] {
+        defer { readings = [] }
+        return readings
+    }
+
+    func addReading(_ label: String, _ text: String) {
+        readings.append(String("\(label): \(text)".prefix(Self.readingLimit)))
     }
 
     /// Executes in order; stops at the first failure and shows it in the HUD. Returns the failure message if any.
@@ -108,6 +151,16 @@ extension OverlayController: OverlayPresenting {
                 hideStaleOverlay()
             case .click(let target, let button, let count):
                 guard (1...3).contains(count) else { return "bad click count" }
+                // A numbered element with a ref is clicked semantically; a point click is the fallback.
+                if case .label(let n) = target, let e = labelSnapshot?[n], let ref = e.ref, let harness {
+                    switch await harness.act(.click(ref: ref, button: button, count: count)) {
+                    case .delivered: hideStaleOverlay(); return nil
+                    case .failed(let m): return m
+                    case .elementChanged: return Self.elementChanged
+                    case .notDelivered(let m):
+                        guard e.frame != .zero else { return m }
+                    }
+                }
                 let usedOverlay: Bool
                 if case .numbered = target { usedOverlay = overlay.state != .none } else { usedOverlay = false }
                 switch resolveClick(target) {
@@ -150,22 +203,66 @@ extension OverlayController: OverlayPresenting {
             case .openApp(let name):
                 guard ax.activate(appNamed: name) else { return "no app named \(name)" }
                 hideStaleOverlay()
-                let arrived = await waitForFront(name)
-                if !arrived && !isLast { return "app did not come to front" }
+                if let failure = await waitReady(name, moreActionsFollow: !isLast) { return failure }
+            case .openURL(let url, let app):
+                guard let handler = ax.open(url: url, appNamed: app) else {
+                    return app.map { "no app named \($0)" } ?? "no browser for \(url.host ?? "that address")"
+                }
+                hideStaleOverlay()
+                if !handler.isEmpty, let failure = await waitReady(handler, moreActionsFollow: !isLast) { return failure }
+            case .moveWindow(let placement):
+                guard let current = ax.focusedWindowFrame() else { return "no window to move" }
+                guard let screen = Self.screen(holding: current, among: ax.visibleScreenRectsCG()) else { return "no screen" }
+                let target = placement.frame(in: screen, current: current)
+                guard ax.setFocusedWindowFrame(target) else { return "couldn't move window" }
+                hideStaleOverlay()
             case .wait(let ms):
                 try? await Task.sleep(for: .milliseconds(ms))
             case .ignore:
                 break
+            case .setValue, .typeInto, .clearField, .selectOption, .setChecked, .setExpanded, .focusElement, .scrollTo,
+                 .scrollIn, .drag, .clickIn, .menuItem, .closeApp, .windowAction, .clipboardSet, .readClipboard,
+                 .readValue, .readNotifications, .dismissNotifications, .waitFor:
+                if let failure = try await runHarnessAction(action) { return failure }
+                hideStaleOverlay()
             }
             return nil
+        } catch let e as Unresolved {
+            return e.message
+        } catch is HarnessOnly {
+            return Self.needsHarness
         } catch {
             return "couldn't post input event"
         }
     }
 
-    private func hideStaleOverlay() { if overlay.state != .none { overlay.hide() } }
+    func hideStaleOverlay() { if overlay.state != .none { overlay.hide() } }
 
-    private func waitForFront(_ name: String) async -> Bool {
+    /// The screen a window belongs to: the one holding its centre, else the one it overlaps most, else the first.
+    nonisolated static func screen(holding window: CGRect, among screens: [CGRect]) -> CGRect? {
+        let centre = CGPoint(x: window.midX, y: window.midY)
+        if let s = screens.first(where: { $0.contains(centre) }) { return s }
+        let overlapping = screens.filter { $0.intersects(window) }
+        func area(_ r: CGRect) -> CGFloat { let i = r.intersection(window); return i.width * i.height }
+        if let s = overlapping.max(by: { area($0) < area($1) }) { return s }
+        return screens.first
+    }
+
+    /// Waits for `name` to come to the front and, when more actions follow (keystrokes that need a window), for
+    /// it to have a focused window. Returns the failure message; nil when ready or when nothing follows.
+    private func waitReady(_ name: String, moreActionsFollow: Bool) async -> String? {
+        let arrived = await waitForFront(name)
+        guard moreActionsFollow else { return nil }
+        guard arrived else { return "app did not come to front" }
+        let deadline = ContinuousClock.now.advanced(by: windowTimeout)
+        while !ax.frontmostHasWindow() {
+            if ContinuousClock.now >= deadline { return "no window in \(name)" }
+            try? await Task.sleep(for: .milliseconds(50))
+        }
+        return nil
+    }
+
+    func waitForFront(_ name: String) async -> Bool {
         let want = name.lowercased()
         func isFront() -> Bool {
             guard let f = ax.frontmostAppName()?.lowercased(), !f.isEmpty else { return false }
@@ -200,7 +297,7 @@ extension OverlayController: OverlayPresenting {
                                            screens: ax.screenRectsCG(), labels: labelSnapshot), checked: direct)
     }
 
-    private func resolveMove(_ t: MoveTarget) -> TargetResolution {
+    func resolveMove(_ t: MoveTarget) -> TargetResolution {
         var needsElements = false, direct = false
         if case .element = t { needsElements = true }
         switch t { case .point, .relative: direct = true; default: break }

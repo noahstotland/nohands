@@ -71,13 +71,52 @@ public struct CommandGrammar: Sendable {
             "middle click": [.click(.cursor, button: .middle, count: 1)],
             "hold click": [.pressMouse(.left)],
             "release click": [.releaseMouse(.left)],
+
+            "left half": [.moveWindow(.leftHalf)], "right half": [.moveWindow(.rightHalf)],
+            "top half": [.moveWindow(.topHalf)], "bottom half": [.moveWindow(.bottomHalf)],
+            "snap left": [.moveWindow(.leftHalf)], "snap right": [.moveWindow(.rightHalf)],
+            "snap up": [.moveWindow(.topHalf)], "snap down": [.moveWindow(.bottomHalf)],
+            "window left": [.moveWindow(.leftHalf)], "window right": [.moveWindow(.rightHalf)],
+            "top left": [.moveWindow(.topLeft)], "top right": [.moveWindow(.topRight)],
+            "bottom left": [.moveWindow(.bottomLeft)], "bottom right": [.moveWindow(.bottomRight)],
+            "left third": [.moveWindow(.leftThird)], "middle third": [.moveWindow(.middleThird)],
+            "right third": [.moveWindow(.rightThird)],
+            "maximize": [.moveWindow(.maximize)], "maximize window": [.moveWindow(.maximize)],
+            "fill screen": [.moveWindow(.maximize)], "fill the screen": [.moveWindow(.maximize)],
+            "center window": [.moveWindow(.center)], "centre window": [.moveWindow(.center)],
         ]
     }()
+
+    /// Words dropped for a last-resort exact-table lookup, so "close the current tab", "snap to the left side"
+    /// and "hide the grid" match their terse entries. Tried only after every pattern rule declined, so
+    /// "click the save", "type the word" and "click to" (two) keep their original tokens.
+    private static let fillers: Set<String> = [
+        "the", "this", "that", "current", "a", "an", "my", "to", "please", "side", "of",
+    ]
+
+    static func strippedExactMatch(_ tokens: [String]) -> [Action]? {
+        let stripped = tokens.filter { !fillers.contains($0) }
+        guard stripped.count < tokens.count, !stripped.isEmpty else { return nil }
+        return exact[stripped.joined(separator: " ")]
+    }
 
     /// Words that never appear in a bare "open <app>" request and signal a compound command.
     private static let compoundMarkers: Set<String> = [
         "and", "then", "on", "in", "to", "go", "search", "for", "with", "at", "type", "click", "press",
     ]
+
+    /// "open youtube", "open youtube.com", "open youtube on chrome", "open reddit in safari": a known site or a
+    /// domain opens in the default browser (or the named one). Raw words keep dots the normalizer strips.
+    private static func parseOpenSite(_ transcript: String) -> [Action]? {
+        let words = transcript.split(whereSeparator: { $0.isWhitespace }).dropFirst().map { $0.lowercased() }
+        let split = words.firstIndex { $0 == "on" || $0 == "in" }
+        let siteWords = split.map { Array(words[..<$0]) } ?? Array(words)
+        let appWords = split.map { Array(words[($0 + 1)...]) } ?? []
+        guard !siteWords.isEmpty, split == nil || !appWords.isEmpty,
+              siteWords.allSatisfy({ !compoundMarkers.contains($0) }),
+              let url = WebAddress.url(for: siteWords.joined(separator: " ")) else { return nil }
+        return [.openURL(url, app: appWords.isEmpty ? nil : appWords.joined(separator: " "))]
+    }
 
     private static let modifierAliases: [String: Modifier] = [
         "cmd": .command, "alt": .option, "ctrl": .control,
@@ -96,7 +135,13 @@ public struct CommandGrammar: Sendable {
         let tokens = Self.normalize(transcript)
         guard let first = tokens.first else { return nil }
         if let hit = Self.exact[tokens.joined(separator: " ")] { return hit }
+        if let hit = parsePattern(tokens, transcript: transcript) { return hit }
+        return Self.strippedExactMatch(tokens)
+    }
 
+    /// The rules keyed on the first word(s): press, move, scroll, zoom, open, go to, search for, type, click.
+    private func parsePattern(_ tokens: [String], transcript: String) -> [Action]? {
+        let first = tokens[0]
         switch first {
         case "press": return parsePress(Array(tokens.dropFirst()))
         case "move": return parseMove(Array(tokens.dropFirst()))
@@ -107,8 +152,10 @@ public struct CommandGrammar: Sendable {
             return [.zoomGrid(n)]
         case "open":
             let rest = tokens.dropFirst()
+            guard !rest.isEmpty else { return nil }
+            if let site = Self.parseOpenSite(transcript) { return site }
             // "open chrome and go to youtube" is a multi-step request, not an app name: leave it to the LLM.
-            guard !rest.isEmpty, rest.allSatisfy({ !Self.compoundMarkers.contains($0) }) else { return nil }
+            guard rest.allSatisfy({ !Self.compoundMarkers.contains($0) }) else { return nil }
             return [.openApp(rest.joined(separator: " "))]
         case "go", "search":
             let prefix = first == "go" ? ["go", "to"] : ["search", "for"]
@@ -117,6 +164,9 @@ public struct CommandGrammar: Sendable {
             var payload = transcript.split(whereSeparator: { $0.isWhitespace }).dropFirst(2).joined(separator: " ")
             while let last = payload.last, ".,!?".contains(last) { payload.removeLast() }
             guard !payload.isEmpty else { return nil }
+            // "go to youtube" / "go to example.org": open the site in the default browser instead of typing into
+            // whatever app is frontmost. Other payloads still go through the address bar.
+            if first == "go", let url = WebAddress.url(for: payload) { return [.openURL(url, app: nil)] }
             return [.pressKey(KeyChord(.l, [.command])), .typeText(payload), .pressKey(KeyChord(.return))]
         case "type":
             guard tokens.count > 1 else { return nil }
