@@ -50,7 +50,7 @@ mic (AVAudioEngine, 16 kHz mono Float32)
 | Mode | Entered by | Behavior |
 |---|---|---|
 | `command` (default) | launch, "command mode", "stop dictating", "wake up" | every utterance is a command |
-| `dictation` | "start dictating", "dictation mode" | every utterance is typed, except "stop dictating" / "command mode" |
+| `dictation` | "start dictating", "dictation mode" | every utterance is typed, except "stop dictating" / "command mode", "scratch that" and "delete word" |
 | `sleep` | "go to sleep" | everything ignored except "wake up" |
 
 Mode is shown in the menu bar: `mic` icon + `CMD` / `DICT` / `ZZZ` text.

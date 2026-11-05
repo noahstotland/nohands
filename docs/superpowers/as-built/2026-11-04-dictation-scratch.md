@@ -7,3 +7,7 @@
 ## Differs from the spec
 
 - The spec says the only Mac change is one line in `VoicePipeline.isComplete`. `MergeBuffer.transcript` also had to use `ModeMachine.isDictationCommand`: it merges a new transcript into the held one before `isComplete` is asked, so without the change "scratch that" spoken inside the merge window would be appended to the held fragment and typed. It now flushes the held text first and passes the phrase on alone, like "stop dictating".
+
+## Checks that didn't run
+
+- The four manual checks listed in the PR (dictate two sentences in TextEdit and say "scratch that"; "delete word"; "I said scratch that" is typed; "stop" halts a long run of deletes). They need a microphone and Accessibility.
