@@ -29,7 +29,9 @@ func usage() -> Never {
                                       prints the step's intent, status and actions; executes nothing)
       nohands-cli task "<goal>"      (waits 3 s, then runs the goal as a multi-step task on the frontmost app,
                                       printing each step and the outcome; Ctrl-C stops it)
-      nohands-cli eval <file> [--runs N]  (scores the configured backend on a fixture set; executes nothing)
+      nohands-cli eval <file> [--runs N] [--model ID] [--effort LEVEL]
+                                     (scores the configured backend on a fixture set; executes nothing;
+                                      --model and --effort override the Claude settings for this run only)
       nohands-cli listen             (mic -> VAD -> ASR; Ctrl-C to quit)
       nohands-cli desktop-status     (agent-desktop binary, version, permissions and the harness in use)
       nohands-cli snapshot [app]     (waits 3 s, prints the task-loop observation through agent-desktop of the
@@ -318,12 +320,22 @@ var exitStatus: Int32 = 0
         case "eval":
             guard let file = rest.first else { usage() }
             var runs = 1
-            if rest.count == 3, rest[1] == "--runs", let n = Int(rest[2]), n >= 1 { runs = n }
-            else if rest.count != 1 { usage() }
+            var modelOverride: String?, effortOverride: String?
+            var args = Array(rest.dropFirst())
+            while !args.isEmpty {
+                guard args.count >= 2 else { usage() }
+                let (flag, value) = (args[0], args[1])
+                args.removeFirst(2)
+                switch flag {
+                case "--runs": guard let n = Int(value), n >= 1 else { usage() }; runs = n
+                case "--model": modelOverride = value
+                case "--effort": guard AppConfig.efforts.contains(value) else { usage() }; effortOverride = value
+                default: usage()
+                }
+            }
             let cases = try JSONDecoder().decode([EvalCase].self, from: try Data(contentsOf: URL(fileURLWithPath: file)))
-            let (_, resolver, modelName) = try loadResolver()
-            var passed = 0, total = 0
-            var times: [Int] = []
+            let (config, resolver, modelName) = try loadResolver(model: modelOverride, effort: effortOverride)
+            var results: [(passed: Bool, ms: Int)] = []
             for c in cases {
                 for _ in 1...runs {
                     let t0 = ContinuousClock.now
@@ -336,18 +348,18 @@ var exitStatus: Int32 = 0
                         status = step.status
                     } catch { errText = "\(error)" }
                     let ms = Int(t0.duration(to: .now) / .milliseconds(1))
-                    times.append(ms)
-                    total += 1
-                    if errText == nil, IntentEval.matches(got, anyOf: c.accept) {
-                        passed += 1
+                    let ok = errText == nil && IntentEval.matches(got, anyOf: c.accept)
+                    results.append((passed: ok, ms: ms))
+                    if ok {
                         print("PASS \(ms)ms  \(c.say)")
                     } else {
                         print("FAIL \(ms)ms  \(c.say)  got: \(errText.map { "error: \($0)" } ?? "\(status.map { "status=\($0.rawValue) " } ?? "")\(got)")")
                     }
                 }
             }
-            let warm = (times.count > 2 ? Array(times.dropFirst(2)) : times).sorted()
-            print("accuracy=\(total == 0 ? 0 : passed * 100 / total)% median=\(warm.isEmpty ? 0 : warm[warm.count / 2])ms (excluding first 2 calls) model=\(modelName)")
+            let isClaude = config.effectiveBackend == .claude
+            let summary = EvalSummary(results: results, dropFirst: isClaude ? 0 : 2)
+            print("\(summary.line) model=\(modelName)\(isClaude ? " effort=\(config.intentEffort)" : "")")
         case "listen":
             try await listen()
         default:
@@ -367,9 +379,15 @@ Task { @MainActor in
 app.run()
 
 /// Loads `~/.config/nohands/config.json` (plus environment) and builds the configured backend's resolver.
-func loadResolver() throws -> (config: AppConfig, resolver: any IntentResolving, model: String) {
+/// `model` and `effort` override the Claude settings for this run only (the config file is not touched).
+func loadResolver(model: String? = nil, effort: String? = nil) throws -> (config: AppConfig, resolver: any IntentResolving, model: String) {
     let cfgURL = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".config/nohands/config.json")
-    let config = try AppConfig.load(from: try? Data(contentsOf: cfgURL), environment: ProcessInfo.processInfo.environment)
+    var config = try AppConfig.load(from: try? Data(contentsOf: cfgURL), environment: ProcessInfo.processInfo.environment)
+    if config.effectiveBackend != .claude, model != nil || effort != nil {
+        fail("error: --model and --effort apply to the Claude backend")
+    }
+    if let model { config.intentModel = model }
+    if let effort { config.intentEffort = effort }
     switch config.effectiveBackend {
     case .claude: return (config, ClaudeIntentResolver(config: config), config.intentModel)
     case .local: return (config, OllamaIntentResolver(config: config), config.resolvedLocalModel)

@@ -79,3 +79,30 @@ public enum IntentEval {
         return t == "chrome" ? "google chrome" : t
     }
 }
+
+/// Pass rate and latency of one eval run.
+public struct EvalSummary: Equatable, Sendable {
+    public var passed: Int
+    public var total: Int
+    public var p50Ms: Int
+    public var p95Ms: Int
+
+    /// `dropFirst` leaves the first N calls out of the latency figures only (a cold model load); pass counts use every call.
+    public init(results: [(passed: Bool, ms: Int)], dropFirst: Int = 0) {
+        total = results.count
+        passed = results.filter(\.passed).count
+        let sorted = results.dropFirst(min(dropFirst, max(results.count - 1, 0))).map(\.ms).sorted()
+        p50Ms = Self.nearestRank(sorted, 0.50)
+        p95Ms = Self.nearestRank(sorted, 0.95)
+    }
+
+    /// The `ceil(p * n)`-th smallest value; 0 when empty.
+    static func nearestRank(_ sorted: [Int], _ p: Double) -> Int {
+        guard !sorted.isEmpty else { return 0 }
+        return sorted[min(max(Int((p * Double(sorted.count)).rounded(.up)), 1), sorted.count) - 1]
+    }
+
+    public var line: String {
+        "pass=\(passed)/\(total) (\(total == 0 ? 0 : passed * 100 / total)%) p50=\(p50Ms)ms p95=\(p95Ms)ms"
+    }
+}

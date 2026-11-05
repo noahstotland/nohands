@@ -15,3 +15,17 @@ import Foundation
     #expect(cases.count >= 25)
     #expect(cases.allSatisfy { !$0.accept.isEmpty && $0.accept.allSatisfy { !$0.isEmpty } })
 }
+
+@Test func evalSummaryLines() {
+    func line(_ r: [(Bool, Int)], drop: Int = 0) -> String {
+        EvalSummary(results: r.map { (passed: $0.0, ms: $0.1) }, dropFirst: drop).line
+    }
+    #expect(line([]) == "pass=0/0 (0%) p50=0ms p95=0ms")
+    #expect(line([(true, 100), (true, 300), (true, 200)]) == "pass=3/3 (100%) p50=200ms p95=300ms")
+    // even count: nearest rank takes the lower middle; failures and errors still count their time
+    #expect(line([(true, 10), (false, 40), (true, 20), (false, 30)]) == "pass=2/4 (50%) p50=20ms p95=40ms")
+    // dropFirst changes latency only
+    #expect(line([(true, 5000), (false, 100), (true, 200)], drop: 1) == "pass=2/3 (66%) p50=100ms p95=200ms")
+    // dropping can never empty the sample
+    #expect(line([(true, 70)], drop: 2) == "pass=1/1 (100%) p50=70ms p95=70ms")
+}
