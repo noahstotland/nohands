@@ -40,7 +40,7 @@ Quit NoHands
   | `.enabled` | Start at Login | on | yes |
   | `.notRegistered` | Start at Login | off | yes |
   | `.requiresApproval` | Start at Login: allow in Login Items | mixed (–) | yes, opens Login Items settings |
-  | `.notFound` | Start at Login: run the app from build/NoHands.app | off | no |
+  | `.notFound` (no app bundle) | Start at Login: run the app from build/NoHands.app | off | no |
 
 - `.requiresApproval` is what macOS returns when the user turned NoHands off under System Settings >
   General > Login Items, and can follow `register()`. Clicking the item then opens that pane
@@ -48,8 +48,10 @@ Quit NoHands
 - A `register()` / `unregister()` that throws: one `PipelineLog.warning` with the error, and the notice line
   shows `couldn't change Start at Login: allow NoHands in Login Items` (one line, names the next step). The
   menu then shows whatever `status` reports.
-- `.notFound` covers `swift run NoHands` (no app bundle); the item is disabled with the hint instead of
-  failing on click.
+- `.notFound` is shown only when the process is not inside an `.app` bundle (`swift run NoHands`); the item is
+  disabled with the hint instead of failing on click. Inside a bundle, macOS can report `.notFound` before the
+  first register, so the app treats it as `.notRegistered` and the item stays clickable (a failing `register()`
+  goes through the error path above).
 
 ### Open config.json
 
@@ -61,7 +63,7 @@ Quit NoHands
   3. Open it with `NSWorkspace.shared.open(url)` (the default app for `.json`). If no app claims `.json`,
      fall back to TextEdit.
   4. Show the notice `restart NoHands to apply config changes` for 4 s.
-- If creating the file fails (e.g. a read-only home), log a warning with the path (never contents) and show
+- If creating the file fails (e.g. a read-only home), log a warning with the path and error as private detail (never contents) and show
   `couldn't create config.json: check ~/.config/nohands`.
 
 ## Code layout
