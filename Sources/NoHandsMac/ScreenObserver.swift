@@ -48,9 +48,12 @@ public struct ScreenObserver: Sendable {
     /// `.agentDesktop` and no badge overlay, elements come from an agent-desktop snapshot of the frontmost app, or
     /// of the overlay surface (sheet, menu, alert, popover) the last action left open. When agent-desktop cannot
     /// read the window the native walk is used for this observation, but `observation.harness` stays the task's.
+    /// `fromHarness` says whether agent-desktop supplied the elements (the task loop's first observation uses it to
+    /// decide the task's harness).
     public func observe(mode: Mode, overlay: OverlayState, screens: [CGRect]? = nil, harnessKind: HarnessKind,
-                        readings: [String] = []) async -> (observation: ScreenObservation, labels: [Int: UIElementInfo]) {
+                        readings: [String] = []) async -> (observation: ScreenObservation, labels: [Int: UIElementInfo], fromHarness: Bool) {
         var result: (observation: ScreenObservation, labels: [Int: UIElementInfo])
+        var fromHarness = false
         if harnessKind == .agentDesktop, let harness, overlay.kindName != "labels" {
             let app = ax.frontmostAppName() ?? ""
             let surface = harness.takeOpenSurfaces().lazy.compactMap { Self.overlaySurfaces[$0] }.first
@@ -58,6 +61,7 @@ public struct ScreenObserver: Sendable {
                 result = Self.list(snap, app: app, windowTitle: ax.focusedWindowTitle() ?? snap.windowTitle ?? "",
                                    url: ax.webURL(), mode: mode, overlay: overlay, limit: maxElements)
                 result.observation.surface = surface?.rawValue
+                fromHarness = true
             } else {
                 result = observe(mode: mode, overlay: overlay, screens: screens)
             }
@@ -66,7 +70,7 @@ public struct ScreenObserver: Sendable {
         }
         result.observation.harness = harnessKind
         result.observation.readings = readings
-        return result
+        return (result.observation, result.labels, fromHarness)
     }
 
     /// Whether agent-desktop can read the frontmost app right now; decides a task's harness.
