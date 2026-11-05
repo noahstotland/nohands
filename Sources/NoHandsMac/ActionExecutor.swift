@@ -257,6 +257,7 @@ extension OverlayController: OverlayPresenting {
     /// other browser page searches from the address bar. Returns the failure for an app with nothing to search.
     private func search(_ query: String) throws -> String? {
         if let box = ax.searchFieldFrame() {
+            PipelineLog.info("search: page or app search box")
             try input.click(at: CGPoint(x: box.midX, y: box.midY), button: .left, count: 1)
             try input.press(KeyChord(.a, [.command]))
             try input.type(query)
@@ -265,12 +266,16 @@ extension OverlayController: OverlayPresenting {
         }
         let pageURL = ax.webURL()
         if let host = pageURL.flatMap({ URL(string: $0)?.host }), let results = SiteSearch.url(host: host, query: query) {
+            PipelineLog.info("search: results page for \(host)")
             try addressBar(results.absoluteString)
             return nil
         }
         guard pageURL != nil || ax.frontmostIsBrowser() else {
-            return "nothing to search in \(ax.frontmostAppName() ?? "the frontmost app")"
+            let app = ax.frontmostAppName() ?? "the frontmost app"
+            PipelineLog.info("search: nothing to search in \(app)")
+            return "nothing to search in \(app)"
         }
+        PipelineLog.info("search: address bar")
         try addressBar(query)
         return nil
     }
