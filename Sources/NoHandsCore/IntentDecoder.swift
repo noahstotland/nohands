@@ -130,13 +130,102 @@ public enum IntentDecoder {
         case "move_window":
             return (o["placement"] as? String).flatMap(WindowPlacement.init(rawValue:)).map(Action.moveWindow)
         case "wait":
+            if o["wait_for"] != nil { return waitFor(o) }
             switch optInt(o, "ms") {
             case .absent, .invalid: return .wait(ms: 1000)
             case .value(let ms): return .wait(ms: clamp(ms, 100...5000))
             }
         case "ignore": return .ignore
+
+        // Harness kinds.
+        case "set_value":
+            guard let t = elementTarget(o), let v = o["value"] as? String else { return nil }
+            return v.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? .clearField(t) : .setValue(t, v)
+        case "type_into":
+            guard let t = elementTarget(o), let text = nonBlank(o["text"]) else { return nil }
+            return .typeInto(t, text)
+        case "clear": return elementTarget(o).map(Action.clearField)
+        case "select":
+            guard let t = elementTarget(o), let option = nonBlank(o["option"]) else { return nil }
+            return .selectOption(t, option)
+        case "check": return elementTarget(o).map { .setChecked($0, true) }
+        case "uncheck": return elementTarget(o).map { .setChecked($0, false) }
+        case "toggle": return elementTarget(o).map { .setChecked($0, nil) }
+        case "expand": return elementTarget(o).map { .setExpanded($0, true) }
+        case "collapse": return elementTarget(o).map { .setExpanded($0, false) }
+        case "focus": return elementTarget(o).map(Action.focusElement)
+        case "scroll_to": return elementTarget(o).map(Action.scrollTo)
+        case "scroll_element":
+            guard let t = elementTarget(o), let d = (o["direction"] as? String).flatMap(Direction.init(rawValue:)) else { return nil }
+            switch optInt(o, "amount") {
+            case .absent: return .scrollIn(t, d, amount: 3)
+            case .invalid: return nil
+            case .value(let a): return .scrollIn(t, d, amount: clamp(a, 1...100))
+            }
+        case "drag":
+            guard let from = dragSource(o), let to = moveTarget(o) else { return nil }
+            return .drag(from: from, to: to)
+        case "click_in":
+            guard let s = (o["surface"] as? String).flatMap(DesktopSurface.init(rawValue:)),
+                  let name = nonBlank(o["target_name"]) else { return nil }
+            return .clickIn(s, name: name)
+        case "menu_item": return nonBlank(o["target_name"]).map(Action.menuItem)
+        case "close_app": return nonBlank(o["app_name"]).map(Action.closeApp)
+        case "window":
+            guard let op = (o["window_action"] as? String).flatMap(DesktopWindowOp.init(rawValue:)) else { return nil }
+            return .windowAction(op, app: nonBlank(o["app_name"]), title: nonBlank(o["title"]))
+        case "clipboard_set": return (o["value"] as? String).map(Action.clipboardSet)
+        case "read_clipboard": return .readClipboard
+        case "read_value": return elementTarget(o).map(Action.readValue)
+        case "read_notifications": return .readNotifications
+        case "dismiss_notifications": return .dismissNotifications(app: nonBlank(o["app_name"]))
         default: return nil
         }
+    }
+
+    private static func elementTarget(_ o: [String: Any]) -> ElementTarget? {
+        switch o["target_kind"] as? String {
+        case "label": return number(o["target_number"]).map(ElementTarget.label)
+        case "element": return nonBlank(o["target_name"]).map(ElementTarget.named)
+        default:
+            // Without a target_kind, a bare number or name still identifies the element.
+            if let n = number(o["target_number"]) { return .label(n) }
+            if let name = nonBlank(o["target_name"]) { return .named(name) }
+            return nil
+        }
+    }
+
+    /// `drag`'s source: `from_number`, `from_name`, or `from_x`/`from_y`.
+    private static func dragSource(_ o: [String: Any]) -> MoveTarget? {
+        if let n = number(o["from_number"]) { return .label(n) }
+        if let name = nonBlank(o["from_name"]) { return .element(named: name) }
+        if let x = double(o["from_x"]), let y = double(o["from_y"]),
+           (-20000...20000).contains(x), (-20000...20000).contains(y) { return .point(CGPoint(x: x, y: y)) }
+        return nil
+    }
+
+    private static func waitFor(_ o: [String: Any]) -> Action? {
+        guard let kind = (o["wait_for"] as? String).flatMap(DesktopWaitKind.init(rawValue:)) else { return nil }
+        var timeout = 5000
+        switch optInt(o, "timeout_ms") {
+        case .absent: break
+        case .invalid: return nil
+        case .value(let t): timeout = clamp(t, 500...30000)
+        }
+        let condition: WaitCondition
+        switch kind {
+        case .text: guard let v = nonBlank(o["value"]) else { return nil }; condition = .text(v)
+        case .window: guard let v = nonBlank(o["value"]) else { return nil }; condition = .window(v)
+        case .event:
+            guard let e = (o["event"] as? String).flatMap(DesktopEvent.init(rawValue:)) else { return nil }
+            condition = .event(e)
+        case .menu: condition = .menu
+        case .menuClosed: condition = .menuClosed
+        case .element:
+            guard let t = elementTarget(o) else { return nil }
+            condition = .element(t, predicate: nonBlank(o["value"]) ?? nonBlank(o["predicate"]) ?? "exists")
+        }
+        return .waitFor(condition, timeoutMs: timeout)
     }
 
     private static func point(_ o: [String: Any]) -> CGPoint? {

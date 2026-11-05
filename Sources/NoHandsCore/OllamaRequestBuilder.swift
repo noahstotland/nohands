@@ -22,7 +22,8 @@ public struct OllamaRequestBuilder: Sendable {
             ("format", IntentSchema.orderedSchema),
             ("options", .object([("temperature", .int(0)), ("num_ctx", .int(Self.numCtx))])),
             ("keep_alive", .string(Self.ollamaKeepAlive)),
-            ("messages", .array(Self.messages(ending: ClaudeRequestBuilder.userMessage(request: request)))),
+            ("messages", .array(Self.messages(ending: ClaudeRequestBuilder.userMessage(request: request),
+                                              harness: request.observation.harness))),
         ])
         return obj.data
     }
@@ -30,22 +31,24 @@ public struct OllamaRequestBuilder: Sendable {
     /// A one-token request whose messages match a real request's up to the final user turn. Running it loads the
     /// model *and* leaves the system prompt and examples (~2,200 tokens) in Ollama's prompt cache, so the first
     /// spoken command does not pay that prefill (3-20 s cold on an M1 Pro). Ollama's bare "load" request does not.
-    public func warmBody() -> Data {
-        let placeholder = StepRequest(oneShot: "warm up", context: IntentContext(frontmostApp: "Finder", mode: .command, labeledElements: []))
+    /// `harness` must match the harness tasks will run with, or the cached prefix is useless.
+    public func warmBody(harness: HarnessKind = .native) -> Data {
+        var placeholder = StepRequest(oneShot: "warm up", context: IntentContext(frontmostApp: "Finder", mode: .command, labeledElements: []))
+        placeholder.observation.harness = harness
         let obj: OrderedJSON = .object([
             ("model", .string(model)),
             ("stream", .bool(false)),
             ("options", .object([("temperature", .int(0)), ("num_ctx", .int(Self.numCtx)), ("num_predict", .int(1))])),
             ("keep_alive", .string(Self.ollamaKeepAlive)),
-            ("messages", .array(Self.messages(ending: ClaudeRequestBuilder.userMessage(request: placeholder)))),
+            ("messages", .array(Self.messages(ending: ClaudeRequestBuilder.userMessage(request: placeholder), harness: harness))),
         ])
         return obj.data
     }
 
     /// System prompt, the few-shot examples, then `user` as the final turn.
-    private static func messages(ending user: String) -> [OrderedJSON] {
-        var messages: [OrderedJSON] = [message("system", IntentSchema.systemPrompt)]
-        for t in IntentExamples.turns {
+    private static func messages(ending user: String, harness: HarnessKind) -> [OrderedJSON] {
+        var messages: [OrderedJSON] = [message("system", IntentSchema.systemPrompt(for: harness))]
+        for t in IntentExamples.turns(for: harness) {
             messages.append(message("user", t.user))
             messages.append(message("assistant", t.assistant))
         }
@@ -112,4 +115,28 @@ public enum IntentExamples {
         (Self.msg("Xcode", elements: [(1, "Run"), (2, "Stop"), (3, "Navigator"), (4, "Inspectors")], request: "go to netflix"),
          #"{"intent":"Open netflix.com in the default browser; the current app does not matter.","status":"done","actions":[{"kind":"open_url","url":"https://www.netflix.com"}]}"#),
     ]
+
+    /// Examples that exist only for the agent-desktop harness: the message carries `Harness: agent-desktop` and the
+    /// answer uses harness kinds. Sent after `turns`, with the harness prompt.
+    public static let harnessTurns: [(user: String, assistant: String)] = [
+        (harnessMsg("TextEdit", windowTitle: "Untitled", elements: [
+            ObservedElement(number: 1, role: "textarea", title: "", value: "Meeting notes")], request: "save this as a new file"),
+         #"{"intent":"Run the Save As… command from the File menu.","status":"continue","actions":[{"kind":"menu_item","target_name":"File > Save As…"},{"kind":"wait","wait_for":"window","value":"Save","app_name":"TextEdit","timeout_ms":5000}]}"#),
+        (harnessMsg("Safari", windowTitle: "Start Page", elements: [
+            ObservedElement(number: 1, role: "button", title: "Back", states: ["disabled"]),
+            ObservedElement(number: 2, role: "textfield", title: "Address and Search", value: ""),
+            ObservedElement(number: 3, role: "button", title: "Search")], request: "search for cats"),
+         #"{"intent":"Put \"cats\" in the search field and run the search.","status":"done","actions":[{"kind":"set_value","target_kind":"label","target_number":2,"value":"cats"},{"kind":"click","target_kind":"label","target_number":3}]}"#),
+    ]
+
+    /// The few-shot turns for a harness: the native set, plus the harness turns when agent-desktop observes.
+    public static func turns(for harness: HarnessKind) -> [(user: String, assistant: String)] {
+        harness == .agentDesktop ? turns + harnessTurns : turns
+    }
+
+    private static func harnessMsg(_ app: String, windowTitle: String, elements: [ObservedElement], request: String) -> String {
+        var o = ScreenObservation(app: app, windowTitle: windowTitle, mode: .command, elements: elements)
+        o.harness = .agentDesktop
+        return ClaudeRequestBuilder.userMessage(request: StepRequest(goal: request, step: 1, maxSteps: 12, history: [], observation: o))
+    }
 }

@@ -17,7 +17,7 @@ public struct ClaudeRequestBuilder: Sendable {
             "model": model,
             "max_tokens": 1024,
             "fallbacks": "default",
-            "system": IntentSchema.systemPrompt,
+            "system": IntentSchema.systemPrompt(for: request.observation.harness),
             "output_config": [
                 "effort": effort,
                 "format": ["type": "json_schema", "schema": IntentSchema.actionsJSONSchema] as [String: Any],
