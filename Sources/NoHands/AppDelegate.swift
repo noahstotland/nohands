@@ -15,6 +15,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let accessibilityItem = NSMenuItem(title: "Grant Accessibility…", action: #selector(grantAccessibility), keyEquivalent: "")
     private let micItem = NSMenuItem(title: "Microphone denied — open Settings", action: #selector(openMicrophoneSettings), keyEquivalent: "")
     private let harnessItem = NSMenuItem(title: "Harness: checking…", action: nil, keyEquivalent: "")
+    private let loginItem = NSMenuItem(title: "Start at Login", action: #selector(loginItemClicked), keyEquivalent: "")
+    private let openConfigItem = NSMenuItem(title: "Open config.json…", action: #selector(openConfig), keyEquivalent: "")
     /// agent-desktop, when found and permitted (see `HarnessStatus`); re-probed when the menu opens.
     private var harnessStatus: HarnessStatus?
     private var harnessProbeInFlight = false
@@ -62,7 +64,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         configItem.isEnabled = false
         transcriptItem.isEnabled = false
         harnessItem.isEnabled = false
-        for item in [localModelItem, pauseItem, retryItem, accessibilityItem, micItem] { item.target = self }
+        for item in [localModelItem, pauseItem, retryItem, accessibilityItem, micItem, loginItem, openConfigItem] { item.target = self }
         let title = NSMutableAttributedString(string: "● ", attributes: [.foregroundColor: NSColor.systemRed])
         title.append(NSAttributedString(string: "Grant Accessibility…"))
         accessibilityItem.attributedTitle = title
@@ -70,7 +72,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         quit.target = self
 
         for item in [stateItem, configItem, NSMenuItem.separator(), transcriptItem, localModelItem, harnessItem, NSMenuItem.separator(),
-                     pauseItem, retryItem, accessibilityItem, micItem, NSMenuItem.separator(), quit] {
+                     pauseItem, retryItem, accessibilityItem, micItem, NSMenuItem.separator(), loginItem, openConfigItem,
+                     NSMenuItem.separator(), quit] {
             menu.addItem(item)
         }
         statusItem.menu = menu
@@ -96,9 +99,57 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                                                        ollamaInstalled: OllamaClient.installedAppURL() != nil)
             localModelItem.isEnabled = LocalModelMenu.actionable(localStatus)
         }
+        refreshLoginItem()
         pauseItem.title = userPaused ? "Resume Listening" : "Pause Listening"
         if let harnessStatus { harnessItem.title = harnessStatus.menuText(inUse: pipelineHarnessKind) }
         statusItem.button?.title = " " + MenuState.title(mode: mode, paused: state == .paused)
+    }
+
+    // MARK: - login item and config file
+
+    /// Re-reads the system's registration state; it is never cached, so it is right after a relaunch and after
+    /// the user removes the item in System Settings.
+    private func refreshLoginItem() {
+        let item = LoginItemMenu.item(for: LoginItem.state)
+        loginItem.title = item.title
+        loginItem.isEnabled = item.isEnabled
+        switch item.checkmark {
+        case .on: loginItem.state = .on
+        case .off: loginItem.state = .off
+        case .mixed: loginItem.state = .mixed
+        }
+    }
+
+    @objc private func loginItemClicked() {
+        do {
+            switch LoginItemMenu.item(for: LoginItem.state).action {
+            case .register: try LoginItem.register()
+            case .unregister: try LoginItem.unregister()
+            case .openSettings: LoginItem.openSettings()
+            case .none: break
+            }
+        } catch {
+            PipelineLog.warning("couldn't change Start at Login", detail: "\(error)")
+            overlay.showHUD("couldn't change Start at Login: allow NoHands in Login Items", duration: .seconds(4))
+        }
+        refreshLoginItem()
+    }
+
+    @objc private func openConfig() {
+        let url = ConfigFile.defaultURL
+        do { _ = try ConfigFile.ensureExists(at: url) } catch {
+            PipelineLog.warning("couldn't create config.json", detail: "\(url.path): \(error)")
+            overlay.showHUD("couldn't create config.json: check ~/.config/nohands", duration: .seconds(4))
+            return
+        }
+        let workspace = NSWorkspace.shared
+        if workspace.urlForApplication(toOpen: url) == nil,
+           let textEdit = workspace.urlForApplication(withBundleIdentifier: "com.apple.TextEdit") {
+            workspace.open([url], withApplicationAt: textEdit, configuration: NSWorkspace.OpenConfiguration())
+        } else {
+            workspace.open(url)
+        }
+        overlay.showHUD("restart NoHands to apply config changes", duration: .seconds(4))
     }
 
     // MARK: - desktop harness
@@ -117,6 +168,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     func menuWillOpen(_ menu: NSMenu) {
+        refreshLoginItem()
         guard !harnessProbeInFlight else { return }
         Task { _ = await probeHarness() }
     }
@@ -265,7 +317,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     // MARK: - startup
 
     private func loadConfig() {
-        let url = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".config/nohands/config.json")
+        let url = ConfigFile.defaultURL
         let env = ProcessInfo.processInfo.environment
         let data = try? Data(contentsOf: url)   // missing file -> defaults
         do {
