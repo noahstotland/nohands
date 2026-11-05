@@ -1,6 +1,7 @@
 # Dictation "scratch that" and "delete word" — Design
 
-**Date:** 2026-11-04  **Ticket:** [NH-9](https://github.com/noahstotland/nohands/issues/9)  **Status:** spec, awaiting approval
+**Date:** 2026-11-04  **Ticket:** [NH-9](https://github.com/noahstotland/nohands/issues/9)  **Status:** Shipped
+**Shipped:** in PR #21, with differences: [as-built](../as-built/2026-11-04-dictation-scratch.md)
 
 ## Intent
 
