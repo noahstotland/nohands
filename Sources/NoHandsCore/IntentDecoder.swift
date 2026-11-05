@@ -179,6 +179,9 @@ public enum IntentDecoder {
         case "read_clipboard": return .readClipboard
         case "read_value": return elementTarget(o).map(Action.readValue)
         case "read_notifications": return .readNotifications
+        case "close_tab": return number(o["target_number"]).map(Action.closeTab)
+        case "close_window": return number(o["target_number"]).map(Action.closeWindow)
+        case "select_tab": return number(o["target_number"]).map(Action.selectTab)
         case "dismiss_notifications": return .dismissNotifications(app: nonBlank(o["app_name"]))
         default: return nil
         }

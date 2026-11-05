@@ -13,6 +13,11 @@ public enum ShortcutGuard {
     /// `close_app` quits: it needs a quit word or a close word.
     private static let closeAppWords: Set<String> = allowWords[.w]!.union(allowWords[.q]!)
 
+    /// Whether the goal has a close word (the list command-w uses); `TabGuard` closes tabs on the same words.
+    static func allowsClose(goal: String) -> Bool {
+        !allowWords[.w]!.isDisjoint(with: Set(CommandGrammar.normalize(goal)))
+    }
+
     /// A failure message when `actions` contain a guarded chord (or a `close_app`) the goal does not ask for;
     /// nil when allowed.
     public static func blocked(_ actions: [Action], goal: String) -> String? {

@@ -48,6 +48,9 @@ public enum ActionSummary {
         case .readNotifications: "readNotifications"
         case .dismissNotifications: "dismissNotifications"
         case .waitFor(let c, _): "waitFor(\(Self.waitKind(c)))"
+        case .closeTab(let n): "closeTab(\(n))"
+        case .closeWindow(let n): "closeWindow(\(n))"
+        case .selectTab(let n): "selectTab(\(n))"
         }
     }
 
