@@ -308,7 +308,7 @@ private let reload = UIElementInfo(id: 1, frame: CGRect(x: 100, y: 100, width: 8
     #expect(await x.execute([.search("cats")]) == nil)
     #expect(i.calls == ["press", "type:cats", "press"])
 
-    // Text a browser would run or open instead of search for is refused in the address bar.
+    // Text a browser would run or open instead of search for is refused on every search route.
     i.calls = []
     #expect(await x.execute([.search("javascript:alert(1)")]) == "can't search for that")
     #expect(i.calls.isEmpty)

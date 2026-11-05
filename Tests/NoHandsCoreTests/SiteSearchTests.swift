@@ -59,6 +59,8 @@ import CoreGraphics
         ("data: text/html,x", nil),
         ("file:///etc/hosts", nil),
         ("chrome://settings", nil),
+        ("javascript:\u{1885}=1,alert(1)", nil),              // a combining mark after the colon must not hide it
+        ("foo:\u{0301}bar", nil),
         ("foo:bar", nil),                                      // any non-http scheme glued to its payload
         ("https://example.org", "https://example.org"),
         ("note: buy milk", "note: buy milk"),                  // a colon followed by a space is plain words

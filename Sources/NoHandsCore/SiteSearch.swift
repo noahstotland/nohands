@@ -62,9 +62,13 @@ public enum SiteSearch {
         }
         let q = String(String.UnicodeScalarView(kept)).split(whereSeparator: \.isWhitespace).joined(separator: " ")
         guard !q.isEmpty else { return nil }
-        if let m = q.range(of: "^[A-Za-z][A-Za-z0-9+.-]*:", options: .regularExpression) {
-            let scheme = q[m].dropLast().lowercased()
-            let glued = q[m.upperBound...].first.map { !$0.isWhitespace } ?? false
+        // Scalars, not Characters: a combining mark after the colon would otherwise fuse with it and hide the scheme.
+        let scalars = Array(q.unicodeScalars)
+        func isAlpha(_ c: Unicode.Scalar) -> Bool { ("a"..."z").contains(c) || ("A"..."Z").contains(c) }
+        func isSchemeChar(_ c: Unicode.Scalar) -> Bool { isAlpha(c) || ("0"..."9").contains(c) || "+.-".unicodeScalars.contains(c) }
+        if let first = scalars.first, isAlpha(first), let colon = scalars.firstIndex(where: { !isSchemeChar($0) }), scalars[colon] == ":" {
+            let scheme = String(String.UnicodeScalarView(scalars[..<colon])).lowercased()
+            let glued = scalars.indices.contains(colon + 1) && !scalars[colon + 1].properties.isWhitespace
             if refusedSchemes.contains(scheme) || (glued && scheme != "http" && scheme != "https") { return nil }
         }
         return q
