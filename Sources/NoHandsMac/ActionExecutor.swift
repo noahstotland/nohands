@@ -188,6 +188,10 @@ extension OverlayController: OverlayPresenting {
                 try? await Task.sleep(for: .milliseconds(ms))
             case .ignore:
                 break
+            case .setValue, .typeInto, .clearField, .selectOption, .setChecked, .setExpanded, .focusElement, .scrollTo,
+                 .scrollIn, .drag, .clickIn, .menuItem, .closeApp, .windowAction, .clipboardSet, .readClipboard,
+                 .readValue, .readNotifications, .dismissNotifications, .waitFor:
+                return "needs agent-desktop"   // routed through the desktop harness (next task)
             }
             return nil
         } catch {

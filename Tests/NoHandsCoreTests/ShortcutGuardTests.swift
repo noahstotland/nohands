@@ -29,3 +29,12 @@ import Testing
     #expect(ShortcutGuard.blocked(cmdW, goal: "quit Spotify") == "blocked: command-w not allowed for this request")
     #expect(ShortcutGuard.blocked(cmdQ, goal: "exit the app") == nil)
 }
+
+@Test func closeAppBlockedUnlessGoalAsksToQuitOrClose() {
+    #expect(ShortcutGuard.blocked([.closeApp("Slack")], goal: "open slack") == "blocked: close_app not allowed for this request")
+    #expect(ShortcutGuard.blocked([.closeApp("Slack")], goal: "quit slack") == nil)
+    #expect(ShortcutGuard.blocked([.closeApp("Slack")], goal: "close slack") == nil)
+    #expect(ShortcutGuard.blocked([.closeApp("Slack")], goal: "shut down slack") == nil)
+    #expect(ShortcutGuard.blocked([.closeApp("Slack")], goal: "the closet app") != nil)
+    #expect(ShortcutGuard.blocked([.windowAction(.minimize, app: "Slack", title: nil)], goal: "hide it") == nil)
+}
