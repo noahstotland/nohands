@@ -2,6 +2,9 @@ import Foundation
 
 public struct OllamaRequestBuilder: Sendable {
     public static let ollamaKeepAlive = "30m"
+    /// Ollama's default context is 4096 tokens; a 120-element observation plus history is already ~4k, and an
+    /// overflow silently drops the system prompt. The model (qwen2.5) is trained to 32k.
+    public static let numCtx = 8192
 
     public let model: String
     public init(model: String) { self.model = model }
@@ -13,21 +16,41 @@ public struct OllamaRequestBuilder: Sendable {
     }
 
     public func body(request: StepRequest) throws -> Data {
-        var messages: [OrderedJSON] = [Self.message("system", IntentSchema.systemPrompt)]
-        for t in IntentExamples.turns {
-            messages.append(Self.message("user", t.user))
-            messages.append(Self.message("assistant", t.assistant))
-        }
-        messages.append(Self.message("user", ClaudeRequestBuilder.userMessage(request: request)))
         let obj: OrderedJSON = .object([
             ("model", .string(model)),
             ("stream", .bool(false)),
             ("format", IntentSchema.orderedSchema),
-            ("options", .object([("temperature", .int(0))])),
+            ("options", .object([("temperature", .int(0)), ("num_ctx", .int(Self.numCtx))])),
             ("keep_alive", .string(Self.ollamaKeepAlive)),
-            ("messages", .array(messages)),
+            ("messages", .array(Self.messages(ending: ClaudeRequestBuilder.userMessage(request: request)))),
         ])
         return obj.data
+    }
+
+    /// A one-token request whose messages match a real request's up to the final user turn. Running it loads the
+    /// model *and* leaves the system prompt and examples (~2,200 tokens) in Ollama's prompt cache, so the first
+    /// spoken command does not pay that prefill (3-20 s cold on an M1 Pro). Ollama's bare "load" request does not.
+    public func warmBody() -> Data {
+        let placeholder = StepRequest(oneShot: "warm up", context: IntentContext(frontmostApp: "Finder", mode: .command, labeledElements: []))
+        let obj: OrderedJSON = .object([
+            ("model", .string(model)),
+            ("stream", .bool(false)),
+            ("options", .object([("temperature", .int(0)), ("num_ctx", .int(Self.numCtx)), ("num_predict", .int(1))])),
+            ("keep_alive", .string(Self.ollamaKeepAlive)),
+            ("messages", .array(Self.messages(ending: ClaudeRequestBuilder.userMessage(request: placeholder)))),
+        ])
+        return obj.data
+    }
+
+    /// System prompt, the few-shot examples, then `user` as the final turn.
+    private static func messages(ending user: String) -> [OrderedJSON] {
+        var messages: [OrderedJSON] = [message("system", IntentSchema.systemPrompt)]
+        for t in IntentExamples.turns {
+            messages.append(message("user", t.user))
+            messages.append(message("assistant", t.assistant))
+        }
+        messages.append(message("user", user))
+        return messages
     }
 
     private static func message(_ role: String, _ content: String) -> OrderedJSON {
@@ -48,7 +71,9 @@ public enum IntentExamples {
 
     public static let turns: [(user: String, assistant: String)] = [
         (Self.msg("Finder", request: "open chrome and go to youtube"),
-         #"{"intent":"Open Google Chrome and navigate to youtube.com.","status":"done","actions":[{"kind":"open_app","app_name":"Google Chrome"},{"kind":"press_key","key":"l","modifiers":["command"]},{"kind":"type_text","text":"youtube.com"},{"kind":"press_key","key":"return"}]}"#),
+         #"{"intent":"Open youtube.com in Google Chrome.","status":"done","actions":[{"kind":"open_url","url":"https://www.youtube.com","app_name":"Google Chrome"}]}"#),
+        (Self.msg("Finder", request: "open youtube"),
+         #"{"intent":"Open youtube.com in the default browser.","status":"done","actions":[{"kind":"open_url","url":"https://www.youtube.com"}]}"#),
         (Self.msg("Safari", request: "minimize google chrome"),
          #"{"intent":"Minimize the Google Chrome window.","status":"done","actions":[{"kind":"open_app","app_name":"Google Chrome"},{"kind":"press_key","key":"m","modifiers":["command"]}]}"#),
         (Self.msg("Safari", elements: [(1, "Back"), (2, "Forward"), (3, "Reload")], overlay: "labels", request: "click the back button"),
@@ -59,19 +84,21 @@ public enum IntentExamples {
          #"{"intent":"Type the text \"hello there\" and then press Return.","status":"done","actions":[{"kind":"type_text","text":"hello there"},{"kind":"press_key","key":"return"}]}"#),
         (Self.msg("Safari", elements: [(1, "Back"), (4, "Sign in"), (9, "Search")], overlay: "labels", request: "um click the uh no scroll scroll up a bit"),
          #"{"intent":"The user started to say click but corrected themselves: scroll up a little.","status":"done","actions":[{"kind":"scroll","direction":"up","amount":3}]}"#),
+        (Self.msg("Google Chrome", elements: [(1, "Back"), (2, "Forward"), (3, "Reload")],
+                  request: "make the window half width and snap to the left side of the screen"),
+         #"{"intent":"Move the Google Chrome window to the left half of the screen.","status":"done","actions":[{"kind":"move_window","placement":"left_half"}]}"#),
         (Self.msg("Finder", request: "what's the weather"),
          #"{"intent":"The user asked a question about the weather; this is not a computer action.","status":"ignore","actions":[{"kind":"ignore"}]}"#),
         // Two-step task: step 1 navigates and continues; step 2 sees the channel page and finishes.
         (ClaudeRequestBuilder.userMessage(request: StepRequest(
             goal: veritasiumGoal, step: 1, maxSteps: 12, history: [],
             observation: ScreenObservation(app: "Finder", mode: .command))),
-         #"{"intent":"Go to the Veritasium channel's Videos tab, where the newest upload is first.","status":"continue","actions":[{"kind":"open_app","app_name":"Google Chrome"},{"kind":"press_key","key":"l","modifiers":["command"]},{"kind":"type_text","text":"youtube.com/@veritasium/videos"},{"kind":"press_key","key":"return"},{"kind":"wait","ms":1500}]}"#),
+         #"{"intent":"Go to the Veritasium channel's Videos tab, where the newest upload is first.","status":"continue","actions":[{"kind":"open_url","url":"https://www.youtube.com/@veritasium/videos"},{"kind":"wait","ms":1500}]}"#),
         (ClaudeRequestBuilder.userMessage(request: StepRequest(
             goal: veritasiumGoal, step: 2, maxSteps: 12,
             history: [StepRecord(
                 intent: "Go to the Veritasium channel's Videos tab, where the newest upload is first.",
-                actions: [.openApp("Google Chrome"), .pressKey(KeyChord(.l, [.command])), .typeText("youtube.com/@veritasium/videos"),
-                          .pressKey(KeyChord(.return, [])), .wait(ms: 1500)])],
+                actions: [.openURL(URL(string: "https://www.youtube.com/@veritasium/videos")!, app: nil), .wait(ms: 1500)])],
             observation: ScreenObservation(
                 app: "Google Chrome", windowTitle: "Veritasium - YouTube", url: "https://www.youtube.com/@veritasium/videos",
                 mode: .command,
@@ -80,5 +107,9 @@ public enum IntentExamples {
                            ObservedElement(number: 3, role: "AXLink", title: "Shorts"),
                            ObservedElement(number: 4, role: "AXLink", title: veritasiumTitle)]))),
          #"{"intent":"The Videos tab is showing; open the first (newest) video.","status":"done","actions":[{"kind":"click","target_kind":"label","target_number":4}]}"#),
+        // A site request from a non-browser app with a distracting element list: small models otherwise answer ignore.
+        // Kept last (closest to the live request): qwen2.5:7b ignores such requests when this sits earlier.
+        (Self.msg("Xcode", elements: [(1, "Run"), (2, "Stop"), (3, "Navigator"), (4, "Inspectors")], request: "go to netflix"),
+         #"{"intent":"Open netflix.com in the default browser; the current app does not matter.","status":"done","actions":[{"kind":"open_url","url":"https://www.netflix.com"}]}"#),
     ]
 }

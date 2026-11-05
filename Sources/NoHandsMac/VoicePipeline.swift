@@ -75,7 +75,7 @@ import NoHandsCore
                 observer: ScreenObserver? = nil, taskRunner: TaskRunner? = nil) {
         self.config = config
         self.transcriber = transcriber
-        let observer = observer ?? ScreenObserver(ax: ax, maxElements: config.maxObservedElements)
+        let observer = observer ?? ScreenObserver(ax: ax, maxElements: config.observedElementCap)
         self.runner = taskRunner ?? resolver.map {
             TaskRunner(config: config, resolver: $0, executor: executor, observer: observer, overlay: overlay)
         }

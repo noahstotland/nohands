@@ -227,7 +227,7 @@ var exitStatus: Int32 = 0
                 let executor = ActionExecutor(input: synth, ax: AXQuery(), overlay: overlay, config: config)
                 // Same observer as the app's task loop: a larger AX budget so web page content is reached.
                 let observer = ScreenObserver(ax: AXQuery(budget: .milliseconds(1000), maxNodes: 6000),
-                                              maxElements: config.maxObservedElements)
+                                              maxElements: config.observedElementCap)
                 let runner = TaskRunner(config: config, resolver: resolver, executor: executor,
                                         observer: observer, overlay: overlay)
                 let t0 = ContinuousClock.now

@@ -12,7 +12,7 @@ public actor OllamaIntentResolver: IntentResolving {
     public init(config: AppConfig, session: URLSession = .shared, deadline: Duration? = nil) {
         self.config = config
         self.session = session
-        self.deadline = deadline ?? .milliseconds(config.llmDeadlineMs)
+        self.deadline = deadline ?? .milliseconds(config.localLlmDeadlineMs)
     }
 
     public func resolve(_ stepRequest: StepRequest) async throws -> IntentStep {

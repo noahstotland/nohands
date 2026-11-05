@@ -31,6 +31,10 @@ public struct AppConfig: Codable, Equatable, Sendable {
     public var settleMs: Int = 3000
     /// Task loop: maximum screen elements sent to the model.
     public var maxObservedElements: Int = 120
+    /// Local backend overrides. A 7B model on an M1 Pro prefills 140-670 tokens/s and decodes ~14 tokens/s, so a
+    /// step costs 5-20 s; `llmDeadlineMs` is tuned for Claude over the network. Each element adds ~14 prompt tokens.
+    public var localLlmDeadlineMs: Int = 30000
+    public var localMaxObservedElements: Int = 40
 
     public static let defaultOllamaURL = "http://127.0.0.1:11434"
     public static let efforts = ["low", "medium", "high", "xhigh", "max"]
@@ -42,6 +46,7 @@ public struct AppConfig: Codable, Equatable, Sendable {
         case gridColumns, gridRows, moveStepPx, scrollStepLines
         case intentBackend, localModel, ollamaURL
         case maxTaskSteps, llmDeadlineMs, settleMs, maxObservedElements
+        case localLlmDeadlineMs, localMaxObservedElements
     }
 
     public init(from decoder: Decoder) throws {
@@ -66,6 +71,8 @@ public struct AppConfig: Codable, Equatable, Sendable {
         d.llmDeadlineMs = try c.decodeIfPresent(Int.self, forKey: .llmDeadlineMs) ?? d.llmDeadlineMs
         d.settleMs = try c.decodeIfPresent(Int.self, forKey: .settleMs) ?? d.settleMs
         d.maxObservedElements = try c.decodeIfPresent(Int.self, forKey: .maxObservedElements) ?? d.maxObservedElements
+        d.localLlmDeadlineMs = try c.decodeIfPresent(Int.self, forKey: .localLlmDeadlineMs) ?? d.localLlmDeadlineMs
+        d.localMaxObservedElements = try c.decodeIfPresent(Int.self, forKey: .localMaxObservedElements) ?? d.localMaxObservedElements
         self = d
     }
 
@@ -87,6 +94,8 @@ public struct AppConfig: Codable, Equatable, Sendable {
         config.llmDeadlineMs = min(max(config.llmDeadlineMs, 2000), 60000)
         config.settleMs = min(max(config.settleMs, 0), 10000)
         config.maxObservedElements = min(max(config.maxObservedElements, 10), 300)
+        config.localLlmDeadlineMs = min(max(config.localLlmDeadlineMs, 2000), 120000)
+        config.localMaxObservedElements = min(max(config.localMaxObservedElements, 10), 300)
         if !AppConfig.efforts.contains(config.intentEffort) { config.intentEffort = AppConfig().intentEffort }
         if let key = environment["ANTHROPIC_API_KEY"], !key.isEmpty {
             config.anthropicAPIKey = key
@@ -110,6 +119,9 @@ public struct AppConfig: Codable, Equatable, Sendable {
         case .off: return .off
         }
     }
+
+    /// Element cap for the backend in use (each resolver reads its own deadline key).
+    public var observedElementCap: Int { effectiveBackend == .local ? localMaxObservedElements : maxObservedElements }
 
     /// The configured Ollama URL if it is plain `http` to a loopback host; otherwise the default.
     public var ollamaBaseURL: URL {

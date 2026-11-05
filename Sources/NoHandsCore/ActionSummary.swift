@@ -22,6 +22,8 @@ public enum ActionSummary {
         case .hideOverlay: "hideOverlay"
         case .setMode(let m): "setMode(\(m.rawValue))"
         case .openApp: "openApp"
+        case .openURL: "openURL"
+        case .moveWindow(let p): "moveWindow(\(p.rawValue))"
         case .wait: "wait"
         case .ignore: "ignore"
         }

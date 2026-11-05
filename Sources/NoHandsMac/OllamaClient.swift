@@ -53,13 +53,13 @@ public actor OllamaClient {
         throw PullError(message: "stream ended before success")
     }
 
-    /// Loads the model into memory and keeps it resident, without generating anything.
+    /// Loads the model, keeps it resident, and prefills the fixed prompt prefix into Ollama's cache (one token is
+    /// generated). Cold prefill of the prefix took 3-20 s on an M1 Pro under memory pressure; hence the long timeout.
     public func warm(model: String) async throws {
-        var req = URLRequest(url: baseURL.appendingPathComponent("api/chat"), timeoutInterval: 60)
+        var req = URLRequest(url: baseURL.appendingPathComponent("api/chat"), timeoutInterval: 120)
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        req.httpBody = try JSONSerialization.data(withJSONObject:
-            ["model": model, "messages": [Any](), "keep_alive": "30m"] as [String: Any])
+        req.httpBody = OllamaRequestBuilder(model: model).warmBody()
         _ = try await session.data(for: req, delegate: NoRedirectDelegate())
     }
 }

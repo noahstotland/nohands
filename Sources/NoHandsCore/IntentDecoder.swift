@@ -124,6 +124,11 @@ public enum IntentDecoder {
             return (o["mode"] as? String).flatMap(Mode.init(rawValue:)).map(Action.setMode)
         case "open_app":
             return nonBlank(o["app_name"]).map(Action.openApp)
+        case "open_url":
+            guard let url = nonBlank(o["url"]).flatMap(WebAddress.url(for:)) else { return nil }
+            return .openURL(url, app: nonBlank(o["app_name"]))
+        case "move_window":
+            return (o["placement"] as? String).flatMap(WindowPlacement.init(rawValue:)).map(Action.moveWindow)
         case "wait":
             switch optInt(o, "ms") {
             case .absent, .invalid: return .wait(ms: 1000)

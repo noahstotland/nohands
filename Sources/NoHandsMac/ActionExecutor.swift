@@ -9,23 +9,41 @@ public protocol ElementProviding: Sendable {
     func actionableElements(screens: [CGRect]) -> [UIElementInfo]
     func screenRectsCG() -> [CGRect]
     func activate(appNamed: String) -> Bool
+    /// Opens `url` in the named app, or in the default handler when nil. Returns the handling app's name
+    /// ("" if unknown) so the caller can wait for it; nil when the named app does not exist.
+    func open(url: URL, appNamed: String?) -> String?
     func frontmostAppName() -> String?
+    /// Whether the frontmost app has a focused window (a cold-launched browser is frontmost before it has one).
+    func frontmostHasWindow() -> Bool
     func focusedWindowTitle() -> String?
     func webURL() -> String?
     /// True once right after a walk first exposed the frontmost Chromium app's page tree (which appears a moment
     /// later): the caller should re-observe before trusting the element list. Reading it clears it.
     func didJustExpose() -> Bool
+    /// The frontmost app's focused window frame in CG (top-left origin) coordinates; nil when it has none.
+    func focusedWindowFrame() -> CGRect?
+    /// Moves and resizes the focused window to `frame` (CG coordinates). False when there is no window or the
+    /// app refused.
+    func setFocusedWindowFrame(_ frame: CGRect) -> Bool
+    /// Screen areas a window may occupy (minus menu bar and Dock), CG coordinates, same order as `screenRectsCG()`.
+    func visibleScreenRectsCG() -> [CGRect]
 }
 
 extension ElementProviding {
     public func focusedWindowTitle() -> String? { nil }
     public func webURL() -> String? { nil }
     public func didJustExpose() -> Bool { false }
+    public func open(url: URL, appNamed: String?) -> String? { nil }
+    public func frontmostHasWindow() -> Bool { true }
     public func actionableElements(screens: [CGRect]) -> [UIElementInfo] { actionableElements() }
+    public func focusedWindowFrame() -> CGRect? { nil }
+    public func setFocusedWindowFrame(_ frame: CGRect) -> Bool { false }
+    public func visibleScreenRectsCG() -> [CGRect] { screenRectsCG() }
 }
 
 extension AXQuery: ElementProviding {
     public func screenRectsCG() -> [CGRect] { AXQuery.screenRectsCG() }
+    public func visibleScreenRectsCG() -> [CGRect] { AXQuery.visibleScreenRectsCG() }
 }
 
 /// What the executor needs from the overlay (OverlayController conforms).
@@ -58,13 +76,16 @@ extension OverlayController: OverlayPresenting {
     private let config: AppConfig
     public var onModeChange: ((Mode) -> Void)?
     private let frontTimeout: Duration
+    /// How long an app that just came to the front may take to show a window (a cold launch on a loaded Mac).
+    private let windowTimeout: Duration
     private var pressed: Set<MouseButton> = []
     /// Label snapshot of the current LLM-derived batch; `.label(n)` resolves only against this.
     private var labelSnapshot: [Int: UIElementInfo]?
 
     public init(input: any InputSynthesizing, ax: any ElementProviding, overlay: any OverlayPresenting,
-                config: AppConfig, frontTimeout: Duration = .seconds(1.5)) {
+                config: AppConfig, frontTimeout: Duration = .seconds(1.5), windowTimeout: Duration = .seconds(6)) {
         self.frontTimeout = frontTimeout
+        self.windowTimeout = windowTimeout
         self.input = input
         self.ax = ax
         self.overlay = overlay
@@ -150,8 +171,19 @@ extension OverlayController: OverlayPresenting {
             case .openApp(let name):
                 guard ax.activate(appNamed: name) else { return "no app named \(name)" }
                 hideStaleOverlay()
-                let arrived = await waitForFront(name)
-                if !arrived && !isLast { return "app did not come to front" }
+                if let failure = await waitReady(name, moreActionsFollow: !isLast) { return failure }
+            case .openURL(let url, let app):
+                guard let handler = ax.open(url: url, appNamed: app) else {
+                    return app.map { "no app named \($0)" } ?? "no browser for \(url.host ?? "that address")"
+                }
+                hideStaleOverlay()
+                if !handler.isEmpty, let failure = await waitReady(handler, moreActionsFollow: !isLast) { return failure }
+            case .moveWindow(let placement):
+                guard let current = ax.focusedWindowFrame() else { return "no window to move" }
+                guard let screen = Self.screen(holding: current, among: ax.visibleScreenRectsCG()) else { return "no screen" }
+                let target = placement.frame(in: screen, current: current)
+                guard ax.setFocusedWindowFrame(target) else { return "couldn't move window" }
+                hideStaleOverlay()
             case .wait(let ms):
                 try? await Task.sleep(for: .milliseconds(ms))
             case .ignore:
@@ -164,6 +196,30 @@ extension OverlayController: OverlayPresenting {
     }
 
     private func hideStaleOverlay() { if overlay.state != .none { overlay.hide() } }
+
+    /// The screen a window belongs to: the one holding its centre, else the one it overlaps most, else the first.
+    nonisolated static func screen(holding window: CGRect, among screens: [CGRect]) -> CGRect? {
+        let centre = CGPoint(x: window.midX, y: window.midY)
+        if let s = screens.first(where: { $0.contains(centre) }) { return s }
+        let overlapping = screens.filter { $0.intersects(window) }
+        func area(_ r: CGRect) -> CGFloat { let i = r.intersection(window); return i.width * i.height }
+        if let s = overlapping.max(by: { area($0) < area($1) }) { return s }
+        return screens.first
+    }
+
+    /// Waits for `name` to come to the front and, when more actions follow (keystrokes that need a window), for
+    /// it to have a focused window. Returns the failure message; nil when ready or when nothing follows.
+    private func waitReady(_ name: String, moreActionsFollow: Bool) async -> String? {
+        let arrived = await waitForFront(name)
+        guard moreActionsFollow else { return nil }
+        guard arrived else { return "app did not come to front" }
+        let deadline = ContinuousClock.now.advanced(by: windowTimeout)
+        while !ax.frontmostHasWindow() {
+            if ContinuousClock.now >= deadline { return "no window in \(name)" }
+            try? await Task.sleep(for: .milliseconds(50))
+        }
+        return nil
+    }
 
     private func waitForFront(_ name: String) async -> Bool {
         let want = name.lowercased()

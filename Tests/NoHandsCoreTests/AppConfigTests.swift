@@ -67,3 +67,20 @@ import Foundation
     let ok = try AppConfig.load(from: Data(#"{"maxTaskSteps":5}"#.utf8), environment: [:])
     #expect(ok.maxTaskSteps == 5)
 }
+
+@Test func localBackendHasItsOwnDeadlineAndElementCap() throws {
+    let d = try AppConfig.load(from: nil, environment: [:])
+    #expect(d.localLlmDeadlineMs == 30000); #expect(d.localMaxObservedElements == 40)
+    let lo = try AppConfig.load(from: Data(#"{"localLlmDeadlineMs":1,"localMaxObservedElements":1}"#.utf8), environment: [:])
+    #expect(lo.localLlmDeadlineMs == 2000); #expect(lo.localMaxObservedElements == 10)
+    let hi = try AppConfig.load(from: Data(#"{"localLlmDeadlineMs":999999,"localMaxObservedElements":9999}"#.utf8), environment: [:])
+    #expect(hi.localLlmDeadlineMs == 120000); #expect(hi.localMaxObservedElements == 300)
+
+    // Without a key the backend is local: the local limits apply. With a key (Claude) the general ones do.
+    let local = try AppConfig.load(from: Data(#"{"llmDeadlineMs":5000,"maxObservedElements":200}"#.utf8), environment: [:])
+    #expect(local.effectiveBackend == .local)
+    #expect(local.observedElementCap == 40)
+    let claude = try AppConfig.load(from: Data(#"{"llmDeadlineMs":5000,"maxObservedElements":200}"#.utf8), environment: ["ANTHROPIC_API_KEY": "k"])
+    #expect(claude.effectiveBackend == .claude)
+    #expect(claude.observedElementCap == 200)
+}

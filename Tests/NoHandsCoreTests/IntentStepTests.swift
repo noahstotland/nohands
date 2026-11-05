@@ -129,3 +129,24 @@ import Foundation
     let legacy = ClaudeRequestBuilder.userMessage(transcript: goal, context: IntentContext(frontmostApp: "A", mode: .command, labeledElements: []))
     #expect(legacy.hasSuffix("Request: " + goal))
 }
+
+@Test func openURLDecodesAndNormalizes() throws {
+    let yt = URL(string: "https://www.youtube.com")!
+    #expect(try IntentDecoder.actions(fromPayloadText: #"{"actions":[{"kind":"open_url","url":"youtube"}]}"#) == [.openURL(yt, app: nil)])
+    #expect(try IntentDecoder.actions(fromPayloadText: #"{"actions":[{"kind":"open_url","url":"https://www.youtube.com","app_name":"Google Chrome"}]}"#)
+            == [.openURL(yt, app: "Google Chrome")])
+    #expect(try IntentDecoder.actions(fromPayloadText: #"{"actions":[{"kind":"open_url","url":"reddit.com/r/swift","app_name":" "}]}"#)
+            == [.openURL(URL(string: "https://reddit.com/r/swift")!, app: nil)])
+    // Non-web schemes and empty URLs are dropped, never executed.
+    #expect(try IntentDecoder.actions(fromPayloadText: #"{"actions":[{"kind":"open_url","url":"file:///etc"},{"kind":"open_url"}]}"#) == [])
+    #expect(IntentSchema.kinds.contains("open_url"))
+    #expect(IntentSchema.systemPrompt.contains("- open_url:"))
+    #expect(ActionSummary.kind(.openURL(yt, app: "Safari")) == "openURL")
+}
+
+@Test func evalTreatsEquivalentURLsAsMatching() {
+    let a: [Action] = [.openURL(URL(string: "https://www.youtube.com/")!, app: "chrome")]
+    let b: [Action] = [.openURL(URL(string: "https://youtube.com")!, app: "Google Chrome")]
+    #expect(IntentEval.matches(a, anyOf: [b]))
+    #expect(!IntentEval.matches(a, anyOf: [[.openURL(URL(string: "https://youtube.com")!, app: nil)]]))
+}
