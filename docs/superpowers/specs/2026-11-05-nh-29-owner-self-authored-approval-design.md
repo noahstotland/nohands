@@ -1,6 +1,7 @@
 # NH-29: Let the owner approve and merge PRs they authored themselves — Design
 
-**Date:** 2026-11-05  **Status:** Draft  **Ticket:** [NH-29](https://github.com/noahstotland/nohands/issues/29)
+**Date:** 2026-11-05  **Status:** Shipped  **Ticket:** [NH-29](https://github.com/noahstotland/nohands/issues/29)
+**Shipped:** in PR #PRNUM, as specified
 
 ## Goal
 
@@ -9,7 +10,7 @@ Make `approve N` end in a merge for a PR the owner wrote, in this repo, without 
 ## Why the scope shrank
 
 - Revisions 1 and 2 of this spec (commits `df32d03`, `ff099fd`) were written against collective-wisdom `82211a2`, the version in `docs/agents/installed-from.txt`. They added a commit-status approval record and a `script-only` merge-gate setting.
-- Upstream `origin/main` (`d3df944`) is 55 commits ahead. Commit `2e870c2` (CW-110, #111, "remove the per-agent GitHub users, thread approval is the merge proof") already removed both problems. Checked 2026-11-05 in the upstream tree:
+- Upstream `origin/main` (`d3df944`) is ahead by 41 commits that changed shipped files (the installer's count; the org repo's history was rewritten, so `82211a2` is not in it and the build fetches it from the local clone for the installer's drift check). Commit `2e870c2` (CW-110, #111, "remove the per-agent GitHub users, thread approval is the merge proof") already removed both problems. Checked 2026-11-05 in the upstream tree:
   - `scripts/cos_approve_pr.py` posts nothing. It verifies the user's `approve N` (`cos_user_check.py latest`), gh signed in as the Owner login, and that the PR is open, not a draft, based on `main` and still at the head in the state file, then exits 0. There is no review to refuse, so no 422.
   - `scripts/merge_pr.py` has no `read_protection` or `owner_approval`. It merges only if the head equals the relayed one, and checks mergeable state, CI, both PASS reviews, closeout and root-checkout state. So the "cannot read main's protection" stop is gone too.
   - `docs/agents/github-auth.md` § Merge gate says nothing in the team submits a GitHub review and the gate needs no branch protection, ruleset or CODEOWNERS file.
@@ -61,7 +62,7 @@ No new tests. The change is installed shipped files, whose upstream tests come w
 
 ## Risks and what changes after this ships
 
-- **Unreviewed upstream code.** The update pulls in about 55 upstream commits (`82211a2..d3df944`) that nobody here has read. The code and security review of the PR cover the diff, which is large (most shipped scripts, skills and docs). The reviewers read the changes to `cos_approve_pr.py`, `merge_pr.py`, `cos_user_check.py` and the approval wording on purpose.
+- **Unreviewed upstream code.** The update pulls in 41 upstream commits (the installer's count, 40 changed files) that nobody here has read. The code and security review of the PR cover the diff, which is large (most shipped scripts, skills and docs). The reviewers read the changes to `cos_approve_pr.py`, `merge_pr.py`, `cos_user_check.py` and the approval wording on purpose.
 - **It changes the Chief of Staff skill itself.** `.claude/skills/chief-of-staff/` and its scripts (`cos_*.py`) are replaced while a Chief of Staff thread is running on the old copy. Running threads read their skills when they load them. After the merge, the Chief of Staff and children started later run the new rules; running ones keep the old rules in context. The Chief of Staff should rotate its thread after the merge, so it reads the new skill.
 - **NH-29's own PR still goes through the old scripts.** Until it merges, root `main` has the old `cos_approve_pr.py` (posts a review, 422 on an owner-authored PR) and `merge_pr.py` (needs protection). So `approve 29` on this PR can't pass the old gate. The user merges this one PR by hand on GitHub, after reviewing it. From the next ticket on, `approve N` uses the new scripts. The Chief of Staff's merge block for NH-29 must say so.
 - **In-flight tickets.** Any open PR written against the old closeout or review rules (for example, the new `Proof` section) may need a small PR-body fix after this merges. The build lists open PRs at that time.
@@ -73,13 +74,13 @@ No new tests. The change is installed shipped files, whose upstream tests come w
 - Any upstream collective-wisdom PR, or tagging a release from here.
 - Creating GitHub accounts, upgrading the plan, or changing GitHub settings.
 - Changing the code review or security review rules beyond what the update brings.
-- Review of the 55 upstream commits one by one, outside the PR's own reviews.
+- Review of the 41 upstream commits one by one, outside the PR's own reviews.
 
 ## Calls I made
 
 - ⚠ **The update replaces the Chief of Staff skill and scripts that are running now.** The new copy takes effect for new threads. Rotate the Chief of Staff thread after the merge.
 - ⚠ **NH-29's own PR merges by hand.** The old gate on root `main` can't pass it (422, and no branch protection). You review it and merge it on GitHub once.
-- ⚠ **About 55 upstream commits arrive unreviewed except by this PR's own code and security review.** The reviewers get an explicit instruction to read the approval path (`cos_approve_pr.py`, `merge_pr.py`, `cos_user_check.py`).
+- ⚠ **41 upstream commits arrive unreviewed except by this PR's own code and security review.** The reviewers get an explicit instruction to read the approval path (`cos_approve_pr.py`, `merge_pr.py`, `cos_user_check.py`).
 - **No tag exists upstream today.** The build installs with `install.sh --update --to d3df944` from a clone and pins that commit. If a `v0.N` tag at or after `d3df944` exists by build time, it uses `agent-team-update.sh v0.N` instead, with the new repo URL for the first run.
 - I pin `d3df944`, not the newest `origin/main`, so the PR can be reviewed against a fixed target. Later upstream commits come in a later update.
 - `project.md` loses the four login rows; everything NoHands-specific stays. The build copies new template rows only where they are missing.
