@@ -60,3 +60,32 @@ import Testing
     #expect(!ModeMachine.isDictationEscape("stop"))
     #expect(!ModeMachine.isDictationEscape("please stop dictating now"))
 }
+
+@Test func dictationCommandPhrases() {
+    for t in ["Scratch that.", "delete word", "stop dictating", "command mode"] { #expect(ModeMachine.isDictationCommand(t), "\(t)") }
+    for t in ["I said scratch that", "delete word count", "scratch"] { #expect(!ModeMachine.isDictationCommand(t), "\(t)") }
+    var m = ModeMachine()   // command mode is unchanged
+    #expect(m.route("delete word") == .execute([.pressKey(KeyChord(.delete, [.option]))]))
+    #expect(m.route("scratch that") == .resolveWithLLM("scratch that"))
+}
+
+@Test func scratchThatDeletesExactlyWhatTheLastUtteranceTyped() {
+    let nothing = Routing.ignore(reason: "nothing to scratch")
+    let table: [([String], Int)] = [
+        (["hello"], 5),                                     // "Hello"
+        (["hello", "world period"], 7),                     // " world." leading space and punctuation
+        (["hello", "new paragraph"], 2),                    // "\n\n" counts as two
+    ]
+    for (spoken, n) in table {
+        var m = ModeMachine(mode: .dictation)
+        for s in spoken { _ = m.route(s) }
+        #expect(m.route("scratch that") == .execute(Array(repeating: .pressKey(KeyChord(.delete)), count: n)), "\(spoken)")
+        #expect(m.route("scratch that") == nothing, "\(spoken)")   // one level only
+    }
+    var m = ModeMachine(mode: .dictation)
+    #expect(m.route("scratch that") == nothing)
+    _ = m.route("hello period"); _ = m.route("world period"); _ = m.route("scratch that")
+    #expect(m.route("there") == .execute([.typeText(" There")]))   // context restored to "Hello."
+    _ = m.route("delete word")                                      // clears the record
+    #expect(m.route("scratch that") == nothing)
+}

@@ -115,6 +115,15 @@ private func make(_ sink: Sink, window: Int = 80, unfinished: Int = 200) -> Merg
     #expect(sink.out == ["stop dictating", "hello there", "command mode"])
 }
 
+@Test func scratchThatAfterPendingDictationFlushesTheFragmentFirst() async {
+    let sink = Sink()
+    let b = make(sink)
+    await b.set(mode: .dictation)
+    await b.transcript("hello there", trace: LatencyTrace())
+    await b.transcript("scratch that", trace: LatencyTrace())
+    #expect(sink.out == ["hello there", "scratch that"])             // not "hello there scratch that"
+}
+
 @Test func isCompleteCoversStopsAndDictationEscapes() {
     let g = CommandGrammar()
     #expect(VoicePipeline.isComplete("stop stop", mode: .command, grammar: g))
@@ -123,6 +132,9 @@ private func make(_ sink: Sink, window: Int = 80, unfinished: Int = 200) -> Merg
     #expect(!VoicePipeline.isComplete("go back", mode: .dictation, grammar: g))
     #expect(VoicePipeline.isComplete("Stop dictating.", mode: .dictation, grammar: g))
     #expect(VoicePipeline.isComplete("command mode", mode: .dictation, grammar: g))
+    #expect(VoicePipeline.isComplete("Scratch that.", mode: .dictation, grammar: g))
+    #expect(VoicePipeline.isComplete("delete word", mode: .dictation, grammar: g))
+    #expect(!VoicePipeline.isComplete("scratch that", mode: .command, grammar: g))
     #expect(!VoicePipeline.isComplete("hello there", mode: .dictation, grammar: g))
     #expect(!VoicePipeline.isComplete("make it bigger", mode: .command, grammar: g))
 }

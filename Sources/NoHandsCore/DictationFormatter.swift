@@ -99,8 +99,24 @@ public enum DictationFormatter {
 
 public struct DictationSession: Sendable {
     private var last = ""
+    // One-level record of the last insertion, so "scratch that" can take back exactly what was typed.
+    private var typedCount = 0
+    private var previousLast = ""
 
     public init() {}
+
+    /// Character count of the last insertion and restores the context from before it (nil when there is no
+    /// record). One level only: the record is cleared.
+    public mutating func scratch() -> Int? {
+        guard typedCount > 0 else { return nil }
+        let n = typedCount
+        last = previousLast
+        typedCount = 0
+        return n
+    }
+
+    /// Drops the record when the screen no longer matches it (e.g. after "delete word").
+    public mutating func forgetLast() { typedCount = 0 }
 
     /// Formats `transcript`, capitalizing only at a sentence start, and prefixes a space when the
     /// previous insertion left the cursor after text and the new text begins a word or phrase.
@@ -123,6 +139,8 @@ public struct DictationSession: Sendable {
            !first.isWhitespace, !".,;:!?)".contains(first) {
             result = " " + formatted
         }
+        previousLast = last
+        typedCount = result.count
         last = result
         return result
     }

@@ -30,6 +30,13 @@ public struct ModeMachine: Sendable {
         return phrase == "stop dictating" || phrase == "command mode"
     }
 
+    /// Whole-utterance dictation commands: the escape phrases plus "scratch that" and "delete word".
+    public static func isDictationCommand(_ transcript: String) -> Bool {
+        if isDictationEscape(transcript) { return true }
+        let phrase = CommandGrammar.normalize(transcript).joined(separator: " ")
+        return phrase == "scratch that" || phrase == "delete word"
+    }
+
     /// Applies mode transitions contained in the result and returns what the executor should do.
     public mutating func route(_ transcript: String) -> Routing {
         let tokens = CommandGrammar.normalize(transcript)
@@ -45,6 +52,14 @@ public struct ModeMachine: Sendable {
             if Self.isDictationEscape(phrase) {
                 mode = .command
                 return .execute([.setMode(.command)])
+            }
+            if phrase == "scratch that" {
+                guard let n = session.scratch() else { return .ignore(reason: "nothing to scratch") }
+                return .execute(Array(repeating: .pressKey(KeyChord(.delete)), count: n))
+            }
+            if phrase == "delete word" {
+                session.forgetLast()
+                return .execute([.pressKey(KeyChord(.delete, [.option]))])
             }
             let text = session.next(transcript)
             return text.isEmpty ? .ignore(reason: "empty") : .execute([.typeText(text)])
