@@ -15,7 +15,11 @@ public struct ObservedElement: Equatable, Sendable {
     public var number: Int
     public var role: String
     public var title: String
-    public init(number: Int, role: String, title: String) { self.number = number; self.role = role; self.title = title }
+    public var value: String?
+    public var states: [String]
+    public init(number: Int, role: String, title: String, value: String? = nil, states: [String] = []) {
+        self.number = number; self.role = role; self.title = title; self.value = value; self.states = states
+    }
 }
 
 public struct ScreenObservation: Equatable, Sendable {
