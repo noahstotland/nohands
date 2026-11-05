@@ -103,6 +103,88 @@ final class FakeElements: ElementProviding, @unchecked Sendable {
 }
 
 
+/// A `DesktopCommandRunning` that answers from scripted envelopes keyed by subcommand name (consumed in order; the
+/// last one repeats) and records every argv.
+final class ScriptedClient: DesktopCommandRunning, @unchecked Sendable {
+    private let lock = NSLock()
+    var responses: [String: [DesktopEnvelope]] = [:]
+    var calls: [[String]] = []
+    var environments: [[String: String]] = []
+
+    func run(_ argv: [String], deadline: Duration?, isObservation: Bool, environment: [String: String]) async -> DesktopEnvelope {
+        lock.withLock {
+            calls.append(argv)
+            environments.append(environment)
+            let name = argv.first { !$0.hasPrefix("-") } ?? ""
+            guard var list = responses[name], !list.isEmpty else {
+                return .processFailure(command: name, message: "unscripted \(name)", observation: isObservation)
+            }
+            let e = list.removeFirst()
+            if !list.isEmpty { responses[name] = list }
+            return e
+        }
+    }
+}
+
+func envelope(_ json: String) -> DesktopEnvelope { DesktopEnvelope.decode(Data(json.utf8))! }
+func okEnvelope(_ command: String, data: String = "{}") -> DesktopEnvelope {
+    envelope(#"{"version":"2.6","ok":true,"command":"\#(command)","data":\#(data)}"#)
+}
+func errorEnvelope(_ command: String, code: String, delivery: String = "not_delivered", details: String = "{}") -> DesktopEnvelope {
+    envelope(#"{"version":"2.6","ok":false,"command":"\#(command)","error":{"code":"\#(code)","message":"\#(code) happened","details":\#(details),"disposition":{"delivery":"\#(delivery)","retry":"\#(delivery == "not_delivered" ? "safe" : "unsafe")"}}}"#)
+}
+
+/// A scripted `DesktopHarness`: records calls as strings and answers from preset results.
+final class FakeHarness: DesktopHarness, @unchecked Sendable {
+    private let lock = NSLock()
+    let kind: HarnessKind = .agentDesktop
+    var calls: [String] = []
+    /// Snapshot results consumed in order (the last one repeats); nil means "no snapshot" (native fallback).
+    var snapshotResults: [DesktopSnapshot?] = [nil]
+    var findResult: DesktopFindMatch?
+    /// Act results consumed in order; the last one repeats.
+    var actResults: [HarnessActionResult] = [.delivered(verified: true)]
+    var readResult: String?
+    var windows: [DesktopWindowCandidate] = []
+    var surfacesToReport: [String] = []
+    var sessionID: String? = "sess-1"
+
+    func snapshot(app: String, surface: DesktopSurface?, timeoutMs: Int) async -> DesktopSnapshot? {
+        lock.withLock {
+            calls.append("snapshot:" + (surface?.rawValue ?? app))
+            let r = snapshotResults.first
+            if snapshotResults.count > 1 { snapshotResults.removeFirst() }
+            return r ?? nil
+        }
+    }
+    func find(app: String?, surface: DesktopSurface?, name: String) async -> DesktopFindMatch? {
+        lock.withLock { calls.append("find:\(surface?.rawValue ?? "window"):\(app ?? "-"):\(name)"); return findResult }
+    }
+    func act(_ command: DesktopCommand) async -> HarnessActionResult {
+        lock.withLock {
+            calls.append("act:" + command.argv(headed: false, session: nil).joined(separator: " "))
+            let r = actResults.first ?? .delivered(verified: true)
+            if actResults.count > 1 { actResults.removeFirst() }
+            return r
+        }
+    }
+    func read(_ command: DesktopCommand) async -> String? {
+        lock.withLock { calls.append("read:" + command.argv(headed: false, session: nil).joined(separator: " ")); return readResult }
+    }
+    func listWindows(app: String) async -> [DesktopWindowCandidate] {
+        lock.withLock { calls.append("windows:\(app)"); return windows }
+    }
+    func takeOpenSurfaces() -> [String] {
+        lock.withLock { defer { surfacesToReport = [] }; return surfacesToReport }
+    }
+    func startSession(name: String) async -> String? {
+        lock.withLock { calls.append("session:start"); return sessionID }
+    }
+    func endSession(_ id: String) async {
+        lock.withLock { calls.append("session:end:\(id)") }
+    }
+}
+
 /// A manually advanced clock for `TaskRunner(now:)`.
 final class FakeClock: @unchecked Sendable {
     private let lock = NSLock()

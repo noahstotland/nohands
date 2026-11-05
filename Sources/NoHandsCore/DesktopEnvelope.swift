@@ -44,14 +44,20 @@ public struct DesktopEnvelope: Sendable {
     public var dataJSON: Data?
     public var error: DesktopError?
 
-    public init(ok: Bool, command: String, data: [String: Any]?, error: DesktopError?) {
+    /// `data` is the envelope's `data` value: an object, or an array for list commands.
+    public init(ok: Bool, command: String, data: Any?, error: DesktopError?) {
         self.ok = ok; self.command = command; self.error = error
-        self.dataJSON = data.flatMap { try? JSONSerialization.data(withJSONObject: $0) }
+        self.dataJSON = data.flatMap { JSONSerialization.isValidJSONObject($0) ? try? JSONSerialization.data(withJSONObject: $0) : nil }
     }
 
-    /// The `data` object (JSON-serialization types), nil on error.
+    /// The `data` object (JSON-serialization types); nil on error or when `data` is an array.
     public var data: [String: Any]? {
         dataJSON.flatMap { (try? JSONSerialization.jsonObject(with: $0)) as? [String: Any] }
+    }
+
+    /// `data` when it is an array of objects (`list-windows`), else nil.
+    public var dataArray: [[String: Any]]? {
+        dataJSON.flatMap { (try? JSONSerialization.jsonObject(with: $0)) as? [[String: Any]] }
     }
 
     /// `data.disposition` on success.
@@ -73,7 +79,7 @@ public struct DesktopEnvelope: Sendable {
         guard let root = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
               let ok = root["ok"] as? Bool else { return nil }
         let command = root["command"] as? String ?? ""
-        if ok { return DesktopEnvelope(ok: true, command: command, data: root["data"] as? [String: Any], error: nil) }
+        if ok { return DesktopEnvelope(ok: true, command: command, data: root["data"], error: nil) }
         let e = root["error"] as? [String: Any] ?? [:]
         let details = e["details"] as? [String: Any]
         let candidates = (details?["candidates"] as? [[String: Any]] ?? []).compactMap { c -> DesktopWindowCandidate? in

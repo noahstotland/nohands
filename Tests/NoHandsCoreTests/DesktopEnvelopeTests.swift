@@ -17,6 +17,12 @@ import Foundation
     #expect(e.error?.detailsKind == "x" && e.surfaces.isEmpty && e.data == nil)
 }
 
+@Test func arrayDataIsKept() {
+    let json = #"{"version":"2.6","ok":true,"command":"list-windows","data":[{"id":"w-1"},{"id":"w-2"}]}"#
+    let e = DesktopEnvelope.decode(Data(json.utf8))!
+    #expect(e.ok && e.data == nil && e.dataArray?.compactMap { $0["id"] as? String } == ["w-1", "w-2"])
+}
+
 @Test func surfacesAcceptPlainStrings() {
     let json = #"{"version":"2.6","ok":true,"command":"click","data":{"surfaces":["menu","sheet"]}}"#
     #expect(DesktopEnvelope.decode(Data(json.utf8))?.surfaces == ["menu", "sheet"])

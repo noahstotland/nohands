@@ -48,7 +48,7 @@ public struct DesktopSnapshot: Equatable, Sendable {
     }
 
     /// Strings as they are; numbers and booleans as text; anything else (null, objects) nil.
-    static func value(_ v: Any?) -> String? {
+    public static func value(_ v: Any?) -> String? {
         switch v {
         case let s as String: return s
         case let n as NSNumber: return CFGetTypeID(n) == CFBooleanGetTypeID() ? (n.boolValue ? "true" : "false") : n.stringValue
