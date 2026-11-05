@@ -9,7 +9,7 @@ A menu-bar macOS app that lets the user operate the whole computer with their vo
 
 ## 2. Non-goals (this version)
 
-- Wake word. The app is always listening; "go to sleep" / "wake up" gate it.
+- Wake word. The app is always listening; "go to sleep" / "wake up" gate it (an optional transcript-matched attention word exists, NH-12).
 - Vision-model fallback (screenshot → click). The accessibility tree plus a numbered grid covers element targeting; a vision fallback is a follow-up plan.
 - LLM "polish" of dictated text (Wispr-Flow-style rewriting). Spoken punctuation and auto-capitalization are deterministic in this version; LLM polish is a follow-up.
 - Custom vocabulary boosting, multi-language ASR, Intel Macs, macOS < 14.
@@ -49,7 +49,7 @@ mic (AVAudioEngine with voice processing / echo cancellation unless `echoCancell
 
 | Mode | Entered by | Behavior |
 |---|---|---|
-| `command` (default) | launch, "command mode", "stop dictating", "wake up" | every utterance is a command |
+| `command` (default) | launch, "command mode", "stop dictating", "wake up" | every utterance is a command (with `attentionWord` set, only those that start with it) |
 | `dictation` | "start dictating", "dictation mode" | every utterance is typed, except "stop dictating" / "command mode", "scratch that" and "delete word" |
 | `sleep` | "go to sleep" | everything ignored except "wake up" |
 

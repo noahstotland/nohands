@@ -11,11 +11,13 @@ public enum Routing: Equatable, Sendable {
 public struct ModeMachine: Sendable {
     public private(set) var mode: Mode
     private let grammar: CommandGrammar
+    private let attention: AttentionGate
     private var session = DictationSession()
 
-    public init(grammar: CommandGrammar = CommandGrammar(), mode: Mode = .command) {
+    public init(grammar: CommandGrammar = CommandGrammar(), mode: Mode = .command, attention: AttentionGate = .off) {
         self.grammar = grammar
         self.mode = mode
+        self.attention = attention
     }
 
     /// Forces the mode (e.g. an LLM-produced `.setMode`). Idempotent: re-applying the current mode changes
@@ -26,16 +28,24 @@ public struct ModeMachine: Sendable {
         if newMode == .dictation { session = DictationSession() }
     }
 
+    /// The normalized phrase of a transcript; with the gate on, the phrase after the attention word if it is there
+    /// (so "computer, stop dictating" counts as "stop dictating"). Mode words work with or without the word.
+    private static func phrase(_ transcript: String, attention: AttentionGate) -> String {
+        var text = transcript
+        if case .addressed(let rest) = attention.check(transcript) { text = rest }
+        return CommandGrammar.normalize(text).joined(separator: " ")
+    }
+
     /// The phrases that leave dictation mode ("stop dictating", "command mode").
-    public static func isDictationEscape(_ transcript: String) -> Bool {
-        let phrase = CommandGrammar.normalize(transcript).joined(separator: " ")
+    public static func isDictationEscape(_ transcript: String, attention: AttentionGate = .off) -> Bool {
+        let phrase = phrase(transcript, attention: attention)
         return phrase == "stop dictating" || phrase == "command mode"
     }
 
     /// Whole-utterance dictation commands: the escape phrases plus "scratch that" and "delete word".
-    public static func isDictationCommand(_ transcript: String) -> Bool {
-        if isDictationEscape(transcript) { return true }
-        let phrase = CommandGrammar.normalize(transcript).joined(separator: " ")
+    public static func isDictationCommand(_ transcript: String, attention: AttentionGate = .off) -> Bool {
+        if isDictationEscape(transcript, attention: attention) { return true }
+        let phrase = phrase(transcript, attention: attention)
         return phrase == "scratch that" || phrase == "delete word"
     }
 
@@ -47,7 +57,8 @@ public struct ModeMachine: Sendable {
     public mutating func route(_ transcript: String) -> Routing {
         let tokens = CommandGrammar.normalize(transcript)
         guard !tokens.isEmpty else { return .ignore(reason: "empty") }
-        let phrase = tokens.joined(separator: " ")
+        // Only sleep and dictation read it; command mode checks the gate itself.
+        var phrase: String { Self.phrase(transcript, attention: attention) }
 
         switch mode {
         case .sleep:
@@ -55,7 +66,7 @@ public struct ModeMachine: Sendable {
             mode = .command
             return .execute([.setMode(.command)])
         case .dictation:
-            if Self.isDictationEscape(phrase) {
+            if Self.isDictationEscape(transcript, attention: attention) {
                 mode = .command
                 return .execute([.setMode(.command)])
             }
@@ -70,15 +81,29 @@ public struct ModeMachine: Sendable {
             let text = session.next(transcript)
             return text.isEmpty ? .ignore(reason: "empty") : .execute([.typeText(text)])
         case .command:
-            guard let actions = grammar.parse(transcript) else {
-                if let message = grammar.rejection(transcript) { return .reject(message) }
-                return .resolveWithLLM(phrase)
+            // A stop phrase is never gated: it takes the ungated path whatever the gate says.
+            if attention.isOn && !StopWords.isStop(transcript) {
+                switch attention.check(transcript) {
+                case .addressed(let rest): return routeCommand(rest)
+                case .wordOnly: return .ignore(reason: "attention word only")
+                case .notAddressed: return .ignore(reason: "not addressed")
+                case .off: break
+                }
             }
-            for case .setMode(let m) in actions {
-                mode = m
-                if m == .dictation { session = DictationSession() }
-            }
-            return .execute(actions)
+            return routeCommand(transcript)
         }
+    }
+
+    private mutating func routeCommand(_ transcript: String) -> Routing {
+        let phrase = CommandGrammar.normalize(transcript).joined(separator: " ")
+        guard let actions = grammar.parse(transcript) else {
+            if let message = grammar.rejection(transcript) { return .reject(message) }
+            return .resolveWithLLM(phrase)
+        }
+        for case .setMode(let m) in actions {
+            mode = m
+            if m == .dictation { session = DictationSession() }
+        }
+        return .execute(actions)
     }
 }

@@ -102,3 +102,20 @@ import Foundation
     #expect(try AppConfig.load(from: Data(#"{"silenceMs":600}"#.utf8), environment: [:]).echoCancellation)
     #expect(!(try AppConfig.load(from: Data(#"{"echoCancellation":false}"#.utf8), environment: [:]).echoCancellation))
 }
+
+@Test func attentionWordDefaultsOffAndIsNormalized() throws {
+    #expect(try AppConfig.load(from: nil, environment: [:]).attentionWord == "")
+    #expect(!(try AppConfig.load(from: nil, environment: [:])).attentionGate.isOn)
+    let table: [(String, String)] = [
+        (#"{"attentionWord":" Hey, Mac! "}"#, "hey mac"),
+        (#"{"attentionWord":null}"#, ""),
+        (#"{"attentionWord":"stop"}"#, ""),
+        (#"{"attentionWord":"one two three four"}"#, ""),
+    ]
+    for (json, expected) in table {
+        let c = try AppConfig.load(from: Data(json.utf8), environment: [:])
+        #expect(c.attentionWord == expected, "\(json)")
+        #expect(c.attentionGate.isOn == !expected.isEmpty, "\(json)")
+    }
+    #expect(throws: (any Error).self) { try AppConfig.load(from: Data(#"{"attentionWord":5}"#.utf8), environment: [:]) }
+}

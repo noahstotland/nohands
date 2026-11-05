@@ -92,3 +92,34 @@ import Testing
     m.forgetDictationRecord()                                       // pause: the screen may have changed
     #expect(m.route("scratch that") == nothing)
 }
+
+@Test func attentionWordGatesCommandModeOnly() {
+    var m = ModeMachine(attention: AttentionGate(configured: "computer"))
+    let click = Routing.execute([.click(.cursor, button: .left, count: 1)])
+    let table: [(String, Routing)] = [
+        ("computer click", click),
+        ("Computer, make the window bigger.", .resolveWithLLM("make the window bigger")),   // the model never sees the word
+        ("click", .ignore(reason: "not addressed")),
+        ("computer", .ignore(reason: "attention word only")),
+        ("tell the computer to click", .ignore(reason: "not addressed")),
+        ("stop", .resolveWithLLM("stop")),   // a stop is never gated; the pipeline turns it into a stop or an ignore
+        ("computer, stop", .resolveWithLLM("stop")),
+    ]
+    for (said, expected) in table {
+        #expect(m.route(said) == expected, "\(said)")
+    }
+
+    // Dictation types everything; the mode words work with or without the word, other text starting with it is typed.
+    #expect(m.route("computer, start dictating") == .execute([.setMode(.dictation)]))
+    #expect(m.mode == .dictation)
+    #expect(m.route("computer hello") == .execute([.typeText("Computer hello")]))
+    #expect(m.route("stop dictating") == .execute([.setMode(.command)]))
+    _ = m.route("computer start dictating")
+    #expect(m.route("computer, stop dictating") == .execute([.setMode(.command)]))
+
+    // Sleep: "go to sleep" needs the word; "wake up" works without it.
+    #expect(m.route("go to sleep") == .ignore(reason: "not addressed"))
+    #expect(m.route("computer go to sleep") == .execute([.setMode(.sleep)]))
+    #expect(m.route("click") == .ignore(reason: "sleeping"))
+    #expect(m.route("wake up") == .execute([.setMode(.command)]))
+}
