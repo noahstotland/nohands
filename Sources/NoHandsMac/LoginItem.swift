@@ -10,8 +10,10 @@ public enum LoginItem {
         case .enabled: .enabled
         case .notRegistered: .notRegistered
         case .requiresApproval: .requiresApproval
-        case .notFound: .notFound
-        @unknown default: .notFound
+        // `.notFound` means "no app bundle" for `swift run`. Inside a bundle it only means nothing is registered
+        // yet (some macOS versions report it before the first register), so the item must stay clickable.
+        case .notFound: Bundle.main.bundleURL.pathExtension == "app" ? .notRegistered : .notFound
+        @unknown default: .notRegistered
         }
     }
 

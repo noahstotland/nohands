@@ -138,7 +138,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc private func openConfig() {
         let url = ConfigFile.defaultURL
         do { _ = try ConfigFile.ensureExists(at: url) } catch {
-            PipelineLog.warning("couldn't create config.json at \(url.path)")
+            PipelineLog.warning("couldn't create config.json", detail: "\(url.path): \(error)")
             overlay.showHUD("couldn't create config.json: check ~/.config/nohands", duration: .seconds(4))
             return
         }

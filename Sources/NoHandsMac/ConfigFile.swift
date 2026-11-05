@@ -24,8 +24,9 @@ public enum ConfigFile {
         }
         defer { close(fd) }
         let bytes = Array("{}\n".utf8)
-        guard write(fd, bytes, bytes.count) == bytes.count else {
-            let code = POSIXErrorCode(rawValue: errno) ?? .EIO
+        let written = write(fd, bytes, bytes.count)
+        guard written == bytes.count else {
+            let code = written < 0 ? (POSIXErrorCode(rawValue: errno) ?? .EIO) : .EIO
             unlink(url.path)
             throw POSIXError(code)
         }
