@@ -62,7 +62,9 @@ private func trace(age: Duration = .zero) -> LatencyTrace {
     let r = rig()
     await r.pipeline.handle(transcript: "click", trace: trace())
     #expect(r.input.calls == ["click:10,20"])
-    #expect(r.overlay.huds == ["click"])
+    #expect(r.overlay.reports.map(\.text) == ["click", "click"])   // one row: heard, then done
+    #expect(r.overlay.statuses == ["heard", "done"])
+    #expect(r.overlay.huds.isEmpty)
 }
 
 @MainActor @Test func llmLabelClickEndToEnd() async {
@@ -98,7 +100,8 @@ private func trace(age: Duration = .zero) -> LatencyTrace {
         r.resolver?.result = .failure(error)
         await r.pipeline.handle(transcript: "make it bigger", trace: trace())
         await r.pipeline.waitForTask()
-        #expect(r.overlay.huds == ["make it bigger", hud])   // the runner shows the finish HUD once
+        #expect(r.overlay.statuses == ["heard", hud])        // the runner's finish line lands on the prompt's row
+        #expect(Set(r.overlay.reports.map(\.id)).count == 1)
         #expect(r.input.calls == ["releaseAll"])               // the runner's safety release; nothing executed
     }
 }
@@ -107,24 +110,24 @@ private func trace(age: Duration = .zero) -> LatencyTrace {
     let r = rig(withResolver: false)
     await r.pipeline.handle(transcript: "make it bigger", trace: trace())
     await r.pipeline.handle(transcript: "make it smaller", trace: trace())
-    #expect(r.overlay.huds == ["make it bigger", PipelineText.llmOff, "make it smaller", "didn't catch that"])
+    #expect(r.overlay.statuses == ["heard", PipelineText.llmOff, "heard", "didn't catch that"])
 }
 
 @MainActor @Test func staleJobIsDroppedWithBusyHud() async {
     let r = rig()
     await r.pipeline.handle(transcript: "click", trace: trace(age: .seconds(9)))
     #expect(r.input.calls.isEmpty)
-    #expect(r.overlay.huds == ["skipped (busy)"])
+    #expect(r.overlay.statuses == ["skipped (busy)"])
 }
 
 @MainActor @Test func sleepIgnoresSilently() async {
     let r = rig()
     await r.pipeline.handle(transcript: "go to sleep", trace: trace())
     #expect(r.pipeline.mode == .sleep)
-    r.overlay.huds.removeAll()
+    r.overlay.reports.removeAll()
     await r.pipeline.handle(transcript: "click", trace: trace())
     await r.pipeline.handle(transcript: "make it bigger", trace: trace())
-    #expect(r.overlay.huds.isEmpty)
+    #expect(r.overlay.reports.isEmpty && r.overlay.huds.isEmpty)
     #expect(r.input.calls.isEmpty)
 }
 
@@ -191,7 +194,7 @@ private func step(_ intent: String, _ status: StepStatus, _ actions: [Action] = 
     #expect(r.pipeline.lastTaskOutcome == .stopped)
     #expect(r.typed == ["type:a"])                         // step 2's actions never executed
     #expect(r.input.calls.contains("releaseAll"))
-    #expect(r.overlay.huds.last == PipelineText.stopped)
+    #expect(r.overlay.statuses.last == "stopped (1 step)")
     #expect(!r.pipeline.isTaskActive)
 }
 
@@ -205,9 +208,10 @@ private func step(_ intent: String, _ status: StepStatus, _ actions: [Action] = 
     await r.pipeline.handle(transcript: "scroll down", trace: trace())   // held, then replaced (newest wins)
     await r.pipeline.handle(transcript: "click", trace: trace())
     #expect(r.input.calls.isEmpty)                         // nothing runs concurrently with the task
-    #expect(r.overlay.huds.filter { $0.hasPrefix("held: ") }.count == 2)
-    #expect(r.overlay.huds.contains(PipelineText.held("scroll down")))
-    #expect(r.overlay.huds.contains("held: click — runs after this task (say stop to cancel)"))
+    let held = r.overlay.reports.filter { $0.status == .held }
+    #expect(held.map(\.text) == ["scroll down", "click"])
+    #expect(r.overlay.reports.contains { $0.text == "scroll down" && $0.status == .dropped(PipelineText.dropped) })   // replaced: its row is closed
+    #expect(PromptStatus.held.text == "held · runs after this task (say stop to cancel)")
     release.open()
     await r.pipeline.waitForTask()
     #expect(r.pipeline.lastTaskOutcome == .done("type a"))
@@ -225,7 +229,7 @@ private func step(_ intent: String, _ status: StepStatus, _ actions: [Action] = 
     await r.pipeline.handle(transcript: "cancel", trace: trace())   // no task: still the grammar's hide command
     #expect(r.overlay.state == .none)
     #expect(r.resolver?.calls == 0)
-    #expect(!r.overlay.huds.contains(PipelineText.stopped))
+    #expect(!r.overlay.statuses.contains { $0.hasPrefix("stopped") })
 }
 
 @MainActor @Test func pauseCancelsActiveTaskAndDropsHeldJob() async {
@@ -249,9 +253,6 @@ private func step(_ intent: String, _ status: StepStatus, _ actions: [Action] = 
     #expect(PipelineText.hud(for: TaskOutcome.ignored) == PipelineText.didntCatch)
     #expect(PipelineText.hud(for: TaskOutcome.stopped) == "stopped")
     #expect(PipelineText.hud(for: TaskOutcome.failed("timed out")) == "timed out")
-    #expect(PipelineText.held("click") == "held: click — runs after this task (say stop to cancel)")
-    #expect(PipelineText.dropped("click") == "dropped: click")
-    #expect(PipelineText.held(String(repeating: "a", count: 100)).count <= 80)   // fits the HUD without cutting the hint
 }
 
 @MainActor @Test func idleStopPhraseIsIgnored() async {
@@ -261,7 +262,7 @@ private func step(_ intent: String, _ status: StepStatus, _ actions: [Action] = 
         #expect(!r.pipeline.isTaskActive)
     }
     #expect(r.resolver?.calls == 0)
-    #expect(r.overlay.huds.isEmpty)
+    #expect(r.overlay.reports.isEmpty && r.overlay.huds.isEmpty)
     #expect(r.input.calls.isEmpty)
 }
 
@@ -285,7 +286,7 @@ private func step(_ intent: String, _ status: StepStatus, _ actions: [Action] = 
     #expect(r.pipeline.lastTaskOutcome == .done("type c"))
     #expect(r.typed == ["type:a", "type:c"])
     #expect(!r.input.calls.contains { $0.hasPrefix("click") })    // the held click never ran
-    #expect(r.overlay.huds.contains("dropped: click"))
+    #expect(r.overlay.reports.contains { $0.text == "click" && $0.status == .dropped(PipelineText.dropped) })
 }
 
 @MainActor @Test func heldJobOlderThan60sIsSkipped() async {
@@ -300,8 +301,8 @@ private func step(_ intent: String, _ status: StepStatus, _ actions: [Action] = 
         release.open()
         await r.pipeline.waitForTask()
         #expect(r.input.calls.contains("click:10,20") == runs)
-        #expect(r.overlay.huds.contains("dropped: click") == !runs)
-        #expect(!r.overlay.huds.contains(PipelineText.skippedBusy))
+        #expect(r.overlay.reports.contains { $0.text == "click" && $0.status == .dropped(PipelineText.dropped) } == !runs)
+        #expect(!r.overlay.statuses.contains(PipelineText.skippedBusy))
     }
 }
 
@@ -317,7 +318,8 @@ private func step(_ intent: String, _ status: StepStatus, _ actions: [Action] = 
     await r.pipeline.waitForTask()
     #expect(r.pipeline.lastTaskOutcome == .stopped)
     #expect(!r.input.calls.contains("scroll"))
-    #expect(Array(r.overlay.huds.suffix(2)) == [PipelineText.stopped, "dropped: scroll down"])
+    #expect(Array(r.overlay.statuses.suffix(2)) == [PipelineText.stopped, PipelineText.dropped])
+    #expect(r.overlay.reports.last?.text == "scroll down")
 }
 
 @MainActor @Test func stopRightAfterHandleCancelsBeforeTheFirstResolve() async {
@@ -369,7 +371,7 @@ private func step(_ intent: String, _ status: StepStatus, _ actions: [Action] = 
         await r.pipeline.waitForTask()
         #expect(r.pipeline.lastTaskOutcome == .stopped, "\(stop)")
         #expect(r.typed == ["type:a"])
-        #expect(!r.overlay.huds.contains { $0.hasPrefix("held: ") })   // the stop was never held or merged
-        #expect(r.overlay.huds.last == PipelineText.stopped)
+        #expect(!r.overlay.statuses.contains(PromptStatus.held.text))   // the stop was never held or merged
+        #expect(r.overlay.statuses.last == "stopped (1 step)")
     }
 }
