@@ -2,6 +2,7 @@ import Foundation
 
 public enum IntentBackend: String, Codable, Sendable, CaseIterable { case auto, claude, local, off }
 public enum EffectiveBackend: Equatable, Sendable { case claude, local, off }
+public enum DesktopHarnessChoice: String, Codable, Sendable, CaseIterable { case auto, agentDesktop, native }
 
 public struct AppConfig: Codable, Equatable, Sendable {
     public var anthropicAPIKey: String?
@@ -35,6 +36,19 @@ public struct AppConfig: Codable, Equatable, Sendable {
     /// step costs 5-20 s; `llmDeadlineMs` is tuned for Claude over the network. Each element adds ~14 prompt tokens.
     public var localLlmDeadlineMs: Int = 30000
     public var localMaxObservedElements: Int = 40
+    /// Desktop harness for the task loop: `auto` uses agent-desktop when its binary is found and Accessibility is
+    /// granted, else the native AX/CGEvent path.
+    public var desktopHarness: DesktopHarnessChoice = .auto
+    /// Absolute path of the agent-desktop binary; nil searches the usual install locations.
+    public var agentDesktopPath: String?
+    /// Per-command deadline (ms) for agent-desktop actions.
+    public var agentDesktopTimeoutMs: Int = 8000
+    /// `--timeout-ms` for snapshots (ms); fixed, never derived from the settle budget.
+    public var agentDesktopSnapshotMs: Int = 3000
+    /// Retry a harness action once with `--headed` when nothing was delivered.
+    public var agentDesktopHeadedFallback: Bool = true
+    /// Start an agent-desktop session (with its trace) per task.
+    public var agentDesktopTrace: Bool = false
 
     public static let defaultOllamaURL = "http://127.0.0.1:11434"
     public static let efforts = ["low", "medium", "high", "xhigh", "max"]
@@ -47,6 +61,7 @@ public struct AppConfig: Codable, Equatable, Sendable {
         case intentBackend, localModel, ollamaURL
         case maxTaskSteps, llmDeadlineMs, settleMs, maxObservedElements
         case localLlmDeadlineMs, localMaxObservedElements
+        case desktopHarness, agentDesktopPath, agentDesktopTimeoutMs, agentDesktopSnapshotMs, agentDesktopHeadedFallback, agentDesktopTrace
     }
 
     public init(from decoder: Decoder) throws {
@@ -73,6 +88,12 @@ public struct AppConfig: Codable, Equatable, Sendable {
         d.maxObservedElements = try c.decodeIfPresent(Int.self, forKey: .maxObservedElements) ?? d.maxObservedElements
         d.localLlmDeadlineMs = try c.decodeIfPresent(Int.self, forKey: .localLlmDeadlineMs) ?? d.localLlmDeadlineMs
         d.localMaxObservedElements = try c.decodeIfPresent(Int.self, forKey: .localMaxObservedElements) ?? d.localMaxObservedElements
+        d.desktopHarness = (try c.decodeIfPresent(String.self, forKey: .desktopHarness)).flatMap(DesktopHarnessChoice.init(rawValue:)) ?? .auto
+        d.agentDesktopPath = try c.decodeIfPresent(String.self, forKey: .agentDesktopPath)
+        d.agentDesktopTimeoutMs = try c.decodeIfPresent(Int.self, forKey: .agentDesktopTimeoutMs) ?? d.agentDesktopTimeoutMs
+        d.agentDesktopSnapshotMs = try c.decodeIfPresent(Int.self, forKey: .agentDesktopSnapshotMs) ?? d.agentDesktopSnapshotMs
+        d.agentDesktopHeadedFallback = try c.decodeIfPresent(Bool.self, forKey: .agentDesktopHeadedFallback) ?? d.agentDesktopHeadedFallback
+        d.agentDesktopTrace = try c.decodeIfPresent(Bool.self, forKey: .agentDesktopTrace) ?? d.agentDesktopTrace
         self = d
     }
 
@@ -96,6 +117,8 @@ public struct AppConfig: Codable, Equatable, Sendable {
         config.maxObservedElements = min(max(config.maxObservedElements, 10), 300)
         config.localLlmDeadlineMs = min(max(config.localLlmDeadlineMs, 2000), 120000)
         config.localMaxObservedElements = min(max(config.localMaxObservedElements, 10), 300)
+        config.agentDesktopTimeoutMs = min(max(config.agentDesktopTimeoutMs, 1000), 60000)
+        config.agentDesktopSnapshotMs = min(max(config.agentDesktopSnapshotMs, 500), 10000)
         if !AppConfig.efforts.contains(config.intentEffort) { config.intentEffort = AppConfig().intentEffort }
         if let key = environment["ANTHROPIC_API_KEY"], !key.isEmpty {
             config.anthropicAPIKey = key

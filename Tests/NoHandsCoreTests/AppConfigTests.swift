@@ -84,3 +84,15 @@ import Foundation
     #expect(claude.effectiveBackend == .claude)
     #expect(claude.observedElementCap == 200)
 }
+
+@Test func harnessConfigDefaultsDecodingAndClamps() throws {
+    let d = try AppConfig.load(from: nil, environment: [:])
+    #expect(d.desktopHarness == .auto && d.agentDesktopPath == nil && d.agentDesktopTimeoutMs == 8000)
+    #expect(d.agentDesktopSnapshotMs == 3000 && d.agentDesktopHeadedFallback && !d.agentDesktopTrace)
+    let c = try AppConfig.load(from: Data(#"{"desktopHarness":"agentDesktop","agentDesktopPath":"/x/agent-desktop","agentDesktopTimeoutMs":10,"agentDesktopSnapshotMs":99999,"agentDesktopHeadedFallback":false,"agentDesktopTrace":true}"#.utf8), environment: [:])
+    #expect(c.desktopHarness == .agentDesktop && c.agentDesktopPath == "/x/agent-desktop")
+    #expect(c.agentDesktopTimeoutMs == 1000 && c.agentDesktopSnapshotMs == 10000 && !c.agentDesktopHeadedFallback && c.agentDesktopTrace)
+    let unknown = try AppConfig.load(from: Data(#"{"desktopHarness":"robot"}"#.utf8), environment: [:])
+    #expect(unknown.desktopHarness == .auto)
+    #expect(try AppConfig.load(from: Data(#"{"desktopHarness":"native"}"#.utf8), environment: [:]).desktopHarness == .native)
+}
