@@ -157,6 +157,9 @@ public struct AttentionGate: Sendable, Equatable {
   That is the point, but a user who says "uh" in its own utterance before "computer …" loses nothing either,
   because the stray piece is ignored.
 
+- Stray speech that follows an addressed command inside the merge window still joins it (the window cannot tell
+  whose words they are); only stray speech before the command is split off.
+
 ## Calls I made
 
 - **The word alone waits 1.5 s for the rest** (`mergeWindowUnfinishedMs`) instead of being ignored outright, so

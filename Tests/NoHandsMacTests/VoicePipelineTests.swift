@@ -37,11 +37,12 @@ private let reloadButton = UIElementInfo(id: 1, frame: CGRect(x: 100, y: 100, wi
     var typed: [String] { input.calls.filter { $0.hasPrefix("type:") } }
 }
 
-@MainActor private func rig(withResolver: Bool = true) -> Rig {
+@MainActor private func rig(withResolver: Bool = true, attentionWord: String = "") -> Rig {
     let input = FakeInput(), ax = FakeElements(), overlay = FakeOverlay()
     let executor = ActionExecutor(input: input, ax: ax, overlay: overlay, config: AppConfig(), frontTimeout: .milliseconds(100))
     let resolver = withResolver ? FakeResolver() : nil
-    let config = AppConfig()
+    var config = AppConfig()
+    config.attentionWord = attentionWord
     let observer = ScreenObserver(ax: ax, maxElements: config.maxObservedElements)
     let runner = resolver.map {
         TaskRunner(config: config, resolver: $0, executor: executor, observer: observer, overlay: overlay, sleep: { _ in })
@@ -339,11 +340,11 @@ private func step(_ intent: String, _ status: StepStatus, _ actions: [Action] = 
     let merge: MergeBuffer
     let cont: AsyncStream<String>.Continuation
     let consumer: Task<Void, Never>
-    init(_ pipeline: VoicePipeline, windowMs: Int = 40, unfinishedMs: Int = 3000) {
+    init(_ pipeline: VoicePipeline, windowMs: Int = 40, unfinishedMs: Int = 3000, attention: AttentionGate = .off) {
         let (stream, cont) = AsyncStream<String>.makeStream(bufferingPolicy: .unbounded)
         let grammar = CommandGrammar(config: AppConfig().grammarConfig)
-        merge = MergeBuffer(merger: UtteranceMerger(windowMs: windowMs, unfinishedWindowMs: unfinishedMs),
-                            isComplete: { VoicePipeline.isComplete($0, mode: $1, grammar: grammar) },
+        merge = MergeBuffer(merger: UtteranceMerger(windowMs: windowMs, unfinishedWindowMs: unfinishedMs), gate: attention,
+                            isComplete: { VoicePipeline.isComplete($0, mode: $1, grammar: grammar, attention: attention) },
                             onHold: { _ in }, emit: { text, _ in cont.yield(text) })
         self.cont = cont
         consumer = Task { @MainActor in
@@ -356,15 +357,16 @@ private func step(_ intent: String, _ status: StepStatus, _ actions: [Action] = 
 }
 
 @MainActor @Test func spokenStopThroughMergeBufferCancelsTask() async {
-    for stop in ["stop", "Stop, stop!", "no stop"] {
-        let r = rig()
+    // The last two rows have the attention word on: a stop works addressed and bare, and never merges into pending text.
+    for (word, stop) in [("", "stop"), ("", "Stop, stop!"), ("", "no stop"), ("computer", "computer, stop"), ("computer", "um computer cancel that"), ("computer", "stop")] {
+        let r = rig(attentionWord: word)
         let entered = Gate(), release = Gate()
         r.resolver?.scripted = [step("type a", .continue, [.typeText("a")]), step("type b", .done, [.typeText("b")])]
         r.resolver?.onResolve = { n in if n == 2 { entered.open(); await release.wait() } }
-        let feed = MergeFeed(r.pipeline)
-        await feed.say("find the newest video")          // not a grammar command: released after the short window
+        let feed = MergeFeed(r.pipeline, attention: AttentionGate(configured: word))
+        await feed.say(word.isEmpty ? "find the newest video" : "computer find the newest video")   // not a grammar command: released after the short window
         await entered.wait()                               // the task is resolving step 2
-        await feed.say("open the")                         // dangling: would wait 3 s and merge with what follows
+        await feed.say(word.isEmpty ? "open the" : "computer open the")   // dangling: would wait 3 s and merge with what follows
         await feed.say(stop)                               // must not become "open the stop"
         await feed.drain()
         release.open()
@@ -374,4 +376,20 @@ private func step(_ intent: String, _ status: StepStatus, _ actions: [Action] = 
         #expect(!r.overlay.statuses.contains(PromptStatus.held.text))   // the stop was never held or merged
         #expect(r.overlay.statuses.last == "stopped (1 step)")
     }
+}
+
+@MainActor @Test func straySpeechDuringTaskNeverReplacesAHeldCommand() async {
+    let r = rig(attentionWord: "computer")
+    let entered = Gate(), release = Gate()
+    r.resolver?.scripted = [step("type a", .done, [.typeText("a")])]
+    r.resolver?.onResolve = { _ in entered.open(); await release.wait() }
+    await r.pipeline.handle(transcript: "computer find the newest video", trace: trace())
+    await entered.wait()
+    await r.pipeline.handle(transcript: "computer click", trace: trace())   // held
+    await r.pipeline.handle(transcript: "new tab", trace: trace())          // stray: dropped silently
+    await r.pipeline.handle(transcript: "Computer.", trace: trace())        // the word alone: dropped too
+    release.open()
+    await r.pipeline.waitForTask()
+    #expect(r.input.calls == ["type:a", "click:10,20"])                     // the held command still ran
+    #expect(!r.overlay.reports.contains { $0.text == "computer click" && $0.status == .dropped(PipelineText.dropped) })
 }

@@ -55,7 +55,8 @@ public struct ModeMachine: Sendable {
     public mutating func route(_ transcript: String) -> Routing {
         let tokens = CommandGrammar.normalize(transcript)
         guard !tokens.isEmpty else { return .ignore(reason: "empty") }
-        let phrase = Self.phrase(transcript, attention: attention)
+        // Only sleep and dictation read it; command mode checks the gate itself.
+        var phrase: String { Self.phrase(transcript, attention: attention) }
 
         switch mode {
         case .sleep:
