@@ -70,26 +70,48 @@ extension OverlayController: OverlayPresenting {
     static let pointerUnknown = "pointer position unknown"
     public static let cancelled = "cancelled"
 
-    private let input: any InputSynthesizing
-    private let ax: any ElementProviding
+    static let needsHarness = "needs agent-desktop"
+    public static let elementChanged = "element changed, look again"
+    static let readingLimit = 300
+
+    let input: any InputSynthesizing
+    let ax: any ElementProviding
     private let overlay: any OverlayPresenting
     private let config: AppConfig
+    /// agent-desktop, when installed and chosen; nil runs every action natively.
+    let harness: (any DesktopHarness)?
+    let clipboard: any ClipboardAccess
     public var onModeChange: ((Mode) -> Void)?
     private let frontTimeout: Duration
     /// How long an app that just came to the front may take to show a window (a cold launch on a loaded Mac).
     private let windowTimeout: Duration
     private var pressed: Set<MouseButton> = []
     /// Label snapshot of the current LLM-derived batch; `.label(n)` resolves only against this.
-    private var labelSnapshot: [Int: UIElementInfo]?
+    var labelSnapshot: [Int: UIElementInfo]?
+    /// Text the model asked to read (`read_*` actions) since the last `takeReadings()`.
+    public private(set) var readings: [String] = []
 
     public init(input: any InputSynthesizing, ax: any ElementProviding, overlay: any OverlayPresenting,
-                config: AppConfig, frontTimeout: Duration = .seconds(1.5), windowTimeout: Duration = .seconds(6)) {
+                config: AppConfig, frontTimeout: Duration = .seconds(1.5), windowTimeout: Duration = .seconds(6),
+                harness: (any DesktopHarness)? = nil, clipboard: any ClipboardAccess = PasteboardClipboard()) {
         self.frontTimeout = frontTimeout
         self.windowTimeout = windowTimeout
         self.input = input
         self.ax = ax
         self.overlay = overlay
         self.config = config
+        self.harness = harness
+        self.clipboard = clipboard
+    }
+
+    /// The readings collected so far; the task loop moves them into the next observation.
+    public func takeReadings() -> [String] {
+        defer { readings = [] }
+        return readings
+    }
+
+    func addReading(_ label: String, _ text: String) {
+        readings.append(String("\(label): \(text)".prefix(Self.readingLimit)))
     }
 
     /// Executes in order; stops at the first failure and shows it in the HUD. Returns the failure message if any.
@@ -129,6 +151,16 @@ extension OverlayController: OverlayPresenting {
                 hideStaleOverlay()
             case .click(let target, let button, let count):
                 guard (1...3).contains(count) else { return "bad click count" }
+                // A numbered element with a ref is clicked semantically; a point click is the fallback.
+                if case .label(let n) = target, let e = labelSnapshot?[n], let ref = e.ref, let harness {
+                    switch await harness.act(.click(ref: ref, button: button, count: count)) {
+                    case .delivered: hideStaleOverlay(); return nil
+                    case .failed(let m): return m
+                    case .elementChanged: return Self.elementChanged
+                    case .notDelivered(let m):
+                        guard e.frame != .zero else { return m }
+                    }
+                }
                 let usedOverlay: Bool
                 if case .numbered = target { usedOverlay = overlay.state != .none } else { usedOverlay = false }
                 switch resolveClick(target) {
@@ -191,15 +223,20 @@ extension OverlayController: OverlayPresenting {
             case .setValue, .typeInto, .clearField, .selectOption, .setChecked, .setExpanded, .focusElement, .scrollTo,
                  .scrollIn, .drag, .clickIn, .menuItem, .closeApp, .windowAction, .clipboardSet, .readClipboard,
                  .readValue, .readNotifications, .dismissNotifications, .waitFor:
-                return "needs agent-desktop"   // routed through the desktop harness (next task)
+                if let failure = try await runHarnessAction(action) { return failure }
+                hideStaleOverlay()
             }
             return nil
+        } catch let e as Unresolved {
+            return e.message
+        } catch is HarnessOnly {
+            return Self.needsHarness
         } catch {
             return "couldn't post input event"
         }
     }
 
-    private func hideStaleOverlay() { if overlay.state != .none { overlay.hide() } }
+    func hideStaleOverlay() { if overlay.state != .none { overlay.hide() } }
 
     /// The screen a window belongs to: the one holding its centre, else the one it overlaps most, else the first.
     nonisolated static func screen(holding window: CGRect, among screens: [CGRect]) -> CGRect? {
@@ -225,7 +262,7 @@ extension OverlayController: OverlayPresenting {
         return nil
     }
 
-    private func waitForFront(_ name: String) async -> Bool {
+    func waitForFront(_ name: String) async -> Bool {
         let want = name.lowercased()
         func isFront() -> Bool {
             guard let f = ax.frontmostAppName()?.lowercased(), !f.isEmpty else { return false }
@@ -260,7 +297,7 @@ extension OverlayController: OverlayPresenting {
                                            screens: ax.screenRectsCG(), labels: labelSnapshot), checked: direct)
     }
 
-    private func resolveMove(_ t: MoveTarget) -> TargetResolution {
+    func resolveMove(_ t: MoveTarget) -> TargetResolution {
         var needsElements = false, direct = false
         if case .element = t { needsElements = true }
         switch t { case .point, .relative: direct = true; default: break }

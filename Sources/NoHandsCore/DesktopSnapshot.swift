@@ -70,6 +70,10 @@ public struct DesktopFindMatch: Equatable, Sendable {
     public var path: [String]
     public var disabled: Bool
 
+    public init(ref: String, role: String, name: String, path: [String], disabled: Bool) {
+        self.ref = ref; self.role = role; self.name = name; self.path = path; self.disabled = disabled
+    }
+
     public static func parse(_ data: [String: Any]) -> DesktopFindMatch? {
         guard let m = data["match"] as? [String: Any], let ref = m["ref_id"] as? String else { return nil }
         return DesktopFindMatch(ref: ref, role: m["role"] as? String ?? "", name: m["name"] as? String ?? "",
