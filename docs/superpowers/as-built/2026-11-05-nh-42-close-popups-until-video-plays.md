@@ -12,3 +12,4 @@
 - The executor acts on the id-registered element directly (no fresh read); a dead element reports "tab already closed".
 - The unused `ScreenObservation.windows` field is removed (replaced by the tab listing).
 - The media-playing signal (NH-43) is wired: rules end on the `Media:` line reading playing.
+- A step with a failed action after `open_url` marks no task tab, so the task's own page could show as `new`.

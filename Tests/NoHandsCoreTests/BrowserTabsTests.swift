@@ -20,18 +20,22 @@ private func flags(_ l: TabListing) -> String {
 
 @Test func ledgerFlagsOnlyWhatTheTaskOpenedAsNew() {
     let popTab = tab("t9", "You won!")
-    let cases: [(String, [BrowserWindow], String)] = [
-        ("unchanged", mine, "new: task:"),
-        ("pop-under tab", [win("w1", "Docs", front: true, mine[0].tabs + [popTab])], "new:t9 task:"),
-        ("rebuilt ids, same titles", [win("x1", "Docs", front: true, [tab("x2", "Inbox"), tab("x3", "Docs", active: true)])], "new: task:"),
-        ("old tab navigated", [win("w1", "News", front: true, [tab("t1", "Inbox"), tab("t2", "News", active: true)])], "new: task:"),
-        ("pop-up window", mine + [win("w2", "Casino", [tab("t7", "Casino")])], "new:t7 w2 task:"),
-        ("tabless pop-up window", mine + [win("w2", "Casino")], "new:w2 task:"),
-        ("new tab inside the user's window is not a new window", [win("w1", "You won!", front: true, mine[0].tabs + [popTab])], "new:t9 task:"),
+    let cases: [(String, [BrowserWindow], String, Bool)] = [
+        ("unchanged", mine, "new: task:", false),
+        ("pop-under tab", [win("w1", "Docs", front: true, mine[0].tabs + [popTab])], "new:t9 task:", false),
+        ("rebuilt ids, same titles", [win("x1", "Docs", front: true, [tab("x2", "Inbox"), tab("x3", "Docs", active: true)])], "new: task:", false),
+        ("old tab navigated", [win("w1", "News", front: true, [tab("t1", "Inbox"), tab("t2", "News", active: true)])], "new: task:", false),
+        ("pop-up window", mine + [win("w2", "Casino", [tab("t7", "Casino")])], "new:t7 w2 task:", false),
+        ("tabless pop-up window", mine + [win("w2", "Casino")], "new:w2 task:", false),
+        ("user tab navigated in place, then a pop-up window takes focus: the pop-up is not the task's",
+         [win("w1", "News", [tab("t1", "Inbox"), tab("t2", "News", active: true)]), win("w2", "Casino", front: true, [tab("c1", "Casino", active: true)])],
+         "new:c1 w2 task:t2", true),
+        ("new tab inside the user's window is not a new window", [win("w1", "You won!", front: true, mine[0].tabs + [popTab])], "new:t9 task:", false),
     ]
-    for (name, windows, want) in cases {
+    for (name, windows, want, marked) in cases {
         var ledger = TabLedger()
         ledger.baseline(app: "Chrome", windows: mine)
+        if marked { ledger.markTaskTab(app: "Chrome", windows: windows) }
         #expect(flags(ledger.listing(app: "Chrome", windows: windows)) == want, Comment(rawValue: name))
     }
     // The task's tab is new, flagged task, and a later baseline call changes nothing.

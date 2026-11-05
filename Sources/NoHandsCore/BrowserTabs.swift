@@ -74,15 +74,13 @@ public struct TabLedger: Sendable {
 
     /// The active tab of the front window (the window itself when it has no tabs) is the task's: it is never
     /// closable without a close word, even though it is new. A front window that is itself new (a pop-up that took
-    /// focus) is not the task's: the new active tab of a window the user already had is, and only when there is
-    /// none does the front window stand. Call it at the first settled observation after a step that navigated.
+    /// focus) is not the task's: the active tab of the first window that is not new stands instead, new or not
+    /// (marking a user tab changes nothing, user tabs are never closable). The front window is kept only when every
+    /// window is new. Call it at the first settled observation after a step that navigated.
     public mutating func markTaskTab(app: String, windows: [BrowserWindow]) {
         guard let front = windows.first(where: \.front) ?? windows.first else { return }
         var pick = front
-        if let base = baselines[app], base.isNew(front),
-           let other = windows.first(where: { w in
-               !base.isNew(w) && w.tabs.contains { $0.active && base.isNew($0, in: w) }
-           }) {
+        if let base = baselines[app], base.isNew(front), let other = windows.first(where: { !base.isNew($0) }) {
             pick = other
         }
         let id = pick.tabs.isEmpty ? pick.id : (pick.tabs.first(where: \.active) ?? pick.tabs[0]).id

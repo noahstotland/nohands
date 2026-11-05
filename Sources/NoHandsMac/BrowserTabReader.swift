@@ -22,7 +22,8 @@ extension AXQuery {
     }
 
     public func browserWindows() -> (app: String, windows: [BrowserWindow])? {
-        guard let app = NSWorkspace.shared.frontmostApplication, frontmostBrowserPID() != nil else { return nil }
+        guard let app = NSWorkspace.shared.frontmostApplication,
+              frontmostBrowserPID() == app.processIdentifier else { return nil }
         let appEl = AXUIElementCreateApplication(app.processIdentifier)
         AXUIElementSetMessagingTimeout(appEl, 0.1)
         exposeChromiumTree(app, appEl)
@@ -84,9 +85,20 @@ extension AXQuery {
         guard let tab = browserElement(forToken: id), let front = NSWorkspace.shared.frontmostApplication else { return false }
         var pid: pid_t = 0
         guard AXUIElementGetPid(tab, &pid) == .success, pid == front.processIdentifier,
-              let window = Self.element(tab, kAXWindowAttribute) else { return false }
+              let window = Self.element(tab, kAXWindowAttribute) ?? Self.enclosingWindow(of: tab) else { return false }
         let focused = Self.element(AXUIElementCreateApplication(pid), kAXFocusedWindowAttribute)
         return focused.map { CFEqual($0, window) } ?? false
+    }
+
+    /// The `AXWindow` above `el`, by walking `AXParent` (for a tab that has no `AXWindow` attribute).
+    static func enclosingWindow(of el: AXUIElement) -> AXUIElement? {
+        var cur = el
+        for _ in 0..<tabMaxDepth {
+            guard let parent = element(cur, kAXParentAttribute) else { return nil }
+            if string(parent, kAXRoleAttribute) == "AXWindow" { return parent }
+            cur = parent
+        }
+        return nil
     }
 
     /// A tab button's value is 1 for the selected tab.
