@@ -27,9 +27,12 @@ func usage() -> Never {
       nohands-cli run "<phrase>"...  (waits 2 s, executes each phrase in order, 0.8 s apart)
       nohands-cli resolve "<text>"   (waits 3 s, sends text + frontmost app's labels to the configured backend;
                                       prints the step's intent, status and actions; executes nothing)
-      nohands-cli task "<goal>"      (waits 3 s, then runs the goal as a multi-step task on the frontmost app,
+      nohands-cli task "<goal>" [--local <model>]
+                                     (waits 3 s, then runs the goal as a multi-step task on the frontmost app,
                                       printing each step and the outcome; Ctrl-C stops it)
-      nohands-cli eval <file> [--runs N]  (scores the configured backend on a fixture set; executes nothing)
+      nohands-cli eval <file> [--runs N] [--local <model>]
+                                     (scores the configured backend on a fixture set; executes nothing)
+      --local <model> (task, eval): use the local Ollama backend with that model for this run, whatever the config says
       nohands-cli listen             (mic -> VAD -> ASR; Ctrl-C to quit)
       nohands-cli desktop-status     (agent-desktop binary, version, permissions and the harness in use)
       nohands-cli snapshot [app]     (waits 3 s, prints the task-loop observation through agent-desktop of the
@@ -55,7 +58,15 @@ func point(_ args: [String]) -> CGPoint {
 }
 
 setvbuf(stdout, nil, _IOLBF, 0)   // line-buffered even when piped, so `task` step lines appear as they happen
-let args = Array(CommandLine.arguments.dropFirst())
+/// `--local <model>` (task and eval only): force the local backend with this Ollama model for this run.
+/// Nothing is written to the config file.
+var args = Array(CommandLine.arguments.dropFirst())
+var localModelOverride: String?
+if let i = args.firstIndex(of: "--local") {
+    guard i + 1 < args.count, !args[i + 1].hasPrefix("--"), args.first == "task" || args.first == "eval" else { usage() }
+    localModelOverride = args[i + 1]
+    args.removeSubrange(i...(i + 1))
+}
 guard let command = args.first else { usage() }
 let rest = Array(args.dropFirst())
 let synth = CGEventInputSynthesizer()
@@ -243,7 +254,7 @@ var exitStatus: Int32 = 0
             }
         case "resolve":
             guard rest.count == 1 else { usage() }
-            let (config, resolver, _) = try loadResolver()
+            let (config, resolver, _) = try loadResolver(localModel: localModelOverride)
             guard Permissions.accessibilityGranted(prompt: false) else {
                 fail("Accessibility permission is not granted to this process (or its terminal).")
             }
@@ -264,7 +275,7 @@ var exitStatus: Int32 = 0
         case "task":
             guard rest.count == 1, !rest[0].trimmingCharacters(in: .whitespaces).isEmpty else { usage() }
             let goal = rest[0]
-            let (config, resolver, modelName) = try loadResolver()
+            let (config, resolver, modelName) = try loadResolver(localModel: localModelOverride)
             guard Permissions.accessibilityGranted(prompt: false) else {
                 fail("Accessibility permission is not granted to this process (or its terminal). Enable it in System Settings > Privacy & Security > Accessibility, then rerun.")
             }
@@ -318,7 +329,7 @@ var exitStatus: Int32 = 0
             if rest.count == 3, rest[1] == "--runs", let n = Int(rest[2]), n >= 1 { runs = n }
             else if rest.count != 1 { usage() }
             let cases = try JSONDecoder().decode([EvalCase].self, from: try Data(contentsOf: URL(fileURLWithPath: file)))
-            let (_, resolver, modelName) = try loadResolver()
+            let (_, resolver, modelName) = try loadResolver(localModel: localModelOverride)
             var passed = 0, total = 0
             var times: [Int] = []
             for c in cases {
@@ -364,9 +375,13 @@ Task { @MainActor in
 app.run()
 
 /// Loads `~/.config/nohands/config.json` (plus environment) and builds the configured backend's resolver.
-func loadResolver() throws -> (config: AppConfig, resolver: any IntentResolving, model: String) {
+func loadResolver(localModel localModelOverride: String? = nil) throws -> (config: AppConfig, resolver: any IntentResolving, model: String) {
     let cfgURL = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".config/nohands/config.json")
-    let config = try AppConfig.load(from: try? Data(contentsOf: cfgURL), environment: ProcessInfo.processInfo.environment)
+    var config = try AppConfig.load(from: try? Data(contentsOf: cfgURL), environment: ProcessInfo.processInfo.environment)
+    if let model = localModelOverride {
+        config.intentBackend = .local
+        config.localModel = model
+    }
     switch config.effectiveBackend {
     case .claude: return (config, ClaudeIntentResolver(config: config), config.intentModel)
     case .local: return (config, OllamaIntentResolver(config: config), config.resolvedLocalModel)

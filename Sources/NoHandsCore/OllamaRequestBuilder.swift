@@ -47,7 +47,7 @@ public struct OllamaRequestBuilder: Sendable {
 
     /// System prompt, the few-shot examples, then `user` as the final turn.
     private static func messages(ending user: String, harness: HarnessKind) -> [OrderedJSON] {
-        var messages: [OrderedJSON] = [message("system", IntentSchema.systemPrompt(for: harness))]
+        var messages: [OrderedJSON] = [message("system", IntentSchema.localSystemPrompt(for: harness))]
         for t in IntentExamples.turns(for: harness) {
             messages.append(message("user", t.user))
             messages.append(message("assistant", t.assistant))

@@ -130,7 +130,8 @@ In dictation mode, say `period`, `comma`, `question mark`, `new line`, `new para
 | `run "<phrase>"...` | Executes grammar phrases in order |
 | `observe` | Prints what the task loop sends the model about the frontmost app: window title, URL and numbered elements with roles |
 | `resolve "<text>"` | Dry run: sends text and the frontmost app's labels to the configured backend and prints the step (`intent`, `status`, actions); executes nothing (Claude spends API credit) |
-| `task "<goal>"` | Waits 3 s, then runs the goal as a multi-step task on the frontmost app for real, printing each step's intent, actions and settle time, then the outcome; Ctrl-C stops it like "stop", a second Ctrl-C quits at once (status 130); exits 2 when the task ends stuck, failed or stopped |
+| `task "<goal>"` | Waits 3 s, then runs the goal as a multi-step task on the frontmost app for real, printing each step's intent, actions and settle time, then the outcome; Ctrl-C stops it like "stop", a second Ctrl-C quits at once (status 130); exits 2 when the task ends stuck, failed or stopped; `--local <model>` forces the local Ollama backend with that model for this run |
+| `eval <file> [--runs N] [--local <model>]` | Scores the configured backend on an intent fixture file (`scripts/intent-eval*.json`) and prints `PASS`/`FAIL` per case plus accuracy and median time; executes nothing. `--local <model>` forces the local Ollama backend with that model for this run (nothing is written to the config) |
 | `listen` | Microphone to VAD to speech recognition, printing transcripts |
 | `desktop-status` | Where the agent-desktop binary was found, its version, what it reports for Accessibility, and the harness in use |
 | `snapshot [app]` | Waits 3 s, then prints the task-loop observation of the frontmost (or named) app as agent-desktop sees it: numbered elements with roles, values and states |

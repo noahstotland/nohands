@@ -153,6 +153,12 @@ public enum IntentSchema {
         }
     }
 
+    /// The prompt the local (Ollama) backend sends. Claude keeps `systemPrompt(for:)`; this one is tuned on the local
+    /// model's own measurements (NH-8) and must keep the close/quit rule and the untrusted-data rule.
+    public static func localSystemPrompt(for harness: HarnessKind) -> String {
+        systemPrompt(for: harness)
+    }
+
     /// Condensed from `agent-desktop skills get desktop`: what the extra kinds do and how to use the harness.
     public static let harnessRules: String = """
     Harness: agent-desktop. This request's elements come from the accessibility tree with stable references, so \
