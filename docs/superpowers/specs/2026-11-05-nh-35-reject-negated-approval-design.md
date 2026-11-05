@@ -1,6 +1,7 @@
 # NH-35: Make cos_user_check.py reject a negated approval — Design
 
-**Date:** 2026-11-05  **Status:** Draft  **Ticket:** [NH-35](https://github.com/noahstotland/nohands/issues/35)
+**Date:** 2026-11-05  **Status:** Shipped  **Ticket:** [NH-35](https://github.com/noahstotland/nohands/issues/35)
+**Shipped:** in PR #64, with differences: [as-built](../as-built/2026-11-05-nh-35-reject-negated-approval.md)
 
 ## Goal
 
