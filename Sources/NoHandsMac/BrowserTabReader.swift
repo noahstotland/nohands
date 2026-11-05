@@ -7,7 +7,10 @@ import NoHandsCore
 /// Automation prompt). Chrome, Safari and most browsers expose the tab strip as an `AXTabGroup` of tab buttons;
 /// a browser that hides it (Firefox) shows its windows without tabs, and a window then stands for itself.
 extension AXQuery {
+    /// Each window gets its own walk budget so one slow window cannot leave the rest unread; `tabTotalBudget`
+    /// bounds the whole read.
     static let tabBudget: Duration = .milliseconds(500)
+    static let tabTotalBudget: Duration = .milliseconds(1500)
     static let tabMaxNodes = 600
     static let tabMaxDepth = 8
     static let tabRoles: Set<String> = ["AXRadioButton", "AXTab"]
@@ -18,13 +21,14 @@ extension AXQuery {
         return app.processIdentifier
     }
 
-    public func browserWindows() -> [BrowserWindow]? {
+    public func browserWindows() -> (app: String, windows: [BrowserWindow])? {
         guard let app = NSWorkspace.shared.frontmostApplication, frontmostBrowserPID() != nil else { return nil }
         let appEl = AXUIElementCreateApplication(app.processIdentifier)
         AXUIElementSetMessagingTimeout(appEl, 0.1)
         exposeChromiumTree(app, appEl)
         let focused = Self.element(appEl, kAXFocusedWindowAttribute)
-        let deadline = ContinuousClock.now.advanced(by: Self.tabBudget)
+        let overall = ContinuousClock.now.advanced(by: Self.tabTotalBudget)
+        var deadline = overall
         var visited = 0
         func tabGroup(in el: AXUIElement, depth: Int) -> AXUIElement? {
             guard depth <= Self.tabMaxDepth, visited < Self.tabMaxNodes, ContinuousClock.now < deadline else { return nil }
@@ -41,6 +45,7 @@ extension AXQuery {
         var windows: [BrowserWindow] = []
         for w in Self.elements(appEl, kAXWindowsAttribute) {
             visited = 0
+            deadline = min(overall, ContinuousClock.now.advanced(by: Self.tabBudget))
             var tabs: [BrowserTab] = []
             if let group = tabGroup(in: w, depth: 1) {
                 for t in Self.elements(group, kAXChildrenAttribute) where Self.tabRoles.contains(Self.string(t, kAXRoleAttribute) ?? "") {
@@ -51,7 +56,7 @@ extension AXQuery {
             windows.append(BrowserWindow(id: browserToken(for: w, prefix: "w"), title: Self.string(w, kAXTitleAttribute) ?? "",
                                          front: focused.map { CFEqual($0, w) } ?? false, tabs: tabs))
         }
-        return windows
+        return (app.localizedName ?? app.bundleIdentifier ?? "Browser", windows)
     }
 
     public func closeBrowserTab(id: String) -> BrowserActionResult {
@@ -73,6 +78,15 @@ extension AXQuery {
 
     public func browserTabIsSelected(id: String) -> Bool {
         browserElement(forToken: id).map(Self.isSelected) ?? false
+    }
+
+    public func browserTabIsInFrontWindow(id: String) -> Bool {
+        guard let tab = browserElement(forToken: id), let front = NSWorkspace.shared.frontmostApplication else { return false }
+        var pid: pid_t = 0
+        guard AXUIElementGetPid(tab, &pid) == .success, pid == front.processIdentifier,
+              let window = Self.element(tab, kAXWindowAttribute) else { return false }
+        let focused = Self.element(AXUIElementCreateApplication(pid), kAXFocusedWindowAttribute)
+        return focused.map { CFEqual($0, window) } ?? false
     }
 
     /// A tab button's value is 1 for the selected tab.

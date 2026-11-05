@@ -44,7 +44,12 @@ final class FakeElements: ElementProviding, @unchecked Sendable {
     var closedTabs: [String] = []
     var closedWindows: [String] = []
     var selectedTabs: [String] = []
-    func browserWindows() -> [BrowserWindow]? { browser }
+    /// The app the windows were read from (nil: the front app's name).
+    var browserApp: String?
+    func browserWindows() -> (app: String, windows: [BrowserWindow])? { browser.map { (browserApp ?? front ?? "Browser", $0) } }
+    /// Whether a tab is in the front app's focused window.
+    var tabInFrontWindow = true
+    func browserTabIsInFrontWindow(id: String) -> Bool { tabInFrontWindow }
     /// A tab with no close button of its own, and whether selecting a tab really makes it the selected one.
     var tabHasNoCloseButton = false
     var selectingWorks = true

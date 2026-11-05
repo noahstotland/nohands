@@ -365,12 +365,18 @@ private let reload = UIElementInfo(id: 1, frame: CGRect(x: 100, y: 100, width: 8
     ledger.baseline(app: "Chrome", windows: [BrowserWindow(id: "w1", title: "Inbox", front: true, tabs: [old])])
     let listing = ledger.listing(app: "Chrome", windows: [BrowserWindow(id: "w1", title: "Inbox", front: true,
                                                                          tabs: [old, BrowserTab(id: "t1", title: "Ad")])])
-    for (selects, want) in [(true, nil), (false, Optional("couldn't select that tab"))] {
+    // (selecting works, tab is in the front app's focused window, result, tabs selected)
+    let table: [(Bool, Bool, String?, [String])] = [
+        (true, true, nil, ["t1"]),
+        (false, true, "couldn't select that tab", ["t1"]),
+        (true, false, "can't close that tab", []),   // a tab in another window: command-W would close that window's tab
+    ]
+    for (selects, inFront, want, selected) in table {
         let (ex, input, ax, _) = make()
-        ax.isBrowser = true; ax.tabHasNoCloseButton = true; ax.selectingWorks = selects
+        ax.isBrowser = true; ax.tabHasNoCloseButton = true; ax.selectingWorks = selects; ax.tabInFrontWindow = inFront
         #expect(await ex.execute([.closeTab(2)], tabs: listing) == want)
-        #expect(ax.selectedTabs == ["t1"])
-        #expect(input.calls == (selects ? ["press"] : []))   // command-W goes out only for the tab that is now selected
+        #expect(ax.selectedTabs == selected)
+        #expect(input.calls == (want == nil ? ["press"] : []))   // command-W goes out only for the tab that is selected in the front window
     }
     let (ex, _, ax, _) = make()
     #expect(await ex.execute([.closeTab(5)], tabs: listing) == "no tab 5" && ax.closedTabs.isEmpty)
