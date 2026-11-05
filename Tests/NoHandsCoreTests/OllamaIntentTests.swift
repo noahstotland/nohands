@@ -12,7 +12,13 @@ import Foundation
     #expect((o["options"] as? [String: Any])?["temperature"] as? Double == 0)
     // 120 elements plus history is ~4k tokens; Ollama's default 4096 context would silently truncate the system prompt.
     #expect((o["options"] as? [String: Any])?["num_ctx"] as? Int == 8192)
-    #expect(o["format"] as? NSDictionary == IntentSchema.actionsJSONSchema as NSDictionary)
+    // The tab kinds are offered only to a request with a Tabs list (a 7B model otherwise answers "close the current tab" with one).
+    let request = StepRequest(oneShot: "go back please", context: ctx)
+    #expect(o["format"] as? NSDictionary == IntentSchema.orderedSchema(for: request).foundationObject as? NSDictionary)
+    #expect(!String(decoding: data, as: UTF8.self).contains("close_tab"))
+    var withTabs = request
+    withTabs.observation.tabs = TabListing(app: "Chrome", windows: [], hiddenWindows: 0)
+    #expect(IntentSchema.orderedSchema(for: withTabs).foundationObject as? NSDictionary == IntentSchema.actionsJSONSchema as NSDictionary)
     let msgs = try #require(o["messages"] as? [[String: String]])
     #expect(msgs.first == ["role": "system", "content": IntentSchema.systemPrompt])
     #expect(msgs.count == 1 + 2 * IntentExamples.turns.count + 1)

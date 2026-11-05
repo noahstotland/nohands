@@ -87,6 +87,7 @@ private func flags(_ l: TabListing) -> String {
     var o = ScreenObservation(app: "Chrome", mode: .command)
     o.tabs = l
     let s = ClaudeRequestBuilder.userMessage(request: StepRequest(goal: "g", step: 1, maxSteps: 3, history: [], observation: o))
+    #expect(s.contains("Tab rules") && s.range(of: "Tab rules")!.lowerBound < s.range(of: "Tabs (Chrome):")!.lowerBound)
     let lines = s.components(separatedBy: "\n")
     let at = lines.firstIndex(of: "Tabs (Chrome):")!
     #expect(lines[at + 1] == "  window 1 (front) \"Game\"")
@@ -98,7 +99,7 @@ private func flags(_ l: TabListing) -> String {
     #expect(lines[at + 27] == "  +1 other windows")
     #expect(l.tab(21)?.id == "n1" && l.window(2)?.id == "w2" && l.tab(99) == nil)
     let plain = ScreenObservation(app: "Finder", mode: .command)
-    #expect(!ClaudeRequestBuilder.userMessage(request: StepRequest(goal: "g", step: 1, maxSteps: 3, history: [], observation: plain)).contains("Tabs"))
+    #expect(!ClaudeRequestBuilder.userMessage(request: StepRequest(goal: "g", step: 1, maxSteps: 3, history: [], observation: plain)).contains("Tab"))
 }
 
 @Test func tabActionsDecodeAndRejectABadNumber() throws {
