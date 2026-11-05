@@ -138,6 +138,7 @@ private func make(_ sink: Sink, window: Int = 80, unfinished: Int = 200, attenti
     #expect(!VoicePipeline.isComplete("scratch that", mode: .command, grammar: g))
     #expect(!VoicePipeline.isComplete("hello there", mode: .dictation, grammar: g))
     #expect(!VoicePipeline.isComplete("make it bigger", mode: .command, grammar: g))
+    #expect(!VoicePipeline.isComplete("spell kilo nine", mode: .command, grammar: g))   // waits so a pause can't split it
 }
 
 // MARK: - attention word
@@ -167,4 +168,17 @@ private func make(_ sink: Sink, window: Int = 80, unfinished: Int = 200, attenti
     #expect(sink.out == ["Computer. go back"])
     #expect(VoicePipeline.isComplete("computer, go back", mode: .command, grammar: CommandGrammar(), attention: gate))
     #expect(!VoicePipeline.isComplete("go back", mode: .command, grammar: CommandGrammar(), attention: gate))
+}
+
+@Test func addressedSpellWaitsOutThePauseBetweenLetters() async throws {
+    let gate = AttentionGate(configured: "computer")
+    let sink = Sink()
+    let b = make(sink, window: 40, unfinished: 400, attention: gate)
+    await b.transcript("Computer, spell kilo nine", trace: LatencyTrace())
+    #expect(!VoicePipeline.isComplete("computer, spell kilo nine", mode: .command, grammar: CommandGrammar(), attention: gate))
+    try await Task.sleep(for: .milliseconds(150))                   // past the normal window: still waiting
+    #expect(sink.out.isEmpty)
+    await b.transcript("alpha", trace: LatencyTrace())
+    try await Task.sleep(for: .milliseconds(600))
+    #expect(sink.out == ["Computer, spell kilo nine alpha"])        // one phrase, so it types as one string
 }

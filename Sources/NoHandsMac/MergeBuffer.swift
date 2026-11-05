@@ -94,8 +94,16 @@ actor MergeBuffer {
 
     private func holdDuration(for transcript: String) -> Duration {
         // The word alone waits like a dangling word, so "computer … go back" said in two breaths is one command.
-        if gated, gate.check(transcript) == .wordOnly { return .milliseconds(merger.unfinishedWindowMs) }
-        return merger.hold(for: transcript, isComplete: isComplete(transcript, mode))
+        // The merger's rules (dangling last word, a leading "spell") apply to what follows the word.
+        var phrase = transcript
+        if gated {
+            switch gate.check(transcript) {
+            case .wordOnly: return .milliseconds(merger.unfinishedWindowMs)
+            case .addressed(let rest): phrase = rest
+            case .notAddressed, .off: break
+            }
+        }
+        return merger.hold(for: phrase, isComplete: isComplete(transcript, mode))
     }
 
     private func discardPending() {

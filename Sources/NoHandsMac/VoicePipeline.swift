@@ -124,9 +124,11 @@ import NoHandsCore
         if attention.isStop(transcript) { return true }
         switch mode {
         case .command:
+            // "spell" always waits the merge window: a pause mid-spelling must not type half and send the rest to the model.
+            func complete(_ phrase: String) -> Bool { CommandGrammar.normalize(phrase).first != "spell" && grammar.parse(phrase) != nil }
             switch attention.check(transcript) {
-            case .off: return grammar.parse(transcript) != nil
-            case .addressed(let rest): return grammar.parse(rest) != nil
+            case .off: return complete(transcript)
+            case .addressed(let rest): return complete(rest)
             case .wordOnly, .notAddressed: return false
             }
         case .dictation: return ModeMachine.isDictationCommand(transcript, attention: attention)
@@ -393,6 +395,8 @@ import NoHandsCore
             // Nothing on the board (this also keeps sleep silent), unless the merge window already put the words
             // there: that row must not stay "listening".
             if job.shown { overlay.report(job.id, text: text, status: .ignored(reason == "sleeping" ? "asleep" : "")) }
+        case .reject(let message):
+            overlay.report(job.id, text: text, status: .failed(message))
         case .execute(let actions):
             overlay.report(job.id, text: text, status: .heard)
             guard canExecute else {

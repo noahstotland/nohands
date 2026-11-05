@@ -4,6 +4,8 @@ public enum Routing: Equatable, Sendable {
     case execute([Action])
     case resolveWithLLM(String)     // normalized transcript
     case ignore(reason: String)
+    /// The grammar recognised the phrase but it can't be run (a `spell` with an unknown word). Shown, never sent to the model.
+    case reject(String)
 }
 
 public struct ModeMachine: Sendable {
@@ -94,7 +96,10 @@ public struct ModeMachine: Sendable {
 
     private mutating func routeCommand(_ transcript: String) -> Routing {
         let phrase = CommandGrammar.normalize(transcript).joined(separator: " ")
-        guard let actions = grammar.parse(transcript) else { return .resolveWithLLM(phrase) }
+        guard let actions = grammar.parse(transcript) else {
+            if let message = grammar.rejection(transcript) { return .reject(message) }
+            return .resolveWithLLM(phrase)
+        }
         for case .setMode(let m) in actions {
             mode = m
             if m == .dictation { session = DictationSession() }

@@ -41,7 +41,7 @@ mic (AVAudioEngine with voice processing / echo cancellation unless `echoCancell
 
 **Single vocabulary.** `Action` is the one enum every stage produces or consumes. The grammar, the LLM decoder, and the executor all speak `Action`; adding a capability means adding a case and handling it in three places.
 
-**Grammar first, LLM second.** Every phrase in §6 is matched deterministically with no network. Only unmatched utterances go to the LLM, so the common path is fully local and fast, and the app degrades to "grammar only" when offline.
+**Grammar first, LLM second.** Every phrase in §6 is matched deterministically with no network. Only unmatched utterances go to the LLM (a `spell` phrase that can't be typed is rejected instead), so the common path is fully local and fast, and the app degrades to "grammar only" when offline.
 
 **Targets are resolved late.** The grammar emits `ClickTarget.numbered(42)`; the executor decides whether 42 means a grid cell or a label based on which overlay is currently visible.
 
@@ -62,6 +62,7 @@ Input is normalized first: lowercased, ASR punctuation stripped (`.,!?`), whites
 | Phrase | Action |
 |---|---|
 | `type <words>` | `.typeText(formatted words)` (through DictationFormatter) |
+| `spell <tokens>` | `.typeText(string)`: letters, letter-name homophones, NATO words, digits, `space`/`dash`/`dot`/`underscore`/`at sign`; `capital` uppercases the next letter. One unknown token or a dangling `capital` types nothing |
 | `press <modifiers…> <key>` e.g. "press command shift s" | `.pressKey(KeyChord)` |
 | `enter`, `tab`, `escape`, `space`, `delete` / `backspace`, `forward delete`, `up`/`down`/`left`/`right` | `.pressKey` of that key |
 | `undo`, `redo`, `copy`, `paste`, `cut`, `select all`, `save`, `find`, `new tab`, `close tab`, `close window`, `quit app`, `switch app`, `spotlight`, `delete word`, `delete line` | the standard ⌘ shortcut (`redo` = ⇧⌘Z, `switch app` = ⌘⇥, `spotlight` = ⌘␣, `delete word` = ⌥⌫, `delete line` = ⌘⌫) |
@@ -80,7 +81,7 @@ Input is normalized first: lowercased, ASR punctuation stripped (`.,!?`), whites
 | `hide` / `hide grid` / `hide numbers` / `cancel` | `.hideOverlay` |
 | `open <app name>` | `.openApp(name)` |
 | `start dictating`, `dictation mode`, `stop dictating`, `command mode`, `go to sleep`, `wake up` | `.setMode(...)` |
-| anything else | unmatched → LLM |
+| anything else (except a `spell` with an unknown word, which is rejected on the HUD and never sent to the LLM) | unmatched → LLM |
 
 ## 7. Dictation formatting (deterministic)
 
