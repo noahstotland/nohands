@@ -11,7 +11,7 @@ The steps need a microphone, a person speaking and real apps. An agent can't do 
 
 ## What the build stage does itself
 
-1. Build: `swift build`, `swift test`, then `scripts/bundle.sh`. Check that `build/NoHands.app` exists and `codesign -v build/NoHands.app` passes. Builds the plan skips (markdown-only ticket, no plan).
+1. Build: `swift build`, `swift test`, then `scripts/bundle.sh`. Check that `build/NoHands.app` exists and `codesign -v build/NoHands.app` passes. No plan: the ticket changes only markdown.
 2. Record the machine: `sysctl -n hw.model`, `sw_vers -productVersion`, chip from `sysctl -n machdep.cpu.brand_string`, and the commit SHA the bundle was built from.
 3. Write `docs/superpowers/as-built/<run date>-acceptance-run.md` with the header lines from `docs/superpowers/README.md` (`**Shipped:** in PR #N`, `**Ticket:**`, `**Spec:**`), the machine block, and an empty results table:
 
