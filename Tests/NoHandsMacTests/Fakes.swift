@@ -147,6 +147,8 @@ final class FakeHarness: DesktopHarness, @unchecked Sendable {
     var readResult: String?
     var windows: [DesktopWindowCandidate] = []
     var surfacesToReport: [String] = []
+    /// Surfaces every `act` leaves open (as agent-desktop reports in `data.surfaces`).
+    var surfacesAfterAct: [String] = []
     var sessionID: String? = "sess-1"
 
     func snapshot(app: String, surface: DesktopSurface?, timeoutMs: Int) async -> DesktopSnapshot? {
@@ -165,6 +167,7 @@ final class FakeHarness: DesktopHarness, @unchecked Sendable {
             calls.append("act:" + command.argv(headed: false, session: nil).joined(separator: " "))
             let r = actResults.first ?? .delivered(verified: true)
             if actResults.count > 1 { actResults.removeFirst() }
+            surfacesToReport = surfacesAfterAct
             return r
         }
     }

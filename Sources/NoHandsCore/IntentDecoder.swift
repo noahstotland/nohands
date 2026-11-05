@@ -173,7 +173,7 @@ public enum IntentDecoder {
         case "close_app": return nonBlank(o["app_name"]).map(Action.closeApp)
         case "window":
             guard let op = (o["window_action"] as? String).flatMap(DesktopWindowOp.init(rawValue:)) else { return nil }
-            return .windowAction(op, app: nonBlank(o["app_name"]), title: nonBlank(o["title"]))
+            return .windowAction(op, app: nonBlank(o["app_name"]), title: op == .focus ? nonBlank(o["title"]) : nil)
         case "clipboard_set": return (o["value"] as? String).map(Action.clipboardSet)
         case "read_clipboard": return .readClipboard
         case "read_value": return elementTarget(o).map(Action.readValue)

@@ -15,9 +15,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let accessibilityItem = NSMenuItem(title: "Grant Accessibility…", action: #selector(grantAccessibility), keyEquivalent: "")
     private let micItem = NSMenuItem(title: "Microphone denied — open Settings", action: #selector(openMicrophoneSettings), keyEquivalent: "")
     private let harnessItem = NSMenuItem(title: "Harness: checking…", action: nil, keyEquivalent: "")
-    /// agent-desktop, when found and permitted at pipeline start (see `HarnessStatus`).
+    /// agent-desktop, when found and permitted (see `HarnessStatus`); re-probed when the menu opens.
     private var harnessStatus: HarnessStatus?
     private var harnessProbeInFlight = false
+    /// The harness the running pipeline was built with (built once at pipeline start); nil before it starts.
+    private var pipelineHarnessKind: HarnessKind?
 
     private let overlay = OverlayController()
     private var config = AppConfig()
@@ -95,16 +97,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             localModelItem.isEnabled = LocalModelMenu.actionable(localStatus)
         }
         pauseItem.title = userPaused ? "Resume Listening" : "Pause Listening"
-        if let harnessStatus { harnessItem.title = harnessStatus.text }
+        if let harnessStatus { harnessItem.title = harnessStatus.menuText(inUse: pipelineHarnessKind) }
         statusItem.button?.title = " " + MenuState.title(mode: mode, paused: state == .paused)
     }
 
     // MARK: - desktop harness
 
-    /// The harness kind the pipeline runs with (native until the probe answers).
-    private var harnessKind: HarnessKind { harnessStatus?.chosen ?? .native }
+    /// The harness kind the pipeline runs with (native until it starts): what the local model is warmed for.
+    private var harnessKind: HarnessKind { pipelineHarnessKind ?? .native }
 
-    /// Re-reads the agent-desktop status (binary, version, Accessibility) so an install needs no restart.
+    /// Re-reads the agent-desktop status (binary, version, Accessibility); the menu says when a restart is needed.
     private func probeHarness() async -> HarnessStatus {
         harnessProbeInFlight = true
         defer { harnessProbeInFlight = false }
@@ -344,8 +346,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 }
                 let ax = AXQuery()
                 // agent-desktop, when installed and permitted: the task loop observes and acts through it.
-                let harness = await probeHarness().makeHarness(config: config)
-                PipelineLog.info("harness: \(harnessStatus?.text ?? "native")")
+                let status = await probeHarness()
+                let harness = status.makeHarness(config: config)
+                pipelineHarnessKind = harness == nil ? .native : .agentDesktop
+                PipelineLog.info("harness: \(status.text)")
                 let executor = ActionExecutor(input: CGEventInputSynthesizer(), ax: ax, overlay: overlay, config: config,
                                               harness: harness)
                 // Tasks observe with their own, larger AX budget: Chrome's toolbar alone exhausts the default one.

@@ -50,13 +50,15 @@ public struct ScreenObserver: Sendable {
     /// read the window the native walk is used for this observation, but `observation.harness` stays the task's.
     /// `fromHarness` says whether agent-desktop supplied the elements (the task loop's first observation uses it to
     /// decide the task's harness).
+    /// `surfaces` are the overlays the last action left open (`DesktopHarness.takeOpenSurfaces()`, read once per
+    /// settle by the caller so every poll of that settle targets the same surface); nil reads them here.
     public func observe(mode: Mode, overlay: OverlayState, screens: [CGRect]? = nil, harnessKind: HarnessKind,
-                        readings: [String] = []) async -> (observation: ScreenObservation, labels: [Int: UIElementInfo], fromHarness: Bool) {
+                        readings: [String] = [], surfaces: [String]? = nil) async -> (observation: ScreenObservation, labels: [Int: UIElementInfo], fromHarness: Bool) {
         var result: (observation: ScreenObservation, labels: [Int: UIElementInfo])
         var fromHarness = false
         if harnessKind == .agentDesktop, let harness, overlay.kindName != "labels" {
             let app = ax.frontmostAppName() ?? ""
-            let surface = harness.takeOpenSurfaces().lazy.compactMap { Self.overlaySurfaces[$0] }.first
+            let surface = (surfaces ?? harness.takeOpenSurfaces()).lazy.compactMap { Self.overlaySurfaces[$0] }.first
             if let snap = await harness.snapshot(app: app, surface: surface, timeoutMs: snapshotTimeoutMs) {
                 result = Self.list(snap, app: app, windowTitle: ax.focusedWindowTitle() ?? snap.windowTitle ?? "",
                                    url: ax.webURL(), mode: mode, overlay: overlay, limit: maxElements)

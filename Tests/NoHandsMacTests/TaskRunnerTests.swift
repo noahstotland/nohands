@@ -406,12 +406,12 @@ private func harnessSnapshot() -> DesktopSnapshot {
         UIElementInfo(id: 1, frame: CGRect(x: 0, y: 0, width: 10, height: 10), title: "Reload", role: "button", ref: "@s1:e1")])
 }
 
-@MainActor private func harnessRig(_ resolver: FakeResolver, harness: FakeHarness, trace: Bool = false) -> Rig {
+@MainActor private func harnessRig(_ resolver: FakeResolver, harness: FakeHarness, trace: Bool = false, settleMs: Int = 0) -> Rig {
     let input = FakeInput(), ax = FakeElements(), overlay = FakeOverlay()
     ax.front = "Safari"
     ax.elements = [el(1, "Reload")]
     var config = AppConfig()
-    config.settleMs = 0
+    config.settleMs = settleMs
     config.agentDesktopTrace = trace
     let executor = ActionExecutor(input: input, ax: ax, overlay: overlay, config: config, frontTimeout: .milliseconds(100),
                                   harness: harness, clipboard: FakeClipboard())
@@ -457,6 +457,18 @@ private func harnessSnapshot() -> DesktopSnapshot {
     _ = await r.runner.run(goal: "reload", mode: .command)
     #expect(r.resolver.requests[1].history.first?.failure == ActionExecutor.elementChanged)
     #expect(ClaudeRequestBuilder.userMessage(request: r.resolver.requests[1]).contains("FAILED: element changed, look again"))
+}
+
+@MainActor @Test func openSurfaceSurvivesTheSettlePolls() async {
+    // The click leaves a sheet open; every settle poll must snapshot the sheet, and the model must see it.
+    let h = FakeHarness(); h.snapshotResults = [harnessSnapshot()]; h.surfacesAfterAct = ["sheet"]
+    let r = harnessRig(FakeResolver([step("click", .continue, [.click(.label(1), button: .left, count: 1)]), step("done", .done)]),
+                       harness: h, settleMs: 3000)
+    _ = await r.runner.run(goal: "save it", mode: .command)
+    #expect(r.resolver.requests.count == 2)
+    #expect(r.resolver.requests[1].observation.surface == "sheet")
+    let polls = h.calls.filter { $0.hasPrefix("snapshot:") }
+    #expect(polls.first == "snapshot:Safari" && polls.dropFirst().allSatisfy { $0 == "snapshot:sheet" } && polls.count >= 3)
 }
 
 @MainActor @Test func harnessKindIsFixedForTheWholeTask() async {

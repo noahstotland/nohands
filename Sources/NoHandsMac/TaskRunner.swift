@@ -35,6 +35,9 @@ public enum TaskOutcome: Equatable, Sendable {
     private let harness: (any DesktopHarness)?
     private var taskHarness: HarnessKind = .native
     private var sessionID: String?
+    /// Overlays (sheet, menu, …) the last step's actions left open, read from the harness once per settle so every
+    /// poll of that settle observes the same surface (reading clears the harness's copy).
+    private var pendingSurfaces: [String] = []
     private let sleep: @Sendable (Duration) async -> Void
     /// Measures observation time (injected so tests are deterministic).
     private let now: @Sendable () -> ContinuousClock.Instant
@@ -88,6 +91,7 @@ public enum TaskOutcome: Equatable, Sendable {
             sessionID = await harness.startSession(name: "nohands-\(Int(Date().timeIntervalSince1970))")
         }
         var settleStart = ContinuousClock.now
+        pendingSurfaces = harness?.takeOpenSurfaces() ?? []
         var first = await observeTimed(mode: mode)
         if taskHarness == .agentDesktop, !first.fromHarness {
             taskHarness = .native
@@ -140,6 +144,7 @@ public enum TaskOutcome: Equatable, Sendable {
             history.append(StepRecord(intent: step.intent, actions: step.actions, failure: failure))
             if n < maxSteps {
                 settleStart = ContinuousClock.now
+                pendingSurfaces = harness?.takeOpenSurfaces() ?? []
                 (observation, labels) = await settle(mode: mode, readings: readings)
                 settled = settleStart.duration(to: .now)
             }
@@ -179,9 +184,11 @@ public enum TaskOutcome: Equatable, Sendable {
         let state = overlay.state
         let screens = observer.screenRects()
         let kind = taskHarness
+        let surfaces = pendingSurfaces
         let start = now()
         let r = await Task.detached {
-            await observer.observe(mode: mode, overlay: state, screens: screens, harnessKind: kind, readings: readings)
+            await observer.observe(mode: mode, overlay: state, screens: screens, harnessKind: kind, readings: readings,
+                                   surfaces: surfaces)
         }.value
         return ((r.observation, r.labels), Int(start.duration(to: now()) / .milliseconds(1)), r.fromHarness)
     }

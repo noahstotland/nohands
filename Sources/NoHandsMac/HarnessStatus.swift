@@ -31,6 +31,13 @@ public struct HarnessStatus: Equatable, Sendable {
         }
     }
 
+    /// The menu line, noting when the running pipeline was built with a different harness than the probe finds
+    /// now (the harness is built once at pipeline start).
+    public func menuText(inUse: HarnessKind?) -> String {
+        guard let inUse, inUse != chosen else { return text }
+        return text + (chosen == .agentDesktop ? " — restart NoHands to use it" : " — restart NoHands to apply")
+    }
+
     /// Locates the binary and asks it for `version` and `status`. `binary`/`client` are injectable for tests.
     public static func probe(config: AppConfig, environment: [String: String] = ProcessInfo.processInfo.environment,
                              binary: URL?? = nil, client: (any DesktopCommandRunning)? = nil) async -> HarnessStatus {

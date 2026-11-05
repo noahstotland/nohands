@@ -61,15 +61,18 @@ public struct AgentDesktopClient: DesktopCommandRunning, Sendable {
             p.standardOutput = out
             p.standardError = FileHandle.nullDevice
             p.standardInput = FileHandle.nullDevice
-            let cancelledEarly: Bool = lock.withLock {
-                process = p
-                return ended != nil
-            }
-            if cancelledEarly { return .cancelled(command: command, isObservation: isObservation) }
+            if lock.withLock({ ended != nil }) { return .cancelled(command: command, isObservation: isObservation) }
             do { try p.run() } catch {
                 return .processFailure(command: command, message: "could not run agent-desktop: \(error.localizedDescription)",
                                        observation: isObservation)
             }
+            // Publish the process only once it runs: `terminate()` on an unlaunched Process raises. A cancellation
+            // that landed between the check above and `run()` is honoured here.
+            let cancelledDuringLaunch: Bool = lock.withLock {
+                process = p
+                return ended != nil
+            }
+            if cancelledDuringLaunch { p.terminate() }
             let timer = DispatchWorkItem { [weak self] in self?.kill(reason: "TIMEOUT") }
             DispatchQueue.global().asyncAfter(deadline: .now() + .milliseconds(Int(deadline / .milliseconds(1))), execute: timer)
             // Drain stdout on its own thread (a child that fills the pipe must not deadlock), but wait for the

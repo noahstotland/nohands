@@ -89,6 +89,19 @@ private func script(_ body: String) -> URL {
     #expect(e.ok && t.duration(to: .now) < .milliseconds(1500))
 }
 
+@Test func cancellationRacingTheLaunchNeverTerminatesAnUnlaunchedProcess() async {
+    // Cancelling in the window between creating and launching the child used to raise an uncaught
+    // NSInvalidArgumentException (terminate() on a Process that never ran). Hammer the window.
+    let c = AgentDesktopClient(binary: script("sleep 1"), defaultDeadline: .seconds(5))
+    for i in 0..<40 {
+        let task = Task { await c.run(["click", "@s1:e1"], isObservation: false) }
+        if i % 2 == 0 { await Task.yield() }
+        task.cancel()
+        let e = await task.value
+        #expect(e.error?.code == "CANCELLED" || e.error?.code == "PROCESS_FAILED")
+    }
+}
+
 @Test func runPassesEnvironmentToTheChild() async {
     let c = AgentDesktopClient(binary: script(#"printf '{"version":"2.6","ok":true,"command":"status","data":{"session":"%s"}}' "$AGENT_DESKTOP_SESSION""#), defaultDeadline: .seconds(2))
     let e = await c.run(["status"], isObservation: true, environment: ["AGENT_DESKTOP_SESSION": "abc"])

@@ -22,6 +22,15 @@ private let bin = URL(fileURLWithPath: "/opt/homebrew/bin/agent-desktop")
     #expect(HarnessStatus(choice: .agentDesktop, binary: nil, version: nil, accessibility: nil).chosen == .native)
 }
 
+@Test func menuTextSaysWhenARestartIsNeeded() {
+    let ok = HarnessStatus(choice: .auto, binary: bin, version: "1.1.0", accessibility: "granted")
+    #expect(ok.menuText(inUse: .agentDesktop) == "Harness: agent-desktop 1.1.0")
+    #expect(ok.menuText(inUse: .native) == "Harness: agent-desktop 1.1.0 — restart NoHands to use it")
+    #expect(ok.menuText(inUse: nil) == "Harness: agent-desktop 1.1.0")
+    let missing = HarnessStatus(choice: .auto, binary: nil, version: nil, accessibility: nil)
+    #expect(missing.menuText(inUse: .agentDesktop) == "Harness: native (agent-desktop not found — npm i -g agent-desktop) — restart NoHands to apply")
+}
+
 @Test func harnessStatusProbeReadsVersionAndPermissions() async {
     let c = ScriptedClient()
     c.responses["version"] = [okEnvelope("version", data: #"{"os":"macos","target":"aarch64","version":"1.1.0"}"#)]

@@ -144,9 +144,9 @@ public enum DesktopCommand: Equatable, Sendable {
             if let toRef { out += ["--to", toRef] } else if let toXY { out += ["--to-xy", Self.xy(toXY)] }
         case .closeApp(let app):
             out.append(app)
-        case .window(_, let app, let title):
+        case .window(let op, let app, let title):
             if let app { out += ["--app", app] }
-            if let title { out += ["--title", title] }
+            if let title, op == .focus { out += ["--title", title] }   // only focus-window takes --title
         case .clipboardSet(let text):
             out.append(text)
         case .get(let ref, let property):
