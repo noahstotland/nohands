@@ -1,6 +1,7 @@
 # NH-11: Start at Login and an Open config.json menu item — Design
 
-**Date:** 2026-11-05  **Status:** Draft  **Ticket:** [NH-11](https://github.com/noahstotland/nohands/issues/11)
+**Date:** 2026-11-05  **Status:** Shipped  **Ticket:** [NH-11](https://github.com/noahstotland/nohands/issues/11)
+**Shipped:** in PR #25, as specified
 
 ## Intent
 
