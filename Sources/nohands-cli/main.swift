@@ -216,6 +216,8 @@ var exitStatus: Int32 = 0
             guard rest.count == 1 else { usage() }
             if let actions = CommandGrammar().parse(rest[0]) {
                 print("\(actions)")
+            } else if let message = CommandGrammar().rejection(rest[0]) {
+                print("rejected: \(message)")
             } else {
                 print("no match -> LLM")
             }

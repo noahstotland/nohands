@@ -139,6 +139,18 @@ public struct CommandGrammar: Sendable {
         return Self.strippedExactMatch(tokens)
     }
 
+    /// The HUD line for a `spell` phrase that can't be typed; nil for anything else. Such a phrase is
+    /// the grammar's own, so it must never fall through to the model, which could guess at what to type.
+    public func rejection(_ transcript: String) -> String? {
+        let tokens = Self.normalize(transcript)
+        guard tokens.first == "spell", case .failure(let error) = Speller.spell(Array(tokens.dropFirst())) else { return nil }
+        switch error {
+        case .empty: return "say spell and then the letters"
+        case .unknown(let t): return "can't spell \"\(t)\": say spell again"
+        case .capitalWithoutLetter: return "capital needs a letter: say spell again"
+        }
+    }
+
     /// The rules keyed on the first word(s): press, move, scroll, zoom, open, go to, search for, type, click.
     private func parsePattern(_ tokens: [String], transcript: String) -> [Action]? {
         let first = tokens[0]
@@ -189,6 +201,9 @@ public struct CommandGrammar: Sendable {
             }
             // "search for cats": the frontmost app's or page's own search box.
             return [.search(payload)]
+        case "spell":
+            guard case .success(let text) = Speller.spell(Array(tokens.dropFirst())) else { return nil }
+            return [.typeText(text)]
         case "type":
             guard tokens.count > 1 else { return nil }
             // Payload comes from the raw transcript so ASR casing/punctuation survives.

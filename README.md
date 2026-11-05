@@ -90,6 +90,7 @@ The script installs Ollama with Homebrew if needed, starts it, pulls the model a
 | Say | Does |
 |---|---|
 | `type <words>` | Types the words with spoken punctuation applied |
+| `spell <letters>` | Types letters, NATO words (`kilo`, `x ray`), digits and `space`, `dash`, `dot`, `underscore`, `at sign` as one string with no spaces; `capital` uppercases the next letter (`spell capital kilo nine x ray` types `K9x`). One unknown word types nothing and the row says which |
 | `press command shift s` | Presses a key chord |
 | `enter`, `tab`, `escape`, `delete`, arrow names | Presses that key |
 | `undo`, `redo`, `copy`, `paste`, `cut`, `select all`, `save`, `find` | Standard shortcuts |
@@ -132,7 +133,7 @@ In dictation mode, say `period`, `comma`, `question mark`, `new line`, `new para
 | `click "<name>"` | Clicks the named element |
 | `grid` | Shows the 10×8 grid, zooms into cell 35 |
 | `labels` | Shows numbered badges on the frontmost app's elements |
-| `parse "<text>"` | Dry run: prints the actions the grammar produces (or "no match -> LLM"); executes nothing |
+| `parse "<text>"` | Dry run: prints the actions the grammar produces (or "no match -> LLM", or "rejected: ..." for a `spell` with an unknown word, e.g. `parse "spell capital kilo nine x ray"`); executes nothing |
 | `run "<phrase>"...` | Executes grammar phrases in order |
 | `observe` | Prints what the task loop sends the model about the frontmost app: window title, URL and numbered elements with roles |
 | `resolve "<text>"` | Dry run: sends text and the frontmost app's labels to the configured backend and prints the step (`intent`, `status`, actions); executes nothing (Claude spends API credit) |
