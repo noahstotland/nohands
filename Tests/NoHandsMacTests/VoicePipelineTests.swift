@@ -210,6 +210,7 @@ private func step(_ intent: String, _ status: StepStatus, _ actions: [Action] = 
     #expect(r.input.calls.isEmpty)                         // nothing runs concurrently with the task
     let held = r.overlay.reports.filter { $0.status == .held }
     #expect(held.map(\.text) == ["scroll down", "click"])
+    #expect(r.overlay.reports.contains { $0.text == "scroll down" && $0.status == .dropped(PipelineText.dropped) })   // replaced: its row is closed
     #expect(PromptStatus.held.text == "held · runs after this task (say stop to cancel)")
     release.open()
     await r.pipeline.waitForTask()

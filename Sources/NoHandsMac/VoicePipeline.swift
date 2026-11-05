@@ -60,8 +60,8 @@ import NoHandsCore
     private var activeTask: Task<Void, Never>?
     /// The newest utterance heard while a task ran; handled after the task ends.
     private var heldJob: Job?
-    /// A held job a stop phrase discarded; reported ("dropped") once the stopped task has unwound.
-    private var droppedJob: Job?
+    /// Held jobs a stop phrase discarded; reported ("dropped") once the stopped task has unwound.
+    private var droppedJobs: [Job] = []
     /// A held job is replayed after the task only if it was spoken within this window.
     static let heldJobMaxAge: Duration = .seconds(60)
     /// Prompt rows are numbered in the order heard.
@@ -259,8 +259,9 @@ import NoHandsCore
         for t in tasks { t.cancel() }
         tasks = []
         executor.releaseAll()   // release a held mouse button and drop any grid/labels overlay
+        for job in [heldJob].compactMap({ $0 }) + droppedJobs { reportDropped(job, log: false) }
         heldJob = nil
-        droppedJob = nil
+        droppedJobs = []
         runner?.cancel()
         activeTask?.cancel()    // also covers a cancel() that lands before run() starts (run() clears its flag)
         if let merge { Task { await merge.reset() } }
@@ -321,17 +322,24 @@ import NoHandsCore
     private func busy(_ job: Job) {
         guard !stopped else { return }
         if StopWords.isStop(job.transcript) {
-            if let held = heldJob { droppedJob = held }
+            if let held = heldJob { droppedJobs.append(held) }
             heldJob = nil
             runner?.cancel()
             activeTask?.cancel()   // the task's row shows "stopped" when the runner unwinds
             overlay.report(job.id, text: job.transcript, status: .done(PipelineText.stopping))
             PipelineLog.utterance(trace: job.trace, transcript: job.transcript, outcome: "stop", detail: "stop")
         } else {
+            if let replaced = heldJob { reportDropped(replaced) }   // newest wins; the old row must not stay "held"
             heldJob = job
             overlay.report(job.id, text: job.transcript, status: .held)
             PipelineLog.utterance(trace: job.trace, transcript: job.transcript, outcome: "held", detail: "held")
         }
+    }
+
+    /// Shows a job that will never run as dropped on its row.
+    private func reportDropped(_ job: Job, log: Bool = true) {
+        overlay.report(job.id, text: job.transcript, status: .dropped(PipelineText.dropped))
+        if log { PipelineLog.utterance(trace: job.trace, transcript: job.transcript, outcome: "dropped", detail: "dropped") }
     }
 
     /// Routes and executes one job. Returns the task to run when it routed to the LLM (logged when the task ends).
@@ -404,13 +412,10 @@ import NoHandsCore
                 }
             }
             // Still held here means the task was stopped: it must never run (e.g. in the next task).
-            let lost = heldJob ?? droppedJob
+            let lost = [heldJob].compactMap { $0 } + droppedJobs
             heldJob = nil
-            droppedJob = nil
-            if let lost, !stopped {
-                overlay.report(lost.id, text: lost.transcript, status: .dropped(PipelineText.dropped))
-                PipelineLog.utterance(trace: lost.trace, transcript: lost.transcript, outcome: "dropped", detail: "dropped")
-            }
+            droppedJobs = []
+            if !stopped { for job in lost { reportDropped(job) } }
             activeTask = nil
         }
     }

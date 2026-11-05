@@ -272,7 +272,7 @@ extension OverlayController: OverlayPresenting {
             if let host = pageURL.flatMap({ URL(string: $0)?.host }), let results = SiteSearch.url(host: host, query: query) {
                 route = "siteURL"
                 try addressBar(results.absoluteString)
-                PipelineLog.info("search: route=siteURL host=\(host) (no search field)")
+                PipelineLog.info("search: route=siteURL (no search field, known site)")
                 return nil
             }
             guard pageURL != nil || ax.frontmostIsBrowser() else {
