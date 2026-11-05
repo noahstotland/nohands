@@ -1,6 +1,7 @@
 # NH-15: "search for X on youtube" searches the open site — Design
 
-**Date:** 2026-11-05  **Status:** Draft  **Ticket:** [NH-15](https://github.com/noahstotland/nohands/issues/15)
+**Date:** 2026-11-05  **Status:** Shipped  **Ticket:** [NH-15](https://github.com/noahstotland/nohands/issues/15)
+**Shipped:** in PR #28, as specified
 
 ## Intent
 
