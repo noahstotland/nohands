@@ -494,3 +494,29 @@ private func harnessSnapshot() -> DesktopSnapshot {
     #expect(r2.resolver.requests.map(\.observation.harness) == [.native, .native])
     #expect(h2.calls.filter { $0.hasPrefix("snapshot") }.count == 1)
 }
+
+private func tab(_ id: String, _ title: String, active: Bool = false) -> BrowserTab { BrowserTab(id: id, title: title, active: active) }
+
+@MainActor @Test func taskClosesAPopUnderTabButNeverTheUsersOwn() async throws {
+    let resolver = FakeResolver([
+        step("open the game", .continue, [.openURL(URL(string: "https://stream.example")!, app: nil)]),
+        step("close the pop-under", .continue, [.closeTab(3)]),
+        step("close the inbox", .continue, [.closeTab(1)]),
+        step("playing", .done)])
+    let r = rig(resolver)
+    r.ax.browser = [BrowserWindow(id: "w1", title: "Inbox", front: true, tabs: [tab("t1", "Inbox", active: true)])]
+    let ax = r.ax
+    // The open_url step leaves the game in a new active tab and a pop-under behind it.
+    let afterOpen = [BrowserWindow(id: "w1", title: "Game", front: true,
+                                   tabs: [tab("t1", "Inbox"), tab("t2", "Game", active: true), tab("t3", "You won!")])]
+    resolver.onResolve = { n in if n == 1 { ax.browser = afterOpen } }
+    let outcome = await r.runner.run(goal: "watch the Raptors game", mode: .command)
+    #expect(outcome == .done("playing"))
+    let second = try #require(resolver.requests[1].observation.tabs)
+    #expect(second.tab(2)?.new == true && second.tab(2)?.task == true)
+    #expect(second.tab(3)?.new == true && second.tab(1)?.new == false)
+    #expect(ax.closedTabs == ["t3"])
+    #expect(resolver.requests[3].history[2].failure == "blocked: tab 1 is not one this task opened")
+    // A media goal gets the longer step cap.
+    #expect(resolver.requests[0].maxSteps == 24)
+}

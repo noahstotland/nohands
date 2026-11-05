@@ -358,3 +358,20 @@ private let reload = UIElementInfo(id: 1, frame: CGRect(x: 100, y: 100, width: 8
     }
     #expect(i.calls.isEmpty && e.opened.isEmpty)
 }
+
+@MainActor @Test func tabWithoutACloseButtonIsClosedByShortcutOnlyOnceItIsSelected() async {
+    var ledger = TabLedger()
+    let old = BrowserTab(id: "t0", title: "Inbox", active: true)
+    ledger.baseline(app: "Chrome", windows: [BrowserWindow(id: "w1", title: "Inbox", front: true, tabs: [old])])
+    let listing = ledger.listing(app: "Chrome", windows: [BrowserWindow(id: "w1", title: "Inbox", front: true,
+                                                                         tabs: [old, BrowserTab(id: "t1", title: "Ad")])])
+    for (selects, want) in [(true, nil), (false, Optional("couldn't select that tab"))] {
+        let (ex, input, ax, _) = make()
+        ax.isBrowser = true; ax.tabHasNoCloseButton = true; ax.selectingWorks = selects
+        #expect(await ex.execute([.closeTab(2)], tabs: listing) == want)
+        #expect(ax.selectedTabs == ["t1"])
+        #expect(input.calls == (selects ? ["press"] : []))   // command-W goes out only for the tab that is now selected
+    }
+    let (ex, _, ax, _) = make()
+    #expect(await ex.execute([.closeTab(5)], tabs: listing) == "no tab 5" && ax.closedTabs.isEmpty)
+}

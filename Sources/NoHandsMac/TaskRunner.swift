@@ -42,6 +42,10 @@ public enum TaskOutcome: Equatable, Sendable {
     /// Measures observation time (injected so tests are deterministic).
     private let now: @Sendable () -> ContinuousClock.Instant
 
+    /// Which browser tabs and windows are the user's and which the task opened; one per task.
+    private var ledger = TabLedger()
+    /// Set after a step that navigated: the next browser observation's active tab is the task's.
+    private var markTaskTab = false
     private var cancelled = false
     /// Steps whose actions were executed in the current (or last) `run`.
     public private(set) var stepsRun = 0
@@ -80,7 +84,11 @@ public enum TaskOutcome: Equatable, Sendable {
     public func run(goal: String, mode: Mode) async -> TaskOutcome {
         cancelled = false
         stepsRun = 0
-        let maxSteps = max(1, config.maxTaskSteps)
+        // A goal about playing media gets a longer budget: stream sites throw overlays and pop-unders first.
+        let maxSteps = max(1, MediaGoal.matches(goal) ? config.maxMediaTaskSteps : config.maxTaskSteps)
+        ledger = TabLedger()
+        markTaskTab = false
+        observer.resetBrowserTokens()
         var history: [StepRecord] = []
         var repeats = RepeatDetector(limit: 3)
         // Observe once. Settle first only when that walk just exposed a Chromium page tree (it fills in ~0.5 s
@@ -102,6 +110,7 @@ public enum TaskOutcome: Equatable, Sendable {
         }
         if observer.didJustExpose() { first = (await settle(mode: mode, from: first), first.ms, first.fromHarness) }
         var (observation, labels) = first.result
+        annotateTabs(&observation)
         var settled = settleStart.duration(to: .now)
 
         for n in 1...maxSteps {
@@ -125,10 +134,12 @@ public enum TaskOutcome: Equatable, Sendable {
             // Code-level guard: never close a tab/window or quit an app the goal did not ask to close or quit.
             // A blocked step runs nothing and is recorded as a failed step so the model can react.
             let failure: String?
-            if let blocked = ShortcutGuard.blocked(step.actions, goal: goal) { failure = blocked }
+            if let blocked = ShortcutGuard.blocked(step.actions, goal: goal)
+                ?? TabGuard.blocked(step.actions, listing: observation.tabs, goal: goal) { failure = blocked }
             else {
                 let shown = overlay.state
-                failure = await executeCancellable(step.actions, labels: labels)
+                failure = await executeCancellable(step.actions, labels: labels, tabs: observation.tabs)
+                if step.actions.contains(where: Self.navigates) { markTaskTab = true }
                 // Badges or a grid are only valid for the screen they were drawn on: once a step has acted, hide
                 // them so the next observation walks the screen afresh (a `.label` click leaves them up, and the
                 // badge map would otherwise be reused). One this step just drew (e.g. "show numbers") stays, and a step
@@ -150,10 +161,29 @@ public enum TaskOutcome: Equatable, Sendable {
                 settleStart = ContinuousClock.now
                 pendingSurfaces = harness?.takeOpenSurfaces() ?? []
                 (observation, labels) = await settle(mode: mode, readings: readings)
+                annotateTabs(&observation)
                 settled = settleStart.duration(to: .now)
             }
         }
         return await finish(.stuck(Self.stepLimit))
+    }
+
+    /// Steps that open or load a page in the browser: the tab they leave in front is the task's.
+    nonisolated private static func navigates(_ action: Action) -> Bool {
+        switch action {
+        case .openURL, .search, .searchSite: true
+        default: false
+        }
+    }
+
+    /// Turns the browser windows the observer read into the numbered `Tabs:` list. The first time a browser is seen
+    /// in front its tabs become the user's; a window-less browser (a cold launch) waits for its first window.
+    private func annotateTabs(_ observation: inout ScreenObservation) {
+        guard let windows = observation.browserWindows, !windows.isEmpty else { observation.tabs = nil; return }
+        let app = observation.app
+        ledger.baseline(app: app, windows: windows)
+        if markTaskTab { ledger.markTaskTab(app: app, windows: windows); markTaskTab = false }
+        observation.tabs = ledger.listing(app: app, windows: windows)
     }
 
     typealias Observed = (observation: ScreenObservation, labels: [Int: UIElementInfo])
@@ -217,10 +247,10 @@ public enum TaskOutcome: Equatable, Sendable {
         return result
     }
 
-    private func executeCancellable(_ actions: [Action], labels: [Int: UIElementInfo]) async -> String? {
+    private func executeCancellable(_ actions: [Action], labels: [Int: UIElementInfo], tabs: TabListing?) async -> String? {
         let executor = self.executor
         var failure: String?
-        await runCancellable { failure = await executor.execute(actions, labels: labels) }
+        await runCancellable { failure = await executor.execute(actions, labels: labels, tabs: tabs) }
         return failure
     }
 
@@ -250,6 +280,7 @@ public enum TaskOutcome: Equatable, Sendable {
     private func finish(_ outcome: TaskOutcome, hud: String? = nil) async -> TaskOutcome {
         // Spec Safety: a held mouse button is released on any exit; a successful `done` keeps what it did.
         if case .done = outcome {} else { executor.releaseAll() }
+        observer.resetBrowserTokens()
         onStatus?(Self.finalStatus(outcome, text: hud ?? PipelineText.hud(for: outcome), steps: stepsRun))
         // The HUD is already up; ending the traced session is quick bookkeeping.
         if let id = sessionID, let harness {

@@ -15,6 +15,9 @@ public final class AXQuery: @unchecked Sendable {
     private var exposedPids: Set<pid_t> = []
     /// Set when a pid is first exposed; cleared by `didJustExpose()`.
     private var justExposed = false
+    /// Browser windows and tabs handed to the task loop as opaque ids, matched by `CFEqual` so one element keeps one
+    /// id for the whole task. Cleared by `resetBrowserTokens()`; guarded by `lock`.
+    private var browserTokens: [(token: String, element: AXUIElement)] = []
 
     static let maxDepth = 30   // YouTube links sit ~23 levels below the window
     public static let defaultMaxNodes = 2000
@@ -43,7 +46,7 @@ public final class AXQuery: @unchecked Sendable {
     /// The page tree appears ~0.5 s AFTER exposure and this never waits, so the first walk of a freshly exposed
     /// browser is thin. Callers that need page content check `didJustExpose()` and re-observe (the task loop
     /// settles then); the voice path accepts a thin first walk.
-    private func exposeChromiumTree(_ app: NSRunningApplication, _ appEl: AXUIElement) {
+    func exposeChromiumTree(_ app: NSRunningApplication, _ appEl: AXUIElement) {
         guard let id = app.bundleIdentifier, Self.chromiumBundleIDs.contains(id) else { return }
         let pid = app.processIdentifier
         let first = lock.withLock {
@@ -174,6 +177,22 @@ public final class AXQuery: @unchecked Sendable {
         }
         return find(f.window, depth: 1, skippingWebAreas: true)
     }
+
+    /// The id for a browser window or tab element (`prefix` "w" or "t"): the same element always gets the same id.
+    func browserToken(for el: AXUIElement, prefix: String) -> String {
+        lock.withLock {
+            if let known = browserTokens.first(where: { CFEqual($0.element, el) }) { return known.token }
+            let token = "\(prefix)\(browserTokens.count + 1)"
+            browserTokens.append((token, el))
+            return token
+        }
+    }
+
+    func browserElement(forToken token: String) -> AXUIElement? {
+        lock.withLock { browserTokens.first { $0.token == token }?.element }
+    }
+
+    public func resetBrowserTokens() { lock.withLock { browserTokens = [] } }
 
     public func element(for id: Int) -> AXUIElement? {
         lock.withLock { elements[id] }

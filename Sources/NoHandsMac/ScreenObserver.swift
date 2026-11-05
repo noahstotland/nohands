@@ -71,6 +71,7 @@ public struct ScreenObserver: Sendable {
             result = observe(mode: mode, overlay: overlay, screens: screens)
         }
         result.observation.harness = harnessKind
+        result.observation.browserWindows = ax.browserWindows()
         result.observation.readings = readings
         return (result.observation, result.labels, fromHarness)
     }
@@ -98,6 +99,9 @@ public struct ScreenObserver: Sendable {
                                             overlay: overlay.kindName, elements: listed)
         return (observation, labels)
     }
+
+    /// Forgets the browser window and tab ids handed out during a task.
+    public func resetBrowserTokens() { ax.resetBrowserTokens() }
 
     /// True once right after an observation first exposed a Chromium page tree: observe again before trusting it.
     public func didJustExpose() -> Bool { ax.didJustExpose() }
