@@ -31,7 +31,22 @@ func usage() -> Never {
                                       printing each step and the outcome; Ctrl-C stops it)
       nohands-cli eval <file> [--runs N]  (scores the configured backend on a fixture set; executes nothing)
       nohands-cli listen             (mic -> VAD -> ASR; Ctrl-C to quit)
+      nohands-cli desktop-status     (agent-desktop binary, version, permissions and the harness in use)
+      nohands-cli snapshot [app]     (waits 3 s, prints the task-loop observation through agent-desktop of the
+                                      frontmost app, or of the named app)
     """)
+}
+
+/// The desktop harness the configured status picks (agent-desktop when installed and permitted), printed once.
+func loadHarness(_ config: AppConfig, quiet: Bool = false) async -> (any DesktopHarness)? {
+    let status = await HarnessStatus.probe(config: config)
+    if !quiet { print(status.text) }
+    return status.makeHarness(config: config)
+}
+
+func loadConfig() throws -> AppConfig {
+    let cfgURL = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".config/nohands/config.json")
+    return try AppConfig.load(from: try? Data(contentsOf: cfgURL), environment: ProcessInfo.processInfo.environment)
 }
 
 func point(_ args: [String]) -> CGPoint {
@@ -159,13 +174,44 @@ var exitStatus: Int32 = 0
             guard Permissions.accessibilityGranted(prompt: false) else {
                 fail("Accessibility permission is not granted to this process (or its terminal). Enable it in System Settings > Privacy & Security > Accessibility, then rerun.")
             }
+            let config = try loadConfig()
+            let harness = await loadHarness(config)
             try await Task.sleep(for: .seconds(3))
             let query = AXQuery(budget: .milliseconds(1000), maxNodes: 6000)
             _ = query.actionableElements()   // exposes a Chromium page tree, which appears ~0.5 s later
             try await Task.sleep(for: .seconds(1))
-            let (obs, _) = ScreenObserver(ax: query, maxElements: AppConfig().maxObservedElements)
-                .observe(mode: .command, overlay: .none)
+            let observer = ScreenObserver(ax: query, maxElements: config.observedElementCap, harness: harness,
+                                          snapshotTimeoutMs: config.agentDesktopSnapshotMs)
+            let probed = harness != nil ? await observer.probe() : false
+            let kind: HarnessKind = probed ? .agentDesktop : .native
+            let (obs, _, _) = await observer.observe(mode: .command, overlay: .none, harnessKind: kind)
             print(ClaudeRequestBuilder.userMessage(request: StepRequest(goal: "-", step: 1, maxSteps: 12, history: [], observation: obs)))
+        case "desktop-status":
+            let config = try loadConfig()
+            let status = await HarnessStatus.probe(config: config)
+            print("desktopHarness: \(config.desktopHarness.rawValue)")
+            print("binary: \(status.binary?.path ?? "not found")")
+            print("version: \(status.version ?? "-")")
+            print("accessibility: \(status.accessibility ?? "-")")
+            print(status.text)
+        case "snapshot":
+            guard rest.count <= 1 else { usage() }
+            let config = try loadConfig()
+            guard let harness = await loadHarness(config) else { fail("agent-desktop is not in use; see desktop-status") }
+            if rest.isEmpty {
+                print("bring the target app to the front; snapshot in 3 s...")
+                try await Task.sleep(for: .seconds(3))
+            }
+            let app = rest.first ?? (AXQuery().frontmostAppName() ?? "")
+            guard let snap = await harness.snapshot(app: app, surface: nil, timeoutMs: config.agentDesktopSnapshotMs) else {
+                fail("agent-desktop could not snapshot \(app) (no window, off screen, or not permitted)")
+            }
+            let (obs, _) = ScreenObserver.list(snap, app: app, windowTitle: snap.windowTitle ?? "", url: nil, mode: .command,
+                                               overlay: .none, limit: config.observedElementCap)
+            var shown = obs
+            shown.harness = .agentDesktop
+            print("snapshot \(snap.snapshotID): \(snap.elements.count) refs, \(obs.elements.count) listed, complete=\(snap.complete)")
+            print(ClaudeRequestBuilder.userMessage(request: StepRequest(goal: "-", step: 1, maxSteps: 12, history: [], observation: shown)))
         case "parse":
             guard rest.count == 1 else { usage() }
             if let actions = CommandGrammar().parse(rest[0]) {
@@ -184,9 +230,11 @@ var exitStatus: Int32 = 0
                 print("actions: \(actions)")
                 parsed.append(actions)
             }
+            let config = try loadConfig()
+            let harness = await loadHarness(config)
             try await Task.sleep(for: .seconds(2))
             await runOverlay { overlay in
-                let executor = ActionExecutor(input: synth, ax: AXQuery(), overlay: overlay, config: AppConfig())
+                let executor = ActionExecutor(input: synth, ax: AXQuery(), overlay: overlay, config: config, harness: harness)
                 for (i, actions) in parsed.enumerated() {
                     if i > 0 { try? await Task.sleep(for: .milliseconds(800)) }
                     if let failure = await executor.execute(actions) { print("failed: \(failure)"); break }
@@ -221,15 +269,17 @@ var exitStatus: Int32 = 0
                 fail("Accessibility permission is not granted to this process (or its terminal). Enable it in System Settings > Privacy & Security > Accessibility, then rerun.")
             }
             print("task: \(sanitized(goal))  (model=\(modelName), max \(config.maxTaskSteps) steps, settle <= \(config.settleMs) ms)")
+            let harness = await loadHarness(config)
             print("bring the target app to the front; starting in 3 s...")
             try await Task.sleep(for: .seconds(3))
             await runOverlay { overlay in
-                let executor = ActionExecutor(input: synth, ax: AXQuery(), overlay: overlay, config: config)
+                let executor = ActionExecutor(input: synth, ax: AXQuery(), overlay: overlay, config: config, harness: harness)
                 // Same observer as the app's task loop: a larger AX budget so web page content is reached.
                 let observer = ScreenObserver(ax: AXQuery(budget: .milliseconds(1000), maxNodes: 6000),
-                                              maxElements: config.maxObservedElements)
+                                              maxElements: config.observedElementCap, harness: harness,
+                                              snapshotTimeoutMs: config.agentDesktopSnapshotMs)
                 let runner = TaskRunner(config: config, resolver: resolver, executor: executor,
-                                        observer: observer, overlay: overlay)
+                                        observer: observer, overlay: overlay, harness: harness)
                 let t0 = ContinuousClock.now
                 var last = t0
                 runner.onStep = { n, step, settle, failure in

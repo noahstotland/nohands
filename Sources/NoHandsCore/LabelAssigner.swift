@@ -6,12 +6,22 @@ public struct UIElementInfo: Equatable, Sendable {
     public var frame: CGRect
     public var title: String
     public var role: String
+    /// agent-desktop's qualified ref (`@s8f3k2p9:e5`) when the element came from a harness snapshot.
+    public var ref: String?
+    /// Current value (a field's text, a checkbox's 1/0) when the snapshot reported one.
+    public var value: String?
+    /// agent-desktop state tokens: checked, selected, disabled, expanded, collapsed, focused, offscreen, …
+    public var states: [String]
 
-    public init(id: Int, frame: CGRect, title: String, role: String) {
+    public init(id: Int, frame: CGRect, title: String, role: String,
+                ref: String? = nil, value: String? = nil, states: [String] = []) {
         self.id = id
         self.frame = frame
         self.title = title
         self.role = role
+        self.ref = ref
+        self.value = value
+        self.states = states
     }
 }
 

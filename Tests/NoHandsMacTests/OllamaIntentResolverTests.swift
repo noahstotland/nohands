@@ -54,4 +54,13 @@ extension ClaudeIntentResolverTests {
         catch { Issue.record("wrong error \(error)") }
         #expect(ContinuousClock.now - start < .seconds(1))
     }
+
+    @Test func localResolverUsesTheLocalDeadline() async throws {
+        StubProtocol.reset { _ in (200, chatBody("[{\"kind\":\"show_grid\"}]")) }
+        let config = try AppConfig.load(from: Data(#"{"llmDeadlineMs":5000,"localLlmDeadlineMs":45000}"#.utf8), environment: [:])
+        let r = OllamaIntentResolver(config: config, session: makeSession())
+        _ = try await r.resolve("show grid", context: ctx)
+        let req = try #require(StubProtocol.requests.first)
+        #expect(req.timeoutInterval == 47)   // deadline + 2 s, so the URL loader never fires before the race does
+    }
 }

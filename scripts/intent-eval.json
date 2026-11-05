@@ -7,6 +7,15 @@
       {
         "actions": [
           {
+            "kind": "open_url",
+            "url": "https://www.youtube.com",
+            "app_name": "Google Chrome"
+          }
+        ]
+      },
+      {
+        "actions": [
+          {
             "kind": "open_app",
             "app_name": "Google Chrome"
           },
@@ -30,10 +39,49 @@
     ]
   },
   {
+    "say": "open youtube",
+    "app": "Finder",
+    "overlay": "none",
+    "accept": [
+      {
+        "actions": [
+          {
+            "kind": "open_url",
+            "url": "https://www.youtube.com"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "say": "go to hacker news",
+    "app": "Finder",
+    "overlay": "none",
+    "accept": [
+      {
+        "actions": [
+          {
+            "kind": "open_url",
+            "url": "https://news.ycombinator.com"
+          }
+        ]
+      }
+    ]
+  },
+  {
     "say": "take me to gmail in safari",
     "app": "Finder",
     "overlay": "none",
     "accept": [
+      {
+        "actions": [
+          {
+            "kind": "open_url",
+            "url": "https://mail.google.com",
+            "app_name": "Safari"
+          }
+        ]
+      },
       {
         "actions": [
           {
@@ -90,6 +138,15 @@
       {
         "actions": [
           {
+            "kind": "open_url",
+            "url": "https://www.youtube.com",
+            "app_name": "Google Chrome"
+          }
+        ]
+      },
+      {
+        "actions": [
+          {
             "kind": "open_app",
             "app_name": "Google Chrome"
           },
@@ -120,6 +177,15 @@
       {
         "actions": [
           {
+            "kind": "open_url",
+            "url": "https://github.com",
+            "app_name": "Firefox"
+          }
+        ]
+      },
+      {
+        "actions": [
+          {
             "kind": "open_app",
             "app_name": "Firefox"
           },
@@ -147,6 +213,15 @@
     "app": "Finder",
     "overlay": "none",
     "accept": [
+      {
+        "actions": [
+          {
+            "kind": "open_url",
+            "url": "https://www.wikipedia.org",
+            "app_name": "Safari"
+          }
+        ]
+      },
       {
         "actions": [
           {
@@ -200,6 +275,15 @@
     "app": "Finder",
     "overlay": "none",
     "accept": [
+      {
+        "actions": [
+          {
+            "kind": "open_url",
+            "url": "https://www.reddit.com",
+            "app_name": "Google Chrome"
+          }
+        ]
+      },
       {
         "actions": [
           {
@@ -839,6 +923,115 @@
         "actions": [
           {
             "kind": "ignore"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "say": "close the current tab",
+    "app": "Google Chrome",
+    "elements": [
+      "Back",
+      "Forward",
+      "Reload",
+      "New Tab",
+      "Search Google or type a URL"
+    ],
+    "overlay": "none",
+    "accept": [
+      {
+        "actions": [
+          {
+            "kind": "press_key",
+            "key": "w",
+            "modifiers": [
+              "command"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "say": "make the window half width and snap to the left side of the screen",
+    "app": "Google Chrome",
+    "elements": [
+      "Back",
+      "Forward",
+      "Reload"
+    ],
+    "overlay": "none",
+    "accept": [
+      {
+        "actions": [
+          {
+            "kind": "move_window",
+            "placement": "left_half"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "say": "put this window on the right half of the screen",
+    "app": "Notes",
+    "overlay": "none",
+    "accept": [
+      {
+        "actions": [
+          {
+            "kind": "move_window",
+            "placement": "right_half"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "say": "make this window take up the whole screen",
+    "app": "Finder",
+    "overlay": "none",
+    "accept": [
+      {
+        "actions": [
+          {
+            "kind": "move_window",
+            "placement": "maximize"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "say": "move the window to the top right corner",
+    "app": "Safari",
+    "elements": [
+      "Back",
+      "Forward"
+    ],
+    "overlay": "none",
+    "accept": [
+      {
+        "actions": [
+          {
+            "kind": "move_window",
+            "placement": "top_right"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "say": "center this window",
+    "app": "Notes",
+    "overlay": "none",
+    "accept": [
+      {
+        "actions": [
+          {
+            "kind": "move_window",
+            "placement": "center"
           }
         ]
       }

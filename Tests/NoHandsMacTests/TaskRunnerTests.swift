@@ -398,3 +398,90 @@ private actor WalkLog {
     #expect(await r.runner.run(goal: "show the numbers", mode: .command) == .done("finished"))
     if case .labels = r.overlay.state {} else { Issue.record("labels were hidden: \(r.overlay.state)") }
 }
+
+// MARK: harness
+
+private func harnessSnapshot() -> DesktopSnapshot {
+    DesktopSnapshot(app: "Safari", snapshotID: "s1", windowID: "w-1", windowTitle: "Safari", complete: true, elements: [
+        UIElementInfo(id: 1, frame: CGRect(x: 0, y: 0, width: 10, height: 10), title: "Reload", role: "button", ref: "@s1:e1")])
+}
+
+@MainActor private func harnessRig(_ resolver: FakeResolver, harness: FakeHarness, trace: Bool = false, settleMs: Int = 0) -> Rig {
+    let input = FakeInput(), ax = FakeElements(), overlay = FakeOverlay()
+    ax.front = "Safari"
+    ax.elements = [el(1, "Reload")]
+    var config = AppConfig()
+    config.settleMs = settleMs
+    config.agentDesktopTrace = trace
+    let executor = ActionExecutor(input: input, ax: ax, overlay: overlay, config: config, frontTimeout: .milliseconds(100),
+                                  harness: harness, clipboard: FakeClipboard())
+    let runner = TaskRunner(config: config, resolver: resolver, executor: executor,
+                            observer: ScreenObserver(ax: ax, maxElements: 120, harness: harness),
+                            overlay: overlay, sleep: { _ in }, harness: harness)
+    return Rig(runner: runner, resolver: resolver, input: input, ax: ax, overlay: overlay)
+}
+
+@MainActor @Test func readingsFlowIntoTheNextObservation() async {
+    let h = FakeHarness(); h.snapshotResults = [harnessSnapshot()]; h.readResult = "hi"
+    let r = harnessRig(FakeResolver([step("read", .continue, [.readClipboard]), step("look", .continue, [.wait(ms: 100)]),
+                                     step("done", .done)]), harness: h)
+    #expect(await r.runner.run(goal: "what's on the clipboard", mode: .command) == .done("done"))
+    #expect(r.resolver.requests.count == 3)
+    #expect(r.resolver.requests[0].observation.readings.isEmpty)
+    #expect(r.resolver.requests[1].observation.readings == ["clipboard: hi"])
+    #expect(r.resolver.requests[2].observation.readings.isEmpty)
+    #expect(r.resolver.requests.allSatisfy { $0.observation.harness == .agentDesktop && $0.observation.elements.first?.title == "Reload" })
+}
+
+@MainActor @Test func doneWithReadingsShowsTheFirstOneInTheHUD() async {
+    let h = FakeHarness(); h.snapshotResults = [harnessSnapshot()]; h.readResult = "hello world"
+    let r = harnessRig(FakeResolver([step("read it", .done, [.readClipboard])]), harness: h)
+    #expect(await r.runner.run(goal: "read the clipboard", mode: .command) == .done("read it"))
+    #expect(r.overlay.huds.last == "read it — clipboard: hello world")
+}
+
+@MainActor @Test func sessionStartsAndEndsWhenTracing() async {
+    let h = FakeHarness(); h.snapshotResults = [harnessSnapshot()]
+    let r = harnessRig(FakeResolver([step("done", .done)]), harness: h, trace: true)
+    _ = await r.runner.run(goal: "nothing", mode: .command)
+    #expect(h.calls.first == "session:start" && h.calls.last == "session:end:sess-1")
+    let h2 = FakeHarness(); h2.snapshotResults = [harnessSnapshot()]
+    let r2 = harnessRig(FakeResolver([step("done", .done)]), harness: h2)
+    _ = await r2.runner.run(goal: "nothing", mode: .command)
+    #expect(!h2.calls.contains { $0.hasPrefix("session") })
+}
+
+@MainActor @Test func elementChangedFailureIsRecordedForTheModel() async {
+    let h = FakeHarness(); h.snapshotResults = [harnessSnapshot()]; h.actResults = [.elementChanged]
+    let r = harnessRig(FakeResolver([step("click", .continue, [.click(.label(1), button: .left, count: 1)]), step("done", .done)]), harness: h)
+    _ = await r.runner.run(goal: "reload", mode: .command)
+    #expect(r.resolver.requests[1].history.first?.failure == ActionExecutor.elementChanged)
+    #expect(ClaudeRequestBuilder.userMessage(request: r.resolver.requests[1]).contains("FAILED: element changed, look again"))
+}
+
+@MainActor @Test func openSurfaceSurvivesTheSettlePolls() async {
+    // The click leaves a sheet open; every settle poll must snapshot the sheet, and the model must see it.
+    let h = FakeHarness(); h.snapshotResults = [harnessSnapshot()]; h.surfacesAfterAct = ["sheet"]
+    let r = harnessRig(FakeResolver([step("click", .continue, [.click(.label(1), button: .left, count: 1)]), step("done", .done)]),
+                       harness: h, settleMs: 3000)
+    _ = await r.runner.run(goal: "save it", mode: .command)
+    #expect(r.resolver.requests.count == 2)
+    #expect(r.resolver.requests[1].observation.surface == "sheet")
+    let polls = h.calls.filter { $0.hasPrefix("snapshot:") }
+    #expect(polls.first == "snapshot:Safari" && polls.dropFirst().allSatisfy { $0 == "snapshot:sheet" } && polls.count >= 3)
+}
+
+@MainActor @Test func harnessKindIsFixedForTheWholeTask() async {
+    // Snapshot works on step 1 but not on step 2: the task stays an agent-desktop task.
+    let h = FakeHarness(); h.snapshotResults = [harnessSnapshot(), nil]
+    let r = harnessRig(FakeResolver([step("wait", .continue, [.wait(ms: 100)]), step("done", .done)]), harness: h)
+    _ = await r.runner.run(goal: "x", mode: .command)
+    #expect(r.resolver.requests.map(\.observation.harness) == [.agentDesktop, .agentDesktop])
+    #expect(r.resolver.requests[1].observation.elements.first?.title == "Reload")   // native fallback elements
+    // No snapshot on step 1: a native task; the harness is not asked again.
+    let h2 = FakeHarness(); h2.snapshotResults = [nil, harnessSnapshot()]
+    let r2 = harnessRig(FakeResolver([step("wait", .continue, [.wait(ms: 100)]), step("done", .done)]), harness: h2)
+    _ = await r2.runner.run(goal: "x", mode: .command)
+    #expect(r2.resolver.requests.map(\.observation.harness) == [.native, .native])
+    #expect(h2.calls.filter { $0.hasPrefix("snapshot") }.count == 1)
+}

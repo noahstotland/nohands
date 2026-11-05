@@ -37,4 +37,66 @@ import NoHandsCore
         #expect(labels == [4: badges[4]!, 11: badges[11]!])
         #expect(f.walks == 0)                                   // no fresh walk with different numbering
     }
+
+    // MARK: harness
+
+    private func harnessSnapshot() -> DesktopSnapshot {
+        DesktopSnapshot(app: "Notes", snapshotID: "s1", windowID: "w-1", windowTitle: "Notes", complete: true, elements: [
+            UIElementInfo(id: 1, frame: CGRect(x: 0, y: 0, width: 10, height: 10), title: "Save", role: "button", ref: "@s1:e1"),
+            UIElementInfo(id: 2, frame: .zero, title: "", role: "group", ref: "@s1:e2"),
+            UIElementInfo(id: 3, frame: .zero, title: "", role: "textfield", ref: "@s1:e3", value: "cats"),
+            UIElementInfo(id: 4, frame: .zero, title: "More", role: "button", ref: "@s1:e4", states: ["disabled"]),
+        ])
+    }
+
+    @Test func observerUsesHarnessElementsAndKeepsRefs() async {
+        let f = FakeElements(); f.front = "Notes"; f.windowTitle = "Notes"
+        f.elements = [UIElementInfo(id: 0, frame: CGRect(x: 0, y: 0, width: 5, height: 5), title: "Native", role: "AXButton")]
+        let h = FakeHarness(); h.snapshotResults = [harnessSnapshot()]
+        let (obs, labels, fromHarness) = await ScreenObserver(ax: f, maxElements: 2, harness: h, snapshotTimeoutMs: 2500)
+            .observe(mode: .command, overlay: .none, harnessKind: .agentDesktop, readings: ["clipboard: hi"])
+        #expect(fromHarness)
+        #expect(obs.harness == .agentDesktop && obs.app == "Notes" && obs.windowTitle == "Notes")
+        #expect(obs.elements.map(\.number) == [1, 2] && obs.elements.map(\.title) == ["Save", ""])   // unnamed group skipped, cap 2
+        #expect(obs.elements[1].role == "textfield" && obs.elements[1].value == "cats")
+        #expect(labels[1]?.ref == "@s1:e1" && labels[2]?.ref == "@s1:e3" && labels.count == 2)
+        #expect(obs.readings == ["clipboard: hi"] && obs.surface == nil)
+        #expect(f.walks == 0 && h.calls == ["snapshot:Notes"])
+    }
+
+    @Test func observerFallsBackToNativeOnProcessFailure() async {
+        let f = FakeElements(); f.front = "Notes"
+        f.elements = [UIElementInfo(id: 0, frame: CGRect(x: 0, y: 0, width: 5, height: 5), title: "Native", role: "AXButton")]
+        let h = FakeHarness(); h.snapshotResults = [nil]
+        let o = ScreenObserver(ax: f, maxElements: 10, harness: h)
+        let (obs, labels, fromHarness) = await o.observe(mode: .command, overlay: .none, harnessKind: .agentDesktop)
+        #expect(obs.harness == .agentDesktop && obs.elements.map(\.title) == ["Native"] && labels[1]?.ref == nil && !fromHarness)
+        #expect(f.walks == 1)
+        #expect(await o.probe() == false)
+        h.snapshotResults = [harnessSnapshot()]
+        #expect(await o.probe() == true)
+    }
+
+    @Test func observerSnapshotsOpenSurfaceInsteadOfWindow() async {
+        let f = FakeElements(); f.front = "TextEdit"
+        let h = FakeHarness(); h.snapshotResults = [harnessSnapshot()]; h.surfacesToReport = ["sheet"]
+        let (obs, _, _) = await ScreenObserver(ax: f, maxElements: 10, harness: h).observe(mode: .command, overlay: .none, harnessKind: .agentDesktop)
+        #expect(h.calls == ["snapshot:sheet"] && obs.surface == "sheet" && obs.elements.count == 3)
+        // A surface agent-desktop cannot snapshot (not a sheet/menu/alert/popover) is ignored.
+        let h2 = FakeHarness(); h2.snapshotResults = [harnessSnapshot()]; h2.surfacesToReport = ["toolbar"]
+        let (obs2, _, _) = await ScreenObserver(ax: f, maxElements: 10, harness: h2).observe(mode: .command, overlay: .none, harnessKind: .agentDesktop)
+        #expect(h2.calls == ["snapshot:TextEdit"] && obs2.surface == nil)
+    }
+
+    @Test func badgesOverlayAndNativeKindSkipTheHarness() async {
+        let f = FakeElements(); f.front = "Notes"
+        f.elements = [UIElementInfo(id: 0, frame: CGRect(x: 0, y: 0, width: 5, height: 5), title: "Native", role: "AXButton")]
+        let h = FakeHarness(); h.snapshotResults = [harnessSnapshot()]
+        let badges = [4: UIElementInfo(id: 4, frame: CGRect(x: 0, y: 0, width: 50, height: 50), title: "Save", role: "AXButton")]
+        let o = ScreenObserver(ax: f, maxElements: 10, harness: h)
+        let (obs, _, fromHarness) = await o.observe(mode: .command, overlay: .labels(badges), harnessKind: .agentDesktop)
+        #expect(obs.elements.map(\.number) == [4] && h.calls.isEmpty && obs.harness == .agentDesktop && !fromHarness)
+        let (native, _, _) = await o.observe(mode: .command, overlay: .none, harnessKind: .native)
+        #expect(native.harness == .native && native.elements.map(\.title) == ["Native"] && h.calls.isEmpty)
+    }
 }

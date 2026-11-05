@@ -15,8 +15,15 @@ public struct ObservedElement: Equatable, Sendable {
     public var number: Int
     public var role: String
     public var title: String
-    public init(number: Int, role: String, title: String) { self.number = number; self.role = role; self.title = title }
+    public var value: String?
+    public var states: [String]
+    public init(number: Int, role: String, title: String, value: String? = nil, states: [String] = []) {
+        self.number = number; self.role = role; self.title = title; self.value = value; self.states = states
+    }
 }
+
+/// Which backend observed the screen and may act on it; fixed for a whole task.
+public enum HarnessKind: String, Codable, Sendable { case native, agentDesktop = "agent-desktop" }
 
 public struct ScreenObservation: Equatable, Sendable {
     public var app: String
@@ -26,6 +33,13 @@ public struct ScreenObservation: Equatable, Sendable {
     /// "none" | "grid" | "labels"
     public var overlay: String
     public var elements: [ObservedElement]
+    public var harness: HarnessKind = .native
+    /// An open overlay surface (menu, sheet, alert, popover) whose elements are listed instead of the window's.
+    public var surface: String? = nil
+    /// Titles of the frontmost app's other windows, when there are several.
+    public var windows: [String] = []
+    /// Text the model asked to read in the previous step (clipboard, an element value, notifications).
+    public var readings: [String] = []
     public init(app: String, windowTitle: String = "", url: String? = nil, mode: Mode,
                 overlay: String = "none", elements: [ObservedElement] = []) {
         self.app = app; self.windowTitle = windowTitle; self.url = url

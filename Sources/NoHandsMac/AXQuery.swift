@@ -148,23 +148,83 @@ public final class AXQuery: @unchecked Sendable {
     // MARK: activation
 
     public func activate(appNamed name: String) -> Bool {
-        let q = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !q.isEmpty else { return false }
-
+        guard let match = lookupApp(named: name) else { return false }
         let config = NSWorkspace.OpenConfiguration()
         config.activates = true
-
-        let running = NSWorkspace.shared.runningApplications.filter { $0.activationPolicy == .regular }
-        let runningCands = running.enumerated().compactMap { (i, app) in app.localizedName.map { (name: $0, id: i) } }
-        if let i = AppNameMatcher.best(for: q, in: runningCands) {
-            let app = running[i]
+        if let app = match.running {
             if app.isHidden { app.unhide() }
             if let url = app.bundleURL {
                 // openApplication works where a plain activate() can be refused (cooperative activation).
                 NSWorkspace.shared.openApplication(at: url, configuration: config) { _, _ in }
                 return true
             }
-            if app.activate() { return true }
+            return app.activate()
+        }
+        guard let url = match.bundleURL else { return false }
+        NSWorkspace.shared.openApplication(at: url, configuration: config) { _, _ in }
+        return true
+    }
+
+    /// Opens `url` in the named app (nil when no such app) or in the default handler. Returns the handler's name.
+    public func open(url: URL, appNamed: String?) -> String? {
+        let config = NSWorkspace.OpenConfiguration()
+        config.activates = true
+        if let appNamed {
+            guard let match = lookupApp(named: appNamed), let bundle = match.running?.bundleURL ?? match.bundleURL else { return nil }
+            if let app = match.running, app.isHidden { app.unhide() }
+            NSWorkspace.shared.open([url], withApplicationAt: bundle, configuration: config) { _, _ in }
+            return match.running?.localizedName ?? Self.displayName(of: bundle)
+        }
+        guard let handler = NSWorkspace.shared.urlForApplication(toOpen: url) else {
+            NSWorkspace.shared.open(url)
+            return ""
+        }
+        NSWorkspace.shared.open([url], withApplicationAt: handler, configuration: config) { _, _ in }
+        return Self.displayName(of: handler)
+    }
+
+    public func frontmostHasWindow() -> Bool { focusedWindow() != nil }
+
+    // MARK: window geometry
+
+    /// AX reports window frames in CG (top-left origin) coordinates already.
+    public func focusedWindowFrame() -> CGRect? {
+        guard let f = focusedWindow() else { return nil }
+        return Self.frame(f.window)
+    }
+
+    /// Position first (so a window that would overflow its current screen can still shrink), then size, then
+    /// position again: apps clamp the size to their minimum and some only honour the origin once the size fits.
+    public func setFocusedWindowFrame(_ frame: CGRect) -> Bool {
+        guard let f = focusedWindow() else { return false }
+        var settable: DarwinBoolean = false
+        guard AXUIElementIsAttributeSettable(f.window, kAXPositionAttribute as CFString, &settable) == .success,
+              settable.boolValue else { return false }
+        var origin = frame.origin, size = frame.size
+        guard let p = AXValueCreate(.cgPoint, &origin), let s = AXValueCreate(.cgSize, &size) else { return false }
+        AXUIElementSetMessagingTimeout(f.window, 0.5)
+        let moved = AXUIElementSetAttributeValue(f.window, kAXPositionAttribute as CFString, p)
+        let sized = AXUIElementSetAttributeValue(f.window, kAXSizeAttribute as CFString, s)
+        _ = AXUIElementSetAttributeValue(f.window, kAXPositionAttribute as CFString, p)
+        return moved == .success || sized == .success
+    }
+
+    static func displayName(of bundle: URL) -> String {
+        let info = Bundle(url: bundle)?.infoDictionary
+        return (info?["CFBundleDisplayName"] as? String) ?? (info?["CFBundleName"] as? String)
+            ?? bundle.deletingPathExtension().lastPathComponent
+    }
+
+    private struct AppMatch { var running: NSRunningApplication?; var bundleURL: URL? }
+
+    /// Running apps first (exact, prefix, contains on the localized name), then installed ones (exact, prefix).
+    private func lookupApp(named name: String) -> AppMatch? {
+        let q = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !q.isEmpty else { return nil }
+        let running = NSWorkspace.shared.runningApplications.filter { $0.activationPolicy == .regular }
+        let runningCands = running.enumerated().compactMap { (i, app) in app.localizedName.map { (name: $0, id: i) } }
+        if let i = AppNameMatcher.best(for: q, in: runningCands) {
+            return AppMatch(running: running[i], bundleURL: running[i].bundleURL)
         }
 
         var installed: [(url: URL, names: [String])] = []
@@ -184,9 +244,8 @@ public final class AXQuery: @unchecked Sendable {
             }
         }
         let flat = installed.flatMap { e in e.names.map { (name: $0, id: e.url) } }
-        guard let url = AppNameMatcher.best(for: q, in: flat, allowContains: false) else { return false }
-        NSWorkspace.shared.openApplication(at: url, configuration: config) { _, _ in }
-        return true
+        guard let url = AppNameMatcher.best(for: q, in: flat, allowContains: false) else { return nil }
+        return AppMatch(running: nil, bundleURL: url)
     }
 
     // MARK: screens
@@ -198,6 +257,14 @@ public final class AXQuery: @unchecked Sendable {
         let h = primary.frame.height
         // The flip is its own inverse; toAppKit(rect) performs it.
         return screens.map { CoordinateMapper.toAppKit($0.frame, primaryScreenHeight: h) }
+    }
+
+    /// Screen areas minus menu bar and Dock, CG coordinates, in `NSScreen.screens` order like `screenRectsCG()`.
+    public static func visibleScreenRectsCG() -> [CGRect] {
+        let screens = NSScreen.screens
+        guard let primary = screens.first else { return [] }
+        let h = primary.frame.height
+        return screens.map { CoordinateMapper.toAppKit($0.visibleFrame, primaryScreenHeight: h) }
     }
 
     // MARK: attribute helpers

@@ -72,12 +72,15 @@ extension ClaudeIntentResolverTests {
         #expect(body?["stream"] as? Bool == true)
     }
 
-    @Test func ollamaWarmPostsEmptyChat() async throws {
+    @Test func ollamaWarmPrefillsThePromptPrefix() async throws {
         StubProtocol.reset { _ in (200, Data("{}".utf8)) }
         let c = OllamaClient(baseURL: base, session: makeSession())
         try await c.warm(model: "m")
-        #expect(StubProtocol.requests[0].url?.path == "/api/chat")
+        let req = try #require(StubProtocol.requests.first)
+        #expect(req.url?.path == "/api/chat")
+        #expect(req.timeoutInterval >= 120)
         let body = try JSONSerialization.jsonObject(with: StubProtocol.bodies[0]) as? NSDictionary
-        #expect(body == ["model": "m", "messages": [Any](), "keep_alive": "30m"] as NSDictionary)
+        let expected = try JSONSerialization.jsonObject(with: OllamaRequestBuilder(model: "m").warmBody()) as? NSDictionary
+        #expect(body == expected)
     }
 }
