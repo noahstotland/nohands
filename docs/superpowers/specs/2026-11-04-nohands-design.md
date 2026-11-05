@@ -36,7 +36,7 @@ mic (AVAudioEngine, 16 kHz mono Float32)
   → ActionExecutor
       ├─ InputSynthesizer (CGEvent keys / unicode typing / mouse)
       ├─ AXQuery (element lookup in the frontmost app)
-      └─ OverlayController (grid, numbered labels, transcript HUD)
+      └─ OverlayController (grid, numbered labels, prompt board)
 ```
 
 **Single vocabulary.** `Action` is the one enum every stage produces or consumes. The grammar, the LLM decoder, and the executor all speak `Action`; adding a capability means adding a case and handling it in three places.
@@ -102,9 +102,9 @@ Text is typed with `CGEvent` keyboard events carrying a Unicode string, in chunk
 - **Provider:** Anthropic Messages API over raw HTTPS (`URLSession`); there is no official Swift SDK. Endpoint `POST https://api.anthropic.com/v1/messages`, headers `x-api-key`, `anthropic-version: 2026-10-21`, `anthropic-beta: server-side-fallback-2026-07-01`.
 - **Model:** default `claude-opus-5-5` at `output_config.effort: "low"` *(assumption: the Claude API skill's default; the user said "any model under the hood")*. `intentModel` in the config file overrides it; `claude-haiku-5-5` is the latency-oriented alternative. `fallbacks: "default"` is on so a safety refusal is re-run server-side instead of silently doing nothing.
 - **Request:** `system` = fixed description of the `Action` vocabulary and the rules below (stable prefix, cacheable); `messages` = one user turn containing a compact context block (frontmost app name, current mode, up to 60 visible element titles with their label numbers) followed by the transcript. `max_tokens: 1024`. `output_config.format` = `{type: "json_schema", schema: ActionsSchema}` so the reply is guaranteed to parse.
-- **ActionsSchema:** `{"actions": [ActionJSON]}` where `ActionJSON` is a flat object with `additionalProperties: false`, a required `kind` enum (`type_text, press_key, click, press_mouse, release_mouse, move_cursor, scroll, show_grid, zoom_grid, show_labels, hide_overlay, set_mode, open_app, ignore`) and optional `text, key, modifiers[], button, count, target_kind (cursor|grid_cell|label|element|point|relative), target_number, target_name, x, y, dx, dy, direction, amount, mode, app_name`. No recursion, no numeric constraints (the API rejects both).
+- **ActionsSchema:** `{"actions": [ActionJSON]}` where `ActionJSON` is a flat object with `additionalProperties: false`, a required `kind` enum (`type_text, press_key, click, press_mouse, release_mouse, move_cursor, scroll, show_grid, zoom_grid, show_labels, hide_overlay, set_mode, open_app, search, ignore`) and optional `text, key, modifiers[], button, count, target_kind (cursor|grid_cell|label|element|point|relative), target_number, target_name, x, y, dx, dy, direction, amount, mode, app_name`. No recursion, no numeric constraints (the API rejects both).
 - **Rules in the system prompt:** emit the fewest actions that accomplish the request; if the request is ambiguous or not an action, return `[{"kind":"ignore"}]`; refer to visible elements by their label number when one is listed; never invent app names.
-- **Failure handling:** timeout 4 s; `stop_reason == "refusal"`, HTTP error, decode failure, or unknown `kind` → no actions, HUD shows "didn't catch that"; missing API key → the LLM path is disabled and the HUD says so once.
+- **Failure handling:** timeout 4 s; `stop_reason == "refusal"`, HTTP error, decode failure, or unknown `kind` → no actions, the prompt's row shows "didn't catch that"; missing API key → the LLM path is disabled and a notice line above the prompt rows says so once.
 
 ## 11. Configuration
 

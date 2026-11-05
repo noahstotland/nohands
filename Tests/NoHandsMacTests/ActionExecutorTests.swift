@@ -4,12 +4,12 @@ import Foundation
 import NoHandsCore
 @testable import NoHandsMac
 
-@MainActor @Test func stopsAtFirstFailureAndShowsHUD() async {
+@MainActor @Test func stopsAtFirstFailure() async {
     let (x, i, _, o) = make()
     let r = await x.execute([.typeText("a"), .zoomGrid(3), .typeText("b")])
     #expect(r == "no grid shown")
     #expect(i.calls == ["type:a"])
-    #expect(o.huds == ["no grid shown"])
+    #expect(o.huds.isEmpty)   // failures go on the prompt's row, not a notice
 }
 
 @MainActor @Test func clickOnNumberedTargetHidesOverlay() async {
@@ -75,7 +75,6 @@ import NoHandsCore
     i.throwOnType = true
     #expect(await x.execute([.typeText("hi"), .scroll(.down, amount: 1)]) != nil)
     #expect(i.calls.isEmpty)
-    #expect(o.huds.count == 1)
 }
 
 @MainActor @Test func relativeMoveAndMouseButtonsUseCursor() async {
@@ -265,7 +264,6 @@ private let reload = UIElementInfo(id: 1, frame: CGRect(x: 100, y: 100, width: 8
     e.visibleScreens = []
     #expect(await x.execute([.moveWindow(.leftHalf)]) == "no screen")
     #expect(e.placed.isEmpty)
-    #expect(o.huds.count == 3)
 }
 
 @Test func screenHoldingWindowPrefersCentreThenOverlap() {
@@ -276,4 +274,49 @@ private let reload = UIElementInfo(id: 1, frame: CGRect(x: 100, y: 100, width: 8
     #expect(ActionExecutor.screen(holding: CGRect(x: 1500, y: -500, width: 400, height: 600), among: [a, b]) == b)
     #expect(ActionExecutor.screen(holding: CGRect(x: 5000, y: 5000, width: 10, height: 10), among: [a, b]) == a)
     #expect(ActionExecutor.screen(holding: a, among: []) == nil)
+}
+
+@MainActor @Test func searchPrefersTheSearchBoxThenTheResultsPageThenTheAddressBar() async {
+    // The page's (or app's) own search box: click it, replace its text, Return.
+    let (x, i, e, _) = make()
+    e.front = "Google Chrome"
+    e.url = "https://www.youtube.com/"
+    e.searchBox = CGRect(x: 200, y: 120, width: 200, height: 30)
+    #expect(await x.execute([.search("outdoor boys")]) == nil)
+    #expect(i.calls == ["click:300,135", "press", "type:outdoor boys", "press"])
+
+    // A box outside the focused window is never clicked (Cmd-A and typing would land elsewhere): next route.
+    i.calls = []
+    e.searchBox = CGRect(x: 700, y: 10, width: 200, height: 30)
+    #expect(await x.execute([.search("outdoor boys")]) == nil)
+    #expect(i.calls == ["press", "type:https://www.youtube.com/results?search_query=outdoor%20boys", "press"])
+
+    // No box reachable but a site with a known results page: navigate the current tab to it.
+    i.calls = []
+    e.searchBox = nil
+    #expect(await x.execute([.search("outdoor boys")]) == nil)
+    #expect(i.calls == ["press", "type:https://www.youtube.com/results?search_query=outdoor%20boys", "press"])
+
+    // Any other page in a browser: the address bar searches the web.
+    i.calls = []
+    e.url = "https://example.org/"
+    #expect(await x.execute([.search("outdoor boys")]) == nil)
+    #expect(i.calls == ["press", "type:outdoor boys", "press"])
+    i.calls = []
+    e.url = nil
+    e.isBrowser = true   // a new-tab page with no web area yet
+    #expect(await x.execute([.search("cats")]) == nil)
+    #expect(i.calls == ["press", "type:cats", "press"])
+
+    // Text a browser would run or open instead of search for is refused on every search route.
+    i.calls = []
+    #expect(await x.execute([.search("javascript:alert(1)")]) == "can't search for that")
+    #expect(i.calls.isEmpty)
+
+    // An app with nothing to search: a failure, and no keystrokes into whatever is focused.
+    i.calls = []
+    e.isBrowser = false
+    e.front = "Calculator"
+    #expect(await x.execute([.search("cats")]) == "nothing to search in Calculator")
+    #expect(i.calls.isEmpty)
 }

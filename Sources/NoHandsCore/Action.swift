@@ -48,6 +48,9 @@ public enum Action: Equatable, Codable, Sendable {
     case openURL(URL, app: String?)
     /// Move and resize the frontmost app's focused window on its screen.
     case moveWindow(WindowPlacement)
+    /// Search in the frontmost app or site: its own search box when it shows one, else the site's search
+    /// page, else a browser's address bar.
+    case search(String)
     case wait(ms: Int)
     case ignore
 

@@ -7,9 +7,11 @@ public final class OverlayController {
 
     private var gridPanel: NSPanel?
     private var labelsPanels: [NSPanel] = []
-    private var hudPanel: NSPanel?
-    private var hudGeneration = 0
-    private var hudTask: Task<Void, Never>?
+    /// The prompts and notices at the top of the screen (see `PromptBoard`).
+    private var board = PromptBoard()
+    private var boardPanel: NSPanel?
+    /// Redraws the board when its next row is due to leave.
+    private var boardTask: Task<Void, Never>?
 
     public init() {}
 
@@ -55,34 +57,53 @@ public final class OverlayController {
         state = .none
     }
 
+    /// A transient notice line on the board (loading, listening, an error).
     public func showHUD(_ text: String, duration: Duration = .seconds(1.5)) {
-        hudTask?.cancel()
-        hudGeneration += 1
-        let generation = hudGeneration
-        guard let shown = OverlayMath.hudText(text, maxChars: 80) else {
-            hudPanel?.orderOut(nil)
+        guard let shown = OverlayMath.hudText(text, maxChars: 80) else { return }
+        board.notice(shown, for: duration, now: .now)
+        renderBoard()
+    }
+
+    /// The prompt's row: its words on the left, how far it has got on the right.
+    public func report(_ id: Int, text: String, status: PromptStatus) {
+        board.report(id: id, text: OverlayMath.hudText(text, maxChars: 80) ?? "…", status: status, now: .now)
+        renderBoard()
+    }
+
+    static let boardWidth: CGFloat = 720
+    static let boardRowHeight: CGFloat = 30
+    static let boardPadding: CGFloat = 8
+
+    /// Draws the board below the menu bar of the screen the pointer is on, and schedules the next redraw for when
+    /// a row is due to leave. An empty board hides the panel.
+    private func renderBoard() {
+        boardTask?.cancel()
+        boardTask = nil
+        let now = ContinuousClock.now
+        board.prune(now: now)
+        let rows = board.visibleRows(now: now)
+        let notice = board.visibleNotice(now: now)
+        guard !rows.isEmpty || notice != nil else {
+            boardPanel?.orderOut(nil)
             return
         }
-
-        let font = NSFont.systemFont(ofSize: 18, weight: .medium)
-        let attrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: NSColor.white]
-        let textSize = (shown as NSString).size(withAttributes: attrs)
-        let size = CGSize(width: ceil(textSize.width) + 36, height: ceil(textSize.height) + 18)
-
         let screenCG = Self.visibleBoundsCG(containing: Self.pointerCG())
-        let originCG = CGPoint(x: screenCG.midX - size.width / 2, y: screenCG.maxY - size.height - 40)
-        let frame = CoordinateMapper.toAppKit(CGRect(origin: originCG, size: size),
-                                              primaryScreenHeight: Self.primaryHeight)
-        let panel = hudPanel ?? Self.makePanel()
-        hudPanel = panel
+        let width = min(Self.boardWidth, max(200, screenCG.width - 32))
+        let lines = rows.count + (notice == nil ? 0 : 1)
+        let size = CGSize(width: width, height: CGFloat(lines) * Self.boardRowHeight + Self.boardPadding * 2)
+        let originCG = CGPoint(x: screenCG.midX - size.width / 2, y: screenCG.minY + 8)
+        let frame = CoordinateMapper.toAppKit(CGRect(origin: originCG, size: size), primaryScreenHeight: Self.primaryHeight)
+        let panel = boardPanel ?? Self.makePanel()
+        boardPanel = panel
         panel.setFrame(frame, display: false)
-        panel.contentView = HUDView(frame: CGRect(origin: .zero, size: size), text: shown, attrs: attrs)
+        panel.contentView = BoardView(frame: CGRect(origin: .zero, size: size), rows: rows, notice: notice)
         panel.orderFrontRegardless()
-
-        hudTask = Task { [weak self] in
-            try? await Task.sleep(for: duration)
-            guard !Task.isCancelled, let self, self.hudGeneration == generation else { return }
-            self.hudPanel?.orderOut(nil)
+        if let next = board.nextChange(now: now) {
+            boardTask = Task { [weak self] in
+                try? await Task.sleep(until: next.advanced(by: .milliseconds(20)), clock: .continuous)
+                guard !Task.isCancelled, let self else { return }
+                self.renderBoard()
+            }
         }
     }
 
@@ -211,20 +232,67 @@ private final class LabelsView: NSView {
     }
 }
 
-private final class HUDView: NSView {
-    let text: String
-    let attrs: [NSAttributedString.Key: Any]
-    init(frame: CGRect, text: String, attrs: [NSAttributedString.Key: Any]) {
-        self.text = text; self.attrs = attrs; super.init(frame: frame)
+/// The board: one line per prompt (a tone dot, the words, the status on the right) and an optional notice line.
+private final class BoardView: NSView {
+    let rows: [PromptRow]
+    let notice: PromptNotice?
+    init(frame: CGRect, rows: [PromptRow], notice: PromptNotice?) {
+        self.rows = rows; self.notice = notice; super.init(frame: frame)
     }
     required init?(coder: NSCoder) { fatalError() }
     override var isFlipped: Bool { true }
 
+    static func color(_ tone: PromptStatus.Tone) -> NSColor {
+        switch tone {
+        case .active: NSColor(calibratedRed: 0.45, green: 0.72, blue: 1, alpha: 1)
+        case .waiting: NSColor(calibratedRed: 1, green: 0.8, blue: 0.3, alpha: 1)
+        case .good: NSColor(calibratedRed: 0.45, green: 0.85, blue: 0.5, alpha: 1)
+        case .bad: NSColor(calibratedRed: 1, green: 0.45, blue: 0.45, alpha: 1)
+        case .muted: NSColor(white: 0.7, alpha: 1)
+        }
+    }
+
     override func draw(_ dirtyRect: NSRect) {
         NSColor(white: 0.08, alpha: 0.88).setFill()
-        NSBezierPath(roundedRect: bounds, xRadius: bounds.height / 2, yRadius: bounds.height / 2).fill()
-        let s = NSAttributedString(string: text, attributes: attrs)
-        let sz = s.size()
-        s.draw(at: CGPoint(x: bounds.midX - sz.width / 2, y: bounds.midY - sz.height / 2))
+        NSBezierPath(roundedRect: bounds, xRadius: 12, yRadius: 12).fill()
+        let rowH = OverlayController.boardRowHeight, pad = OverlayController.boardPadding
+        let tail = NSMutableParagraphStyle()
+        tail.lineBreakMode = .byTruncatingTail
+        let promptAttrs: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: 15, weight: .medium), .foregroundColor: NSColor.white, .paragraphStyle: tail,
+        ]
+        var y = pad
+        if let notice {
+            let attrs: [NSAttributedString.Key: Any] = [
+                .font: NSFont.systemFont(ofSize: 14, weight: .regular), .foregroundColor: NSColor(white: 0.85, alpha: 1),
+                .paragraphStyle: tail,
+            ]
+            let s = NSAttributedString(string: notice.text, attributes: attrs)
+            let h = s.size().height
+            s.draw(with: CGRect(x: 16, y: y + (rowH - h) / 2, width: bounds.width - 32, height: h),
+                   options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine])
+            y += rowH
+        }
+        for row in rows {
+            let color = Self.color(row.status.tone)
+            color.setFill()
+            NSBezierPath(ovalIn: CGRect(x: 14, y: y + rowH / 2 - 4, width: 8, height: 8)).fill()
+            let statusAttrs: [NSAttributedString.Key: Any] = [
+                .font: NSFont.systemFont(ofSize: 13, weight: .regular), .foregroundColor: color, .paragraphStyle: tail,
+            ]
+            let status = NSAttributedString(string: row.status.text, attributes: statusAttrs)
+            let prompt = NSAttributedString(string: row.text, attributes: promptAttrs)
+            let inner = bounds.width - 30 - 16
+            // The words get what they need up to half the line; the status takes the rest.
+            let promptW = min(ceil(prompt.size().width), inner * 0.5)
+            let statusW = inner - promptW - 12
+            let ph = prompt.size().height, sh = status.size().height
+            prompt.draw(with: CGRect(x: 30, y: y + (rowH - ph) / 2, width: promptW, height: ph),
+                        options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine])
+            let sw = min(ceil(status.size().width), statusW)
+            status.draw(with: CGRect(x: bounds.width - 16 - sw, y: y + (rowH - sh) / 2, width: sw, height: sh),
+                        options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine])
+            y += rowH
+        }
     }
 }

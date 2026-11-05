@@ -27,8 +27,13 @@ final class FakeElements: ElementProviding, @unchecked Sendable {
     var front: String? = nil
     var windowTitle: String? = nil
     var url: String? = nil
+    /// The frontmost window's search box, when it has one.
+    var searchBox: CGRect? = nil
+    var isBrowser = false
     /// Set to report that the next walk freshly exposed a Chromium page tree (cleared when read).
     var exposeOnNextWalk = false
+    func searchFieldFrame() -> CGRect? { searchBox }
+    func frontmostIsBrowser() -> Bool { isBrowser }
     private var justExposed = false
     /// Number of `actionableElements()` walks.
     var walks = 0
@@ -88,11 +93,17 @@ final class FakeElements: ElementProviding, @unchecked Sendable {
 
 @MainActor final class FakeOverlay: OverlayPresenting {
     var state: OverlayState = .none
+    /// Notices (`showHUD`), in order.
     var huds: [String] = []
+    /// Every prompt report, in order.
+    var reports: [(id: Int, text: String, status: PromptStatus)] = []
+    /// The status cell of every report, in order (what the user reads).
+    var statuses: [String] { reports.map { $0.status.text } }
     func showGrid(_ grid: GridModel) { state = .grid(grid) }
     func showLabels(_ labels: [Int: UIElementInfo]) { state = .labels(labels) }
     func hide() { state = .none }
     func showHUD(_ text: String, duration: Duration) { huds.append(text) }
+    func report(_ id: Int, text: String, status: PromptStatus) { reports.append((id, text, status)) }
     func screenBoundsCG(containing point: CGPoint) -> CGRect { CGRect(x: 0, y: 0, width: 1000, height: 800) }
 }
 

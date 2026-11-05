@@ -179,3 +179,11 @@ import Foundation
     #expect(!s.contains("Surface:") && !s.contains("Read:") && !s.contains("Windows:"))
     #expect(o.harness == .native && o.surface == nil && o.windows.isEmpty && o.readings.isEmpty)
 }
+
+@Test func searchKindDecodesToASearchAction() throws {
+    #expect(try IntentDecoder.actions(fromPayloadText: #"{"actions":[{"kind":"search","text":"outdoor boys"}]}"#) == [.search("outdoor boys")])
+    #expect(try IntentDecoder.actions(fromPayloadText: #"{"actions":[{"kind":"search","text":"  "},{"kind":"search"}]}"#) == [])
+    #expect(IntentSchema.kinds.contains("search"))
+    #expect(IntentSchema.systemPrompt.contains("- search:"))
+    #expect(ActionSummary.kind(.search("outdoor boys")) == "search(len=12)")
+}
