@@ -22,11 +22,32 @@ public struct BrowserWindow: Equatable, Sendable {
 /// Tells the user's tabs and windows from the ones a task opened (pop-unders, pop-ups, new windows), one ledger
 /// per task. Each browser app gets a baseline the first time the task sees it in front: everything in it is the
 /// user's. A tab or window is `new` when neither its id nor its title was in the baseline; the title check keeps
-/// the user's tabs safe if the browser ever rebuilds its accessibility elements and every id changes.
+/// the user's tabs safe if the browser ever rebuilds its accessibility elements and every id changes. A window the
+/// baseline saw without a tab list (the read ran out of budget, or the browser hides its strip) cannot tell new
+/// tabs from the user's: the tabs it shows later join the baseline as the user's.
 public struct TabLedger: Sendable {
     private struct Baseline: Sendable {
         var windowIDs: Set<String> = [], tabIDs: Set<String> = []
         var titles: Set<String> = []
+        /// Baseline windows that had a tab list when they were recorded.
+        var populatedWindowIDs: Set<String> = []
+
+        mutating func record(_ w: BrowserWindow) {
+            windowIDs.insert(w.id)
+            titles.insert(w.title)
+            for t in w.tabs { tabIDs.insert(t.id); titles.insert(t.title) }
+            if !w.tabs.isEmpty { populatedWindowIDs.insert(w.id) }
+        }
+
+        func isNew(_ t: BrowserTab, in w: BrowserWindow) -> Bool {
+            if tabIDs.contains(t.id) || titles.contains(t.title) { return false }
+            return !(windowIDs.contains(w.id) && !populatedWindowIDs.contains(w.id))
+        }
+
+        func isNew(_ w: BrowserWindow) -> Bool {
+            if windowIDs.contains(w.id) || titles.contains(w.title) { return false }
+            return w.tabs.isEmpty || w.tabs.allSatisfy { isNew($0, in: w) }
+        }
     }
     private var baselines: [String: Baseline] = [:]
     /// Per app: ids of tabs the task navigated (or of tabless windows).
@@ -34,26 +55,37 @@ public struct TabLedger: Sendable {
 
     public init() {}
 
-    /// Records `windows` as the user's the first time `app` is seen; later calls do nothing. True when it recorded.
+    /// Records `windows` as the user's the first time `app` is seen and returns true. Later calls change nothing
+    /// (false), except that tabs first shown by a baseline window that had none are taken as the user's too.
     @discardableResult
     public mutating func baseline(app: String, windows: [BrowserWindow]) -> Bool {
-        guard baselines[app] == nil else { return false }
-        var b = Baseline()
-        for w in windows {
-            b.windowIDs.insert(w.id)
-            b.titles.insert(w.title)
-            for t in w.tabs { b.tabIDs.insert(t.id); b.titles.insert(t.title) }
+        guard var b = baselines[app] else {
+            var b = Baseline()
+            for w in windows { b.record(w) }
+            baselines[app] = b
+            return true
+        }
+        for w in windows where !w.tabs.isEmpty && b.windowIDs.contains(w.id) && !b.populatedWindowIDs.contains(w.id) {
+            b.record(w)
         }
         baselines[app] = b
-        return true
+        return false
     }
 
     /// The active tab of the front window (the window itself when it has no tabs) is the task's: it is never
-    /// closable without a close word, even though it is new. Call it at the first settled observation after a
-    /// step that navigated.
+    /// closable without a close word, even though it is new. A front window that is itself new (a pop-up that took
+    /// focus) is not the task's: the new active tab of a window the user already had is, and only when there is
+    /// none does the front window stand. Call it at the first settled observation after a step that navigated.
     public mutating func markTaskTab(app: String, windows: [BrowserWindow]) {
         guard let front = windows.first(where: \.front) ?? windows.first else { return }
-        let id = front.tabs.isEmpty ? front.id : (front.tabs.first(where: \.active) ?? front.tabs[0]).id
+        var pick = front
+        if let base = baselines[app], base.isNew(front),
+           let other = windows.first(where: { w in
+               !base.isNew(w) && w.tabs.contains { $0.active && base.isNew($0, in: w) }
+           }) {
+            pick = other
+        }
+        let id = pick.tabs.isEmpty ? pick.id : (pick.tabs.first(where: \.active) ?? pick.tabs[0]).id
         taskIDs[app, default: []].insert(id)
     }
 
@@ -62,15 +94,8 @@ public struct TabLedger: Sendable {
         let base = baselines[app]
         let tasks = taskIDs[app] ?? []
         let frontIndex = windows.firstIndex(where: \.front) ?? 0
-        func tabNew(_ t: BrowserTab) -> Bool {
-            guard let base else { return false }
-            return !base.tabIDs.contains(t.id) && !base.titles.contains(t.title)
-        }
-        func windowNew(_ w: BrowserWindow) -> Bool {
-            guard let base else { return false }
-            if w.tabs.isEmpty { return !base.windowIDs.contains(w.id) && !base.titles.contains(w.title) }
-            return !base.windowIDs.contains(w.id) && !base.titles.contains(w.title) && w.tabs.allSatisfy(tabNew)
-        }
+        func tabNew(_ t: BrowserTab, in w: BrowserWindow) -> Bool { base?.isNew(t, in: w) ?? false }
+        func windowNew(_ w: BrowserWindow) -> Bool { base?.isNew(w) ?? false }
         var out: [TabListing.Window] = []
         var hiddenWindows = 0
         var tabNumber = 0
@@ -79,7 +104,7 @@ public struct TabLedger: Sendable {
             let isTask = tasks.contains(w.id) || w.tabs.contains { tasks.contains($0.id) }
             var shown: [TabListing.Tab] = []
             for (ti, t) in w.tabs.enumerated() {
-                let new = tabNew(t), task = tasks.contains(t.id)
+                let new = tabNew(t, in: w), task = tasks.contains(t.id)
                 guard (wi == frontIndex && (ti < TabListing.frontTabCap || t.active)) || new || task else { continue }
                 tabNumber += 1
                 shown.append(.init(number: tabNumber, id: t.id, title: TabListing.clean(t.title),

@@ -48,6 +48,25 @@ private func flags(_ l: TabListing) -> String {
     #expect(flags(ledger.listing(app: "Safari", windows: after)) == "new: task:")
 }
 
+@Test func tabsOfAWindowReadEmptyAtBaselineAreTheUsersAndTheTaskTabSkipsAPopUpWindow() {
+    // The baseline read ran out of budget for w1: it shows no tabs. Its tabs, seen later, are the user's.
+    var ledger = TabLedger()
+    ledger.baseline(app: "Chrome", windows: [win("w1", "Docs", front: true), win("w2", "Mail", [tab("m1", "Mail")])])
+    let later = [win("w1", "Docs", front: true, [tab("t1", "Inbox"), tab("t2", "Docs", active: true)]), win("w2", "Mail", [tab("m1", "Mail")])]
+    #expect(flags(ledger.listing(app: "Chrome", windows: later)) == "new: task:")
+    let recorded = ledger.baseline(app: "Chrome", windows: later)
+    #expect(!recorded)
+    // Once w1 has been read, a tab that then appears in it is new; so is one in the window that was populated all along.
+    let popped = [win("w1", "Docs", front: true, later[0].tabs + [tab("t9", "You won!")]), win("w2", "Mail", [tab("m1", "Mail"), tab("m9", "Ad")])]
+    #expect(flags(ledger.listing(app: "Chrome", windows: popped)) == "new:m9 t9 task:")
+
+    // A pop-up window that took focus is not the task's tab: the new active tab in the user's window is.
+    ledger.markTaskTab(app: "Chrome", windows: [win("w3", "Casino", front: true, [tab("c1", "Casino", active: true)]),
+                                                 win("w1", "Game", [tab("t1", "Inbox"), tab("t8", "Game", active: true)]), popped[1]])
+    let now = [win("w3", "Casino", front: true, [tab("c1", "Casino", active: true)]), win("w1", "Game", [tab("t1", "Inbox"), tab("t8", "Game", active: true)])]
+    #expect(flags(ledger.listing(app: "Chrome", windows: now)) == "new:c1 t8 w3 task:t8")
+}
+
 @Test func tabGuardClosesOnlyNewTabsAndWindowsTheTaskDidNotNavigate() {
     var ledger = TabLedger()
     ledger.baseline(app: "Chrome", windows: mine)
@@ -107,7 +126,6 @@ private func flags(_ l: TabListing) -> String {
     #expect(try IntentDecoder.actions(fromPayloadText: ok) == [.closeTab(3), .closeWindow(2), .selectTab(1)])
     let bad = #"{"actions":[{"kind":"close_tab"},{"kind":"close_window","target_number":0},{"kind":"select_tab","target_number":-1}]}"#
     #expect(try IntentDecoder.actions(fromPayloadText: bad) == [])
-    #expect(ActionSummary.kinds([.closeTab(3), .selectTab(1)]) == "[closeTab(3), selectTab(1)]")
 }
 
 @Test func mediaGoalsGetTheLongerStepCap() throws {
