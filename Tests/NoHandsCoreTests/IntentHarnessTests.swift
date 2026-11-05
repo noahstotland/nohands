@@ -97,7 +97,7 @@ import CoreGraphics
     var o = ScreenObservation(app: "Finder", mode: .command); o.harness = .agentDesktop
     let r = StepRequest(goal: "g", step: 1, maxSteps: 2, history: [], observation: o)
     let claude = try JSONSerialization.jsonObject(with: ClaudeRequestBuilder(model: "m").body(request: r)) as! [String: Any]
-    #expect((claude["system"] as! String).contains("Harness rules:"))
+    #expect((((claude["system"] as! [[String: Any]])[0])["text"] as! String).contains("Harness rules:"))
     let ollama = try JSONSerialization.jsonObject(with: OllamaRequestBuilder(model: "m").body(request: r)) as! [String: Any]
     let msgs = ollama["messages"] as! [[String: Any]]
     #expect((msgs[0]["content"] as! String).contains("Harness rules:"))
