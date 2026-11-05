@@ -53,10 +53,16 @@ public enum MediaSignal {
     private static let playWords: Set<String> = ["play", "watch", "listen"]
 
     /// Whether the goal asks for something to play: the words play, watch or listen, or "turn on" / "put on" with up
-    /// to two words between ("turn the video on"). Whole words only: "display" and "replay" do not count.
+    /// to two words between ("turn the video on"). Whole words only: "display" and "replay" do not count, and
+    /// neither does "watch" in "watch later" or "apple watch".
     public static func wantsPlayback(goal: String) -> Bool {
         let words = goal.lowercased().split(whereSeparator: { !$0.isLetter && !$0.isNumber }).map(String.init)
         for (i, w) in words.enumerated() {
+            if w == "watch" {
+                if i > 0, words[i - 1] == "apple" { continue }
+                if i + 1 < words.count, words[i + 1] == "later" { continue }
+                return true
+            }
             if playWords.contains(w) { return true }
             if w == "turn" || w == "put", words[(i + 1)...].prefix(3).contains("on") { return true }
         }

@@ -206,4 +206,10 @@ private let labels: [Int: UIElementInfo] = [
     #expect(await x.execute([.checkMedia]) == nil)
     #expect(x.takeReadings() == ["Media: paused"])
     #expect(h.calls.isEmpty)
+
+    // Cancelling a long wait ends it at once with `cancelled`, not after its timeout.
+    let waiting = Task { await x.execute([.waitFor(.mediaPlaying, timeoutMs: 30000)]) }
+    try? await Task.sleep(for: .milliseconds(30))
+    waiting.cancel()
+    #expect(await waiting.value == ActionExecutor.cancelled)
 }

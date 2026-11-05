@@ -58,6 +58,7 @@ public struct RepeatDetector: Sendable {
 
 /// Whether two observations show the same screen state.
 public enum Settle {
+    /// `media` is compared too: media without a control (`playing` with none found) comes from Mac-wide audio.
     public static func same(_ a: ScreenObservation, _ b: ScreenObservation) -> Bool {
         a.app == b.app && a.windowTitle == b.windowTitle && a.url == b.url && a.surface == b.surface && a.media == b.media
             && signature(a.elements) == signature(b.elements)

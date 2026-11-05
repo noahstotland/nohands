@@ -133,9 +133,10 @@ public enum IntentSchema {
     - stuck: you cannot make progress; run nothing and explain plainly in "intent" instead of guessing.
     - ignore: the request is not a computer action; run nothing (actions [{"kind":"ignore"}]).
     A goal to play, watch, turn on, put on or listen to something is done only when the request shows "Media: \
-    playing". If the page shows a Play button, click it. If an ad is playing or a countdown or "Skip ad" is \
-    showing, wait (wait_for media_playing) and look again. "Media: none" means no player was found: decide from \
-    the screen.
+    playing". If the page shows a Play button, click it. If an ad countdown or "Skip ad" is showing, the video \
+    has not started yet (an ad can show "Pause"): wait a few seconds (wait with ms), click "Skip ad" when it \
+    appears, and look again; done only after the ad is gone and the request shows "Media: playing". "Media: \
+    none" means no player was found: decide from the screen.
     The request shows "Step n of max" and a History of earlier steps. Prefer deterministic routes: type a URL \
     (e.g. youtube.com/@veritasium/videos) over clicking through menus; use wait after navigation if the page is \
     not there yet; on YouTube the newest upload is the first video on a channel's Videos tab; set done once the \

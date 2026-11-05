@@ -32,7 +32,7 @@ import Foundation
         ("turn on the latest outdoor boys video", true), ("put the video on", true), ("watch veritasium", true),
         ("play some jazz", true), ("listen to the podcast", true), ("turn the video on", true),
         ("display settings", false), ("replay", false), ("turn off wifi", false), ("is it playing", false),
-        ("open youtube", false),
+        ("open youtube", false), ("open my watch later playlist", false), ("open the apple watch app", false),
     ]
     for (goal, want) in table { #expect(MediaSignal.wantsPlayback(goal: goal) == want, Comment(rawValue: goal)) }
 }
@@ -55,7 +55,6 @@ import Foundation
     #expect(try w("") == [.waitFor(.mediaPlaying, timeoutMs: 5000)])
     #expect(try w(#","timeout_ms":100"#) == [.waitFor(.mediaPlaying, timeoutMs: 500)])
     #expect(try w(#","timeout_ms":99999"#) == [.waitFor(.mediaPlaying, timeoutMs: 30000)])
-    #expect(DesktopWaitKind.allCases.map(\.rawValue).contains("media_playing"))
 }
 
 @Test func playingQuestionsAreGrammarCommands() {

@@ -1,7 +1,7 @@
 # NH-43: A media-playing signal so a task can tell when the video actually plays — Design
 
 **Date:** 2026-11-05  **Status:** Shipped  **Ticket:** [NH-43](https://github.com/noahstotland/nohands/issues/43)
-**Shipped:** in PR #63, as specified
+**Shipped:** in PR #63, with differences: [as-built](../as-built/2026-11-05-nh-43-media-playing-signal.md)
 
 ## Intent
 

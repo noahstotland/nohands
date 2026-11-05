@@ -402,10 +402,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 let harness = status.makeHarness(config: config)
                 pipelineHarnessKind = harness == nil ? .native : .agentDesktop
                 PipelineLog.info("harness: \(status.text)")
+                // Tasks observe, and the executor looks for a media player, with their own, larger AX budget:
+                // Chrome's toolbar alone exhausts the default one.
+                let taskAX = AXQuery(budget: .milliseconds(1000), maxNodes: 6000)
                 let executor = ActionExecutor(input: CGEventInputSynthesizer(), ax: ax, overlay: overlay, config: config,
-                                              harness: harness)
-                // Tasks observe with their own, larger AX budget: Chrome's toolbar alone exhausts the default one.
-                let observer = ScreenObserver(ax: AXQuery(budget: .milliseconds(1000), maxNodes: 6000),
+                                              harness: harness, mediaAX: taskAX)
+                let observer = ScreenObserver(ax: taskAX,
                                               maxElements: config.observedElementCap, harness: harness,
                                               snapshotTimeoutMs: config.agentDesktopSnapshotMs)
                 let p = VoicePipeline(config: config, transcriber: transcriber, resolver: resolver,
