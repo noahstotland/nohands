@@ -12,11 +12,12 @@ private final class Sink: @unchecked Sendable {
     var out: [String] { lock.lock(); defer { lock.unlock() }; return emitted }
 }
 
-private func make(_ sink: Sink, window: Int = 80, unfinished: Int = 200) -> MergeBuffer {
+private func make(_ sink: Sink, window: Int = 80, unfinished: Int = 200, attention: AttentionGate = .off) -> MergeBuffer {
     let grammar = CommandGrammar()
     return MergeBuffer(
         merger: UtteranceMerger(windowMs: window, unfinishedWindowMs: unfinished),
-        isComplete: { VoicePipeline.isComplete($0, mode: $1, grammar: grammar) },
+        gate: attention,
+        isComplete: { VoicePipeline.isComplete($0, mode: $1, grammar: grammar, attention: attention) },
         onHold: { sink.hold($0) },
         emit: { text, _ in sink.emit(text) })
 }
@@ -137,4 +138,33 @@ private func make(_ sink: Sink, window: Int = 80, unfinished: Int = 200) -> Merg
     #expect(!VoicePipeline.isComplete("scratch that", mode: .command, grammar: g))
     #expect(!VoicePipeline.isComplete("hello there", mode: .dictation, grammar: g))
     #expect(!VoicePipeline.isComplete("make it bigger", mode: .command, grammar: g))
+}
+
+// MARK: - attention word
+
+@Test func attentionWordKeepsStrayTextOutOfAddressedCommands() async throws {
+    let gate = AttentionGate(configured: "computer")
+    let sink = Sink()
+    let b = make(sink, attention: gate)
+    await b.transcript("hello there", trace: LatencyTrace())
+    #expect(sink.held.isEmpty)                                      // stray text is held but shown nowhere
+    await b.transcript("computer go back", trace: LatencyTrace())
+    #expect(sink.out == ["hello there", "computer go back"])        // not merged; the command is released at once
+    await b.transcript("computer, stop", trace: LatencyTrace())
+    #expect(sink.out.last == "computer, stop")
+    #expect(sink.held.isEmpty)
+}
+
+@Test func attentionWordAloneWaitsForTheRestOfTheCommand() async throws {
+    let gate = AttentionGate(configured: "computer")
+    let sink = Sink()
+    let b = make(sink, window: 40, unfinished: 400, attention: gate)
+    await b.transcript("Computer.", trace: LatencyTrace())
+    #expect(sink.held == ["Computer."])                             // shown as listening
+    try await Task.sleep(for: .milliseconds(150))                   // past the normal window, inside the long one
+    #expect(sink.out.isEmpty)
+    await b.transcript("go back", trace: LatencyTrace())
+    #expect(sink.out == ["Computer. go back"])
+    #expect(VoicePipeline.isComplete("computer, go back", mode: .command, grammar: CommandGrammar(), attention: gate))
+    #expect(!VoicePipeline.isComplete("go back", mode: .command, grammar: CommandGrammar(), attention: gate))
 }

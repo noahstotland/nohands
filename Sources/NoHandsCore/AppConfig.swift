@@ -52,6 +52,10 @@ public struct AppConfig: Codable, Equatable, Sendable {
     /// Turn on the system's voice processing (echo cancellation) on the microphone, so audio the Mac's own
     /// speakers play is removed before VAD and ASR. Capture goes on without it if macOS refuses.
     public var echoCancellation: Bool = true
+    /// Optional attention word (up to three words). When set, command mode acts only on utterances that start
+    /// with it; everything else is ignored silently. Empty means off. `load` stores it normalized, or empty when
+    /// it cannot be used (more than three words, or a stop phrase).
+    public var attentionWord: String = ""
 
     public static let defaultOllamaURL = "http://127.0.0.1:11434"
     public static let efforts = ["low", "medium", "high", "xhigh", "max"]
@@ -65,7 +69,7 @@ public struct AppConfig: Codable, Equatable, Sendable {
         case maxTaskSteps, llmDeadlineMs, settleMs, maxObservedElements
         case localLlmDeadlineMs, localMaxObservedElements
         case desktopHarness, agentDesktopPath, agentDesktopTimeoutMs, agentDesktopSnapshotMs, agentDesktopHeadedFallback, agentDesktopTrace
-        case echoCancellation
+        case echoCancellation, attentionWord
     }
 
     public init(from decoder: Decoder) throws {
@@ -99,6 +103,7 @@ public struct AppConfig: Codable, Equatable, Sendable {
         d.agentDesktopHeadedFallback = try c.decodeIfPresent(Bool.self, forKey: .agentDesktopHeadedFallback) ?? d.agentDesktopHeadedFallback
         d.agentDesktopTrace = try c.decodeIfPresent(Bool.self, forKey: .agentDesktopTrace) ?? d.agentDesktopTrace
         d.echoCancellation = try c.decodeIfPresent(Bool.self, forKey: .echoCancellation) ?? d.echoCancellation
+        d.attentionWord = try c.decodeIfPresent(String.self, forKey: .attentionWord) ?? d.attentionWord
         self = d
     }
 
@@ -124,6 +129,7 @@ public struct AppConfig: Codable, Equatable, Sendable {
         config.localMaxObservedElements = min(max(config.localMaxObservedElements, 10), 300)
         config.agentDesktopTimeoutMs = min(max(config.agentDesktopTimeoutMs, 1000), 60000)
         config.agentDesktopSnapshotMs = min(max(config.agentDesktopSnapshotMs, 500), 10000)
+        config.attentionWord = AttentionGate(configured: config.attentionWord).words.joined(separator: " ")
         if !AppConfig.efforts.contains(config.intentEffort) { config.intentEffort = AppConfig().intentEffort }
         if let key = environment["ANTHROPIC_API_KEY"], !key.isEmpty {
             config.anthropicAPIKey = key
@@ -137,6 +143,8 @@ public struct AppConfig: Codable, Equatable, Sendable {
         g.scrollStepLines = scrollStepLines
         return g
     }
+
+    public var attentionGate: AttentionGate { AttentionGate(configured: attentionWord) }
 
     public var effectiveBackend: EffectiveBackend {
         let hasKey = !(anthropicAPIKey ?? "").isEmpty

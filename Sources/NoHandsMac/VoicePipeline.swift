@@ -33,6 +33,7 @@ import NoHandsCore
     }
 
     private let config: AppConfig
+    private let attention: AttentionGate
     private let transcriber: any Transcribing
     /// nil when there is no resolver (LLM off): such utterances only show a hint.
     private let runner: TaskRunner?
@@ -97,6 +98,7 @@ import NoHandsCore
                 executor: ActionExecutor, overlay: any OverlayPresenting, ax: any ElementProviding = AXQuery(),
                 observer: ScreenObserver? = nil, taskRunner: TaskRunner? = nil, harness: (any DesktopHarness)? = nil) {
         self.config = config
+        self.attention = config.attentionGate
         self.transcriber = transcriber
         let observer = observer ?? ScreenObserver(ax: ax, maxElements: config.observedElementCap, harness: harness,
                                                   snapshotTimeoutMs: config.agentDesktopSnapshotMs)
@@ -106,7 +108,7 @@ import NoHandsCore
         self.executor = executor
         self.overlay = overlay
         self.ax = ax
-        self.modeMachine = ModeMachine(grammar: CommandGrammar(config: config.grammarConfig))
+        self.modeMachine = ModeMachine(grammar: CommandGrammar(config: config.grammarConfig), attention: config.attentionGate)
         executor.onModeChange = { [weak self] mode in
             guard let self else { return }
             self.modeMachine.apply(mode: mode)
@@ -116,11 +118,18 @@ import NoHandsCore
 
     /// Skips the merge window: a complete grammar command in command mode, a stop phrase in any mode, and the
     /// dictation commands (escape phrases, "scratch that", "delete word") in dictation mode. Internal so tests build their MergeBuffer the same way.
-    nonisolated static func isComplete(_ transcript: String, mode: Mode, grammar: CommandGrammar) -> Bool {
-        if StopWords.isStop(transcript) { return true }
+    /// With the attention word on, a command mode grammar command counts only after the word ("computer, go back").
+    nonisolated static func isComplete(_ transcript: String, mode: Mode, grammar: CommandGrammar,
+                                       attention: AttentionGate = .off) -> Bool {
+        if attention.isStop(transcript) { return true }
         switch mode {
-        case .command: return grammar.parse(transcript) != nil
-        case .dictation: return ModeMachine.isDictationCommand(transcript)
+        case .command:
+            switch attention.check(transcript) {
+            case .off: return grammar.parse(transcript) != nil
+            case .addressed(let rest): return grammar.parse(rest) != nil
+            case .wordOnly, .notAddressed: return false
+            }
+        case .dictation: return ModeMachine.isDictationCommand(transcript, attention: attention)
         case .sleep: return false
         }
     }
@@ -154,9 +163,11 @@ import NoHandsCore
         let (jobs, jobCont) = AsyncStream<Job>.makeStream(bufferingPolicy: .bufferingNewest(2))
 
         let grammar = CommandGrammar(config: config.grammarConfig)
+        let attention = self.attention
         let merge = MergeBuffer(
             merger: UtteranceMerger(windowMs: config.mergeWindowMs, unfinishedWindowMs: config.mergeWindowUnfinishedMs),
-            isComplete: { Self.isComplete($0, mode: $1, grammar: grammar) },
+            gate: attention,
+            isComplete: { Self.isComplete($0, mode: $1, grammar: grammar, attention: attention) },
             onHold: { [weak self] text in
                 Task { @MainActor in self?.listening(text) }
             },
@@ -325,18 +336,31 @@ import NoHandsCore
     /// else replaces the held job.
     private func busy(_ job: Job) {
         guard !stopped else { return }
-        if StopWords.isStop(job.transcript) {
+        if attention.isStop(job.transcript) {
             if let held = heldJob { droppedJobs.append(held) }
             heldJob = nil
             runner?.cancel()
             activeTask?.cancel()   // the task's row shows "stopped" when the runner unwinds
             overlay.report(job.id, text: job.transcript, status: .done(PipelineText.stopping))
             PipelineLog.utterance(trace: job.trace, transcript: job.transcript, outcome: "stop", detail: "stop")
+        } else if isUnaddressed(job.transcript) {
+            // Stray speech must not replace a real held command: drop it, silently.
+            if job.shown { overlay.report(job.id, text: job.transcript, status: .ignored("")) }
+            PipelineLog.utterance(trace: job.trace, transcript: job.transcript, outcome: "ignore(not addressed)", detail: "ignore(not addressed)")
         } else {
             if let replaced = heldJob { reportDropped(replaced) }   // newest wins; the old row must not stay "held"
             heldJob = job
             overlay.report(job.id, text: job.transcript, status: .held)
             PipelineLog.utterance(trace: job.trace, transcript: job.transcript, outcome: "held", detail: "held")
+        }
+    }
+
+    /// Command mode with the attention word on, and the transcript does not address it (or is only the word).
+    private func isUnaddressed(_ transcript: String) -> Bool {
+        guard attention.isOn, modeMachine.mode == .command else { return false }
+        switch attention.check(transcript) {
+        case .notAddressed, .wordOnly: return true
+        case .addressed, .off: return false
         }
     }
 
