@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Sets up Ollama and a local model for NoHands natural-language commands.
-# Usage: Scripts/setup-local-model.sh [model]
+# Usage: scripts/setup-local-model.sh [model]
 set -euo pipefail
 
 URL="http://127.0.0.1:11434"

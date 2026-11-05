@@ -10,7 +10,7 @@ import Foundation
 }
 
 @Test func evalFixtureDecodes() throws {
-    let url = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("../../Scripts/intent-eval.json")
+    let url = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("../../scripts/intent-eval.json")
     let cases = try JSONDecoder().decode([EvalCase].self, from: Data(contentsOf: url))
     #expect(cases.count >= 25)
     #expect(cases.allSatisfy { !$0.accept.isEmpty && $0.accept.allSatisfy { !$0.isEmpty } })

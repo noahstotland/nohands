@@ -40,10 +40,10 @@ The first build downloads and compiles [FluidAudio](https://github.com/FluidInfe
 ## Run it
 
 ```bash
-Scripts/bundle.sh && open build/NoHands.app
+scripts/bundle.sh && open build/NoHands.app
 ```
 
-`Scripts/bundle.sh` builds a release binary, assembles `build/NoHands.app` and code-signs it. NoHands is a menu-bar app (no Dock icon); the menu bar shows `CMD`, `DICT` or `ZZZ` for the current mode.
+`scripts/bundle.sh` builds a release binary, assembles `build/NoHands.app` and code-signs it. NoHands is a menu-bar app (no Dock icon); the menu bar shows `CMD`, `DICT` or `ZZZ` for the current mode.
 
 **First run:**
 
@@ -54,7 +54,7 @@ Scripts/bundle.sh && open build/NoHands.app
 **Ad-hoc signature caveat:** by default the app is ad-hoc signed, so macOS treats every rebuild as a new app and you must re-grant Microphone and Accessibility each time (remove the stale NoHands entry in Accessibility first). Set a stable signing identity to avoid this:
 
 ```bash
-CODESIGN_IDENTITY="Apple Development: Your Name (TEAMID)" Scripts/bundle.sh
+CODESIGN_IDENTITY="Apple Development: Your Name (TEAMID)" scripts/bundle.sh
 ```
 
 **Logs:** each utterance logs one line, `[asr=…ms total=…ms] <transcript> -> <what it did>`, plus warm-up results, warnings and errors, through the unified log:
@@ -72,8 +72,8 @@ Transcripts are logged as private, so they show as `<private>` unless private da
 NoHands can resolve natural-language commands with a model running on your Mac through Ollama, so nothing leaves the machine and it works offline once the model is downloaded.
 
 ```bash
-Scripts/setup-local-model.sh            # picks a model by RAM
-Scripts/setup-local-model.sh qwen2.5:3b-instruct   # or name one
+scripts/setup-local-model.sh            # picks a model by RAM
+scripts/setup-local-model.sh qwen2.5:3b-instruct   # or name one
 ```
 
 The script installs Ollama with Homebrew if needed, starts it, pulls the model and runs a smoke test. It is safe to re-run. You can also download the model from the NoHands menu. Ollama installed with brew starts at login (`brew services`), so the model server is there after a reboot.

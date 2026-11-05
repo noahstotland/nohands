@@ -72,7 +72,7 @@ Sources/
     main.swift                       # subcommands for manual verification
 Tests/NoHandsCoreTests/              # one test file per Core source file
 Resources/Info.plist
-Scripts/bundle.sh
+scripts/bundle.sh
 ```
 
 ---
@@ -1246,7 +1246,7 @@ git commit -m "feat: Claude intent resolver over the Messages API"
 ### Task 14: Voice pipeline, menu-bar app, bundle script, README
 
 **Files:**
-- Create: `Sources/NoHandsMac/VoicePipeline.swift`, `Sources/NoHands/AppDelegate.swift`, `Resources/Info.plist`, `Scripts/bundle.sh`
+- Create: `Sources/NoHandsMac/VoicePipeline.swift`, `Sources/NoHands/AppDelegate.swift`, `Resources/Info.plist`, `scripts/bundle.sh`
 - Modify: `Sources/NoHands/main.swift`, `README.md`
 
 **Interfaces:**
@@ -1269,17 +1269,17 @@ Audio chunks arrive on a background queue; hop to the actor/main actor for VAD �
 
 `main.swift`: `NSApplication.shared`, `setActivationPolicy(.accessory)`, set `AppDelegate`, `run()`. `AppDelegate.applicationDidFinishLaunching`: load `AppConfig` from `~/.config/nohands/config.json` + `ProcessInfo.processInfo.environment`; request mic; check Accessibility with prompt; create `NSStatusItem` with `mic` SF Symbol and title `CMD`/`DICT`/`ZZZ`; menu items: last transcript (disabled), `Pause/Resume Listening`, `Open Accessibility Settings` (shown with a red dot while not granted), `Quit`. Start the pipeline once both permissions are granted; poll Accessibility every 2 s until granted.
 
-- [ ] **Step 3: Write `Resources/Info.plist` and `Scripts/bundle.sh`**
+- [ ] **Step 3: Write `Resources/Info.plist` and `scripts/bundle.sh`**
 
 Info.plist keys: `CFBundleIdentifier dev.nohands.app`, `CFBundleName NoHands`, `CFBundleExecutable NoHands`, `CFBundlePackageType APPL`, `CFBundleShortVersionString 0.1.0`, `LSUIElement true`, `LSMinimumSystemVersion 14.0`, `NSMicrophoneUsageDescription "NoHands listens for voice commands and dictation."`. `bundle.sh`: `swift build -c release`, create `build/NoHands.app/Contents/{MacOS,Resources}`, copy the binary and plist, copy any `*.bundle` resource bundles from `.build/release` into `Contents/Resources`, `codesign --force --sign "${CODESIGN_IDENTITY:--}" --deep build/NoHands.app`, print the path.
 
 - [ ] **Step 4: Update `README.md`**
 
-Sections: what it does, requirements, build (`Scripts/bundle.sh`), first-run permissions and the ad-hoc re-grant caveat, config file, the command phrase table (copy spec §6 and §7), CLI subcommands, latency notes.
+Sections: what it does, requirements, build (`scripts/bundle.sh`), first-run permissions and the ad-hoc re-grant caveat, config file, the command phrase table (copy spec §6 and §7), CLI subcommands, latency notes.
 
 - [ ] **Step 5: Verify end to end**
 
-Run: `Scripts/bundle.sh && open build/NoHands.app`, then walk the acceptance list in spec §14 steps 1–8.
+Run: `scripts/bundle.sh && open build/NoHands.app`, then walk the acceptance list in spec §14 steps 1–8.
 Expected: every step behaves as written; the console (`log stream --predicate 'process == "NoHands"'` or running the binary directly) shows one latency line per utterance with grammar-path totals ≤ 650 ms.
 
 - [ ] **Step 6: Commit**
