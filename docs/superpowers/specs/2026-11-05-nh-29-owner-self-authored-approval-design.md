@@ -4,171 +4,191 @@
 
 ## Goal
 
-When every agent acts as the owner (the Builder login is `none`), the owner is the PR author, and GitHub refuses the author's own approving review (HTTP 422). This spec adds a second approval record that the owner can post on their own PR: a commit status on the head SHA. `scripts/cos_approve_pr.py` posts it only after `scripts/cos_user_check.py` finds the user's own `approve N`, as it does for the review today. `scripts/merge_pr.py` accepts that record only when the PR author is the owner. PRs opened by a builder account keep today's path, the owner's approving review, without change.
+When every agent acts as the owner (the Builder login is `none`), the owner is the PR author, and GitHub refuses the author's own approving review (HTTP 422). This repo is also private on a free plan, so it can have no branch protection or ruleset, and `merge_pr.py` stops on that too. After this change, the user's `approve N` in the Chief of Staff thread ends in a merge here:
 
-**Security review: look at this on purpose.** This adds a second kind of merge approval. § Security notes says what it trades and what it doesn't.
+1. **Owner-authored approval record.** `scripts/cos_approve_pr.py` posts a commit status (`agent-team/owner-approval`, `success`) on the head SHA when the owner wrote the PR. It posts only after `scripts/cos_user_check.py` finds the user's own `approve N`, as it does before a review today. `scripts/merge_pr.py` accepts that status only on a PR the owner wrote.
+2. **Script-only merge gate.** This is opt-in, through a new `project.md` row. When it is on and `main` has no protection, `merge_pr.py` doesn't require branch protection or a ruleset. Every other check still runs, and the approval record is still required.
 
-## ⚠ Blocker found while writing the spec: this repo cannot have branch protection
+PRs opened by a builder account in a repo with protection keep today's path, without change.
 
-Checked 2026-11-05 as `noahstotland`:
+**Security review: look at this on purpose.** This weakens the merge gate. Without protection, GitHub no longer refuses a merge or push that skips the script. § Security notes and § Calls I made say what that trades.
 
-```
-GET repos/noahstotland/nohands/branches/main/protection -> 403 "Upgrade to GitHub Pro or make this repository public to enable this feature."
-GET repos/noahstotland/nohands/rules/branches/main      -> 403 (same text)
-```
+## Decision record
 
-`noahstotland/nohands` is a private repo on a free plan, so it can have no classic branch protection and no ruleset. `merge_pr.py` requires one of them (`read_protection`, then the `count < 1` gate), and stops with `cannot read main's protection (...)`. **PRs #25 and #26 would have stopped there even if the 422 had not happened.** This spec doesn't fix that. To meet the ticket's first acceptance line in this repo, the owner has to do one of these:
-
-1. Upgrade the account to GitHub Pro (or make the repo public), then set up `main` as § Branch protection says. **This spec assumes this option.**
-2. Ask for a script-only gate for repos that can't have protection (a `project.md` row that lets `merge_pr.py` skip the protection check). That changes a merge gate, so this spec doesn't add it. Reply `changes 29: script-only gate` to get it in a follow-up ticket or in this one.
+- The first draft (commit `df32d03`) kept branch protection required. In the Chief of Staff thread, the user replied "approve 29. No branch protecction is ok" (createdBy `user`, 2026-11-05T15:30:09Z). Asked whether that meant a script-only gate (1) or building the spec as written (2), they answered "1" (createdBy `user`, 2026-11-05T15:32:08Z). The Chief of Staff relayed that as changes, not as a build approval. This revision builds option 1.
 
 ## Today
 
 Facts from `main` at `ff9e08b` (collective-wisdom `82211a2`, per `docs/agents/installed-from.txt`), checked 2026-11-05.
 
-- `scripts/cos_approve_pr.py` runs from the root checkout with no `AGENT_GH_ROLE`, signed in as the Owner login. Its gates are root checkout, state (`awaiting-merge`, `pr`, `headSha`, `lastSeenAt`, `chiefThreadId`), the user's message (`cos_user_check.latest`, `approve N` after `lastSeenAt`, `createdBy: "user"`), gh login (the owner, not an agent user) and the PR facts (open, not a draft, not a fork, base `main`, head equals `headSha`). Then it does `POST pulls/N/reviews` with `event=APPROVE` and `commit_id=<head>`. When the owner wrote the PR, that POST returns 422.
-- `scripts/merge_pr.py` `gate()` requires `read_protection` count ≥ 1 and `owner_approval(f)` (the owner's latest `APPROVED`/`CHANGES_REQUESTED`/`DISMISSED` review is `APPROVED` on `headRefOid`). It doesn't read the PR author or commit statuses.
-- `docs/agents/github-auth.md` § Merge gate says PRs must be opened by the builder user, and that the gate can't pass without that setup. Its one-time setup asks for CODEOWNERS plus 1 required approval from Code Owners.
-- In `docs/agents/project.md`, the Builder, Chief of Staff and reviewer logins are all `none`, so every PR's author is `noahstotland`, which is also the Owner login.
-- `merge-pr` § Team mode, `ship-loop` § Team mode (Relays) and the Chief of Staff docs say: never submit a GitHub review under any login, except through `cos_approve_pr.py`.
+- `GET repos/noahstotland/nohands/branches/main/protection` and `GET .../rules/branches/main` both return `403 "Upgrade to GitHub Pro or make this repository public to enable this feature."` `merge_pr.py` `read_protection` records each one as unread, and `gate()` stops with `cannot read main's protection (...)`. PRs #25 and #26 would have stopped there even without the 422.
+- `scripts/cos_approve_pr.py` runs from the root checkout with no `AGENT_GH_ROLE`, signed in as the Owner login. Its gates are root checkout, state (`awaiting-merge`, `pr`, `headSha`, `lastSeenAt`, `chiefThreadId`), the user's message (`cos_user_check.latest`, `approve N` after `lastSeenAt`, `createdBy: "user"`), gh login (the owner, not an agent user) and the PR facts (open, not a draft, not a fork, base `main`, head equals `headSha`). Then it does `POST pulls/N/reviews` with `event=APPROVE`. When the owner wrote the PR, that POST returns 422.
+- `scripts/merge_pr.py` `gate()` requires `read_protection` count ≥ 1 and `owner_approval(f)` (the owner's latest verdict review is `APPROVED` on `headRefOid`). It doesn't read the PR author or commit statuses. It merges with `PUT pulls/N/merge sha=<head>`, so GitHub refuses the merge if the head moved.
+- `docs/agents/github-auth.md` § Merge gate says PRs must be opened by the builder user, and that branch protection is required.
+- In `docs/agents/project.md`, every role login is `none`, and `Required CI checks` is `none (no CI yet)`.
 
 ## Design
 
-### The approval record
+### The approval record (owner-authored PRs)
 
 A commit status on the PR's head SHA:
 
 | Field | Value |
 |---|---|
 | `context` | `agent-team/owner-approval` |
-| `state` | `success` (approved). `cos_approve_pr.py` never writes any other state. |
+| `state` | `success`. `cos_approve_pr.py` never writes any other state. |
 | `description` | `approve <N> by the user, <PREFIX>-<N>, item <message id>` (cut to GitHub's 140 characters) |
-| `target_url` | none |
 | creator | the Owner login (GitHub records it; `merge_pr.py` checks it) |
 
-Why a status: GitHub ties it to one SHA, so a push leaves the new head with no record (a push voids it for free). The author can post it. Branch protection can require it by context. And it is not a review, so the rule "never submit a review" stays as it is.
+Why a status: it is tied to one SHA, so a push leaves the new head with no record. The author can post it. Protection can require it when a repo has protection. And it is not a review, so the "never submit a review" rule stays as it is.
+
+### New `project.md` row
+
+In § Git and GitHub:
+
+| Key | Value |
+|---|---|
+| Merge gate without branch protection | `off` or `script-only`. `off` is the default; a missing row or a `TODO(...)` counts as `off`. |
+
+- The collective-wisdom template ships it as `off`, so no other app changes behaviour.
+- This app's `project.md` sets it to `script-only` in the NH-29 install PR. It takes effect once that PR is on root `main`, because `merge_pr.py` reads `project.md` from the root checkout only.
+- `project_config.py` gets a reader, `merge_gate_mode()`, that returns `"off"` or `"script-only"` and exits 2 on any other value. A typo fails closed.
 
 ### `scripts/cos_approve_pr.py`
 
 - Add `author` to `PR_FIELDS`. The gates before the post don't change.
-- When `author.login` equals the Owner login (case-insensitive), it is the **self-authored path**:
-  - Already approved: the newest status in context `agent-team/owner-approval` on the head (`GET commits/<sha>/statuses`, newest first), created by the owner, is `success` → print `cos-approve: #N already approved by <owner> at <SHA>; nothing posted`, exit 0.
+- **Owner-authored** (`author.login` equals the Owner login, case-insensitive):
+  - If the newest status in the context on the head is the owner's `success`, print `cos-approve: #N already approved by <owner> at <SHA>; nothing posted` and exit 0.
   - Otherwise `POST repos/{owner}/{repo}/statuses/<sha>` with the fields above. Last line: `cos-approve: approved #N at <SHA> (status; author is the owner)`. A failed POST is exit 2, `cos-approve: cannot post the status on #N: ...`.
-- Any other author: today's review path, unchanged.
-- The docstring and usage say which record each path writes.
+- **Any other author:** today's review path, unchanged.
+- The script doesn't read the gate-mode row. Picking the record only depends on who wrote the PR.
 
 ### `scripts/merge_pr.py`
 
-- Add `author` to `FIELDS`. For an open PR, also read `GET commits/<head>/statuses?per_page=100` into `f["statuses"]`.
-- `read_protection` also returns whether `main` requires the status context `agent-team/owner-approval`. Classic: `required_status_checks.contexts` or `.checks[].context`. Ruleset: a `required_status_checks` rule whose `parameters.required_status_checks[].context` holds it. It returns `(count, requires_status, unread)`.
-- New `self_approval(f)`, the twin of `owner_approval`. It returns `None` when all of these hold, else the reason:
-  - The newest status in that context on `headRefOid` (by `created_at`; the API lists newest first) exists, was created by the Owner login, and is `success`. A newer `failure`, `error` or `pending` one, by anyone, voids it, and so does a status by any other login (the newest one wins and must be the owner's `success`).
-  - No review on the PR in state `CHANGES_REQUESTED` was submitted after that status's `created_at`. That is any author's, since the owner can't review their own PR.
-- In `gate()`, the protection and approval step becomes:
-  - **Author is the owner:** stop unless `requires_status` is true (`main does not require the agent-team/owner-approval status; set it up per docs/agents/github-auth.md § Merge gate (owner-authored PRs)`). Stop if `count ≥ 1` (`main requires an approving review, which GitHub never lets the author give; ...`): GitHub would refuse that merge anyway, so the stop names the fix first. Then apply `self_approval(f)`.
-  - **Any other author:** exactly today's checks (`count ≥ 1`, `owner_approval`).
-  - The unread-protection message stays, and is also used when the source that would show the status requirement can't be read.
-- Every other gate (approved head, green checks, both PASS reviews newer than the head or covered by a reviews-stand note, closeout docs, clean root `main`) runs as today on both paths.
+- Add `author` to `FIELDS`. For an open PR, read `GET commits/<head>/statuses?per_page=100` into `f["statuses"]`, and `f["gateMode"] = project_config.merge_gate_mode()`.
+- `read_protection` returns `(count, requires_status, unread)`. `requires_status` is true when `main` requires the context `agent-team/owner-approval`. It looks in classic `required_status_checks.contexts` or `.checks[].context`, and in a ruleset `required_status_checks` rule's `parameters.required_status_checks[].context`. Each unread entry also records whether its 403 was the plan error (text contains `Upgrade to GitHub Pro`).
+- New `self_approval(f)`. It returns `None` when both of these hold, else the reason:
+  - The newest status in the context on `headRefOid` (by `created_at`) exists, was created by the Owner login, and is `success`. A newer `failure`, `error` or `pending`, or a newer status by any other login, voids it (the newest one wins).
+  - No review in state `CHANGES_REQUESTED` was submitted after that status's `created_at`, from any author.
+- New `approval(f)`: `self_approval(f)` when the author is the owner, else `owner_approval(f)` (today's).
+- The protection step in `gate()`:
 
-### Branch protection (§ Merge gate in `github-auth.md`)
+  | Protection found on `main` | Gate mode `off` (default) | Gate mode `script-only` |
+  |---|---|---|
+  | Requires ≥ 1 approving review | Builder-authored: as today. Owner-authored: stop, `main requires an approving review, which GitHub never lets the author give; see github-auth.md § Merge gate`. | Same as `off`. When protection exists, it is never skipped. |
+  | Exists, requires `agent-team/owner-approval`, 0 reviews | Owner-authored: pass. Builder-authored: stop, `main requires no approving review` (as today's `count < 1`). | Same as `off`. |
+  | None (both read, nothing found) | Stop, as today. | Pass this step. Print `merge-pr: note main has no branch protection; script-only gate` before the last line. |
+  | Unread because of the plan 403 on every unread source, and nothing found in the readable ones | Stop, as today (`cannot read main's protection`). | Pass this step. Print the same note. |
+  | Unread for any other reason (another 403, a 404 other than "Branch not protected") | Stop, as today. | Stop, as today. The script can't tell what is there, so it fails closed. |
 
-`main` has one protection, so the owner picks the setup that matches who opens PRs:
+  Then `approval(f)` runs in every case. **The approval record is never skipped.**
+- Every other gate runs unchanged in both modes: root checkout, gh signed in as the owner and not an agent user, open, not a draft, not a fork, base `main`, head starts with the approved SHA, `MERGEABLE`/`CLEAN`, checks green (or `no CI` per `project.md`), both PASS reviews newer than the head or covered by a reviews-stand note, closeout docs, clean root `main`. The merge still uses `sha=<head>`.
 
-| Who opens PRs | What the owner sets on `main` |
-|---|---|
-| A builder account (Builder login set) | Today's setup, unchanged: CODEOWNERS `* @<owner>`, 1 required approval, Code Owners review, stale approvals dismissed, required checks, no bypass. |
-| The owner (Builder login `none`) | Require a pull request, **0** required approvals, no Code Owners review. Required status checks: `agent-team/owner-approval` plus the repo's CI checks, "up to date" off. No bypass (enforce for admins, or an empty bypass list). |
+### `docs/agents/github-auth.md` § Merge gate
 
-With the second setup, GitHub itself refuses a merge whose head has no `agent-team/owner-approval` success, so a push after approval blocks the merge on the server as well as in the script.
+- Replace "PRs must be opened by the builder user ... The gate cannot pass without that setup" with this table:
 
-The section also gets:
-- The check commands for the status requirement (classic `--jq '.required_status_checks.contexts'`, ruleset `--jq '[.[] | select(.type=="required_status_checks") | .parameters.required_status_checks[].context]'`).
-- A plain note: a private repo on a free plan can't have either setup (403 "Upgrade to GitHub Pro"), and `merge_pr.py` then stops with `cannot read main's protection`.
-- A replacement for the sentence "PRs must be opened by the builder user ... The gate cannot pass without that setup." It now says both paths are supported and points to the table.
+  | Setup | Who opens PRs | What the owner sets |
+  |---|---|---|
+  | Protected, builder PRs | builder account | Today's setup (CODEOWNERS, 1 approval from Code Owners, stale approvals dismissed, required checks, no bypass). |
+  | Protected, owner PRs | the owner (Builder `none`) | Require a PR, 0 approvals, required status check `agent-team/owner-approval` plus CI checks, no bypass. |
+  | Script-only | either | No protection (for example, a private repo on a free plan). `project.md` row `Merge gate without branch protection` = `script-only`. |
+
+- A short "What script-only gives up" list, the same as § Security notes below, and the check commands for the status requirement.
+- Say that an agent never changes this row on its own. It changes only in a PR the user approves, and the code and security reviewers flag any diff to it.
 
 ### Docs and skills to update
 
 Upstream in collective-wisdom (`agent-team/...`), installed here:
 
-- `scripts/cos_approve_pr.py`, `scripts/merge_pr.py`, and their tests `scripts/test_cos_approve_pr.py` and `scripts/test_merge_pr.py`.
+- `scripts/cos_approve_pr.py`, `scripts/merge_pr.py`, `scripts/project_config.py` and their tests (`test_cos_approve_pr.py`, `test_merge_pr.py`, `test_project_config.py`).
 - `docs/agents/github-auth.md` § Merge gate (above).
-- `.claude/skills/merge-pr/SKILL.md`: the Pre-merge checks list and Team mode say "the owner's approving review on the head, or, for a PR the owner wrote, the owner's `agent-team/owner-approval` status on the head". The `BLOCKED:` triggers add `no owner-approval status ...` and `main does not require the agent-team/owner-approval status ...`.
-- `.claude/skills/ship-loop/SKILL.md` § Team mode (Relays) and `merge-pr` § Team mode: the "never submit a GitHub review" rule becomes "never submit a GitHub review, and never post a commit status in context `agent-team/owner-approval`, under any login"; the only exception is `cos_approve_pr.py` on a verified `approve N`.
-- `.claude/skills/chief-of-staff/approvals.md` (merge block and reminder line): "this posts your approving review on GitHub" becomes "this posts your approval on GitHub (a review, or a status when you wrote the PR)". `chief-of-staff/SKILL.md` (§ Send or queue, the GitHub-is-read-only line) and `status.md` get the same wording, plus the new success line.
-- `docs/agents/chief-of-staff.md` (what it writes on GitHub, the "Nothing was merged" line) and `docs/agents/org-chart.md` where it names the approving review.
-- `agent-team/templates/project.md`: the Builder login note says that `none` means PRs are owner-authored and use the status path.
+- `.claude/skills/merge-pr/SKILL.md`: the Pre-merge checks list says "branch protection or a ruleset on `main` requiring an approving review (or, with `script-only`, none found)" and "the owner's approving review, or for an owner-authored PR the owner's `agent-team/owner-approval` status, on the head". In Team mode, report the `merge-pr: note ...` line in `MERGED #N`.
+- `.claude/skills/ship-loop/SKILL.md` § Team mode (Relays) and `merge-pr` § Team mode: "never submit a GitHub review, and never post a commit status in context `agent-team/owner-approval`, under any login. The only exception is `cos_approve_pr.py` on a verified `approve N`." Also: "never merge by any route other than `scripts/merge_pr.py` (no `gh pr merge`, no web merge, no push to `main`)". Today that rule appears only as "never fall back to `gh pr merge`"; this makes it explicit, because without protection it is the guard.
+- `.claude/skills/chief-of-staff/approvals.md` (merge block and reminder line), `chief-of-staff/SKILL.md` (§ Send or queue, the GitHub-is-read-only line) and `status.md` change "this posts your approving review on GitHub" to "this posts your approval on GitHub (a review, or a status when you wrote the PR)".
+- `docs/agents/chief-of-staff.md` and `docs/agents/org-chart.md`, where they name the approving review.
+- `docs/agents/security-review.md` (or `code-review.md`, whichever holds the gate checklist): a diff to the `Merge gate without branch protection` row, or to `cos_approve_pr.py`/`merge_pr.py`, is called out in the review.
+- `agent-team/templates/project.md`: the new row as `off`, and the Builder login note says that `none` means owner-authored PRs and the status record.
 
 App-only, in this repo's own PR:
 
-- `docs/agents/project.md`: the Builder login row note says that `none` means owner-authored PRs and the status path, with a pointer to `github-auth.md` § Merge gate. This is the app's filled copy, which the installer doesn't overwrite.
-- This spec, its closeout (`**Shipped:**` line, as-built if needed) and the PR's `## Release note`.
-- `docs/agents/installed-from.txt` and the installed files above, written by `scripts/agent-team-update.sh <new tag>`, with the command in the PR body.
+- `docs/agents/project.md`: the new row set to `script-only`, and the Builder login note. This is the app's filled copy, which the installer doesn't overwrite. Check during the build that `install.sh --update` adds the new row or leaves it to the app. If it adds nothing, write it by hand in the install PR.
+- This spec, its closeout, and the PR's `## Release note`.
+- `docs/agents/installed-from.txt` and the installed files, written by `scripts/agent-team-update.sh <new tag>`, with the command in the PR body.
 
 ### What the spec stage can and cannot deliver from this repo
 
 - **Can:** this spec, committed and pushed on `feat/nh-29-owner-self-authored-approval`.
-- **Cannot:** any change to the scripts, skills or shared docs above. By `ship-loop` § Team mode (Workflow files), they change only through a collective-wisdom PR for the same ticket, then an install PR here after a release tag. The build stage needs:
-  1. A worktree of `~/collective-wisdom` (origin `collective-wisdom-org/collective-wisdom`, at `82211a2` today) on a branch `feat/nh-29-owner-self-authored-approval`, and a PR there. The Builder login is `none`, so the PR is opened as `noahstotland`, and that account needs push access to that repo.
-  2. That PR merged and tagged (`tag-release.sh`) by whoever runs collective-wisdom. The Chief of Staff's merge relay covers only this repo's PR, so a NoHands child can't merge upstream.
-  3. Then this repo's PR: `scripts/agent-team-update.sh <tag>` plus the app-only `project.md` note, through the usual code review, security review and `approve 29`.
-  If step 2 doesn't happen in the same build run, the child stops with `BLOCKED: upstream PR <URL> needs merging and a tag` and resumes when it is relayed.
-- **Cannot either:** the GitHub setting. No agent changes GitHub settings (`github-auth.md` § Merge gate). The owner sets protection by hand, after the § Blocker decision.
+- **Cannot:** any change to the scripts, skills or shared docs above. By `ship-loop` § Team mode (Workflow files), they change only through a collective-wisdom PR for the same ticket, then an install PR here after a release tag. The build stage:
+  1. Makes a worktree of `~/collective-wisdom` (origin `collective-wisdom-org/collective-wisdom`, at `82211a2` today) on `feat/nh-29-owner-self-authored-approval`, builds there and opens the PR. The Builder login is `none`, so that runs as `noahstotland`, who needs push access to that repo.
+  2. That PR is merged and tagged (`tag-release.sh`) by whoever runs collective-wisdom. A NoHands child can't do it, so the child stops with `BLOCKED: upstream PR <URL> needs merging and a tag` and resumes when it is relayed.
+  3. Opens this repo's PR: `scripts/agent-team-update.sh <tag>`, plus the `project.md` row and note, through code review, security review and `approve 29`.
+- **Chicken and egg, for NH-29's own merge.** Its install PR is owner-authored, and root `main` still has the old `merge_pr.py` and `cos_approve_pr.py` until it merges. So `approve 29` on the install PR hits the same 422 and protection stop. The user merges NH-29's install PR by hand on GitHub, once, after reviewing it. From the next ticket on, `approve N` works. The Chief of Staff's merge block for NH-29 must say so.
 
 ### Tests (upstream, in the existing table style)
 
-`test_cos_approve_pr.py`, new `ROWS` (each changes one thing from a self-authored happy path, with `author` = `Owner`):
+`test_cos_approve_pr.py`, new `ROWS` (each changes one thing from an owner-authored happy path):
 
 | Row | Exit | Posts | Line |
 |---|---|---|---|
-| self-authored, user's `approve 87` | 0 | 1 status (`context`, `state=success`, `sha=HEAD`) and no review | `approved #7 at <HEAD> (status` |
-| self-authored, already a success status by the owner on head | 0 | 0 | `already approved` |
-| self-authored, agent message only | 1 | 0 | `no verified` |
-| self-authored, no message | 1 | 0 | `no verified` |
-| self-authored, head moved | 1 | 0 | `not the approved head` |
-| self-authored, status POST fails | 2 | 1 | `cannot post the status` |
+| owner-authored, user's `approve 87` | 0 | 1 status (`context`, `state=success`, `sha=HEAD`), no review | `approved #7 at <HEAD> (status` |
+| owner-authored, owner `success` status already on head | 0 | 0 | `already approved` |
+| owner-authored, agent message only | 1 | 0 | `no verified` |
+| owner-authored, head moved | 1 | 0 | `not the approved head` |
+| owner-authored, status POST fails | 2 | 1 | `cannot post the status` |
 | builder-authored happy path | 0 | 1 review, no status | unchanged |
 
-`test_merge_pr.py`, new rows in `test_gate` (self-authored base facts: `author` = owner, protection `(0, True, [])`, a success status by the owner on head):
+`test_merge_pr.py` `test_gate`, new rows (base facts: owner-authored, gate mode `script-only`, protection `(0, False, [plan 403, plan 403])`, an owner `success` status on head):
 
 | Row | Cause |
 |---|---|
-| self-authored base | `None` (merges) |
+| base | `None` (merges, with the note) |
+| gate mode `off` | `cannot read main's protection` |
+| an unread source with a non-plan 403 | `cannot read main's protection` |
+| protection read, none found, `script-only` | `None` |
+| protection requires 1 approval, owner-authored | `requires an approving review` |
 | no status | `no owner-approval status` |
 | status on an older head only (a push) | `no owner-approval status` |
-| newest status is `failure` | `latest is failure` |
-| newest status by another login (agent user or someone else) | `not by <owner>` |
+| newest status `failure` | `latest is failure` |
+| newest status by another login | `not by <owner>` |
 | `CHANGES_REQUESTED` review after the status | `changes requested` |
-| protection doesn't require the status | `does not require the agent-team/owner-approval status` |
-| protection requires 1 approval | `requires an approving review` |
-| builder-authored with only a status, no review | today's `no approving review by` (the status doesn't count for a builder PR) |
+| builder-authored, `script-only`, owner review on head | `None` |
+| builder-authored, status only, no review | `no approving review by` |
+| `script-only`, a PASS review older than the head | today's stale-review cause (other gates still run) |
 
-`test_read_protection` gets a row each for a classic `contexts`, a classic `checks` and a ruleset `required_status_checks` that hold the context, and one where they don't. All tests fake `gh`; none needs network or a T3 database other than the existing fixture.
+`test_read_protection` gets rows for the status context in classic `contexts`, classic `checks` and a ruleset, and for plan-403 against other-403 tagging. `test_project_config.py` gets one table for the row: missing, `TODO(x)`, `off`, `script-only` and a typo. All tests fake `gh`. None needs the network or a T3 database other than the existing fixture.
 
 ## Security notes
 
-- **Human gate kept.** The only writer of the record is `cos_approve_pr.py`, after `cos_user_check.latest` finds the user's own `approve N` (`createdBy: "user"`, after `lastSeenAt`, for that ticket's number) and the head equals `headSha`. Its gates are the ones that guard the review today.
-- **Role accounts can't approve.** `merge_pr.py` accepts a status only when its creator is the Owner login, and only on an owner-authored PR. An agent user's status (when those logins exist) is not counted, and a newer one from them voids the owner's (fail closed).
-- **The Chief of Staff can't approve for itself through a script.** `cos_approve_pr.py` refuses without the user's message. Skills forbid any other status write in that context.
-- **The residual is the same as today's.** With every role `none`, every agent runs as the owner's gh account, so nothing in GitHub stops an agent from calling the statuses API by hand. The same is already true of the review API on a builder-authored PR when the Chief of Staff login is `none`. The guard is the skills' rule plus `merge_pr.py` running only on a relayed approval. Separate agent accounts are what close it, and this ticket leaves them out of scope. A status is not weaker than a review here: both are one API call from the owner's token.
-- **Push voids it on both sides.** The status is per SHA, and `merge_pr.py` merges with `sha=<head>`. With the owner-authored protection, GitHub also requires the status on the head.
-- Stale or replayed `approve N`: unchanged (`--after lastSeenAt`, word-boundary matching).
+- **Human gate kept.** The only writer of an approval record is `cos_approve_pr.py`, after `cos_user_check.latest` finds the user's own `approve N` (`createdBy: "user"`, after `lastSeenAt`, that ticket's number) and the head equals `headSha`. `merge_pr.py` still requires a record on every path and in both modes: the owner's review, or for an owner-authored PR the owner's status.
+- **Role accounts can't approve.** A status counts only when its creator is the Owner login and the PR's author is the owner. A newer status from any other login voids it, so the gate fails closed.
+- **The Chief of Staff can't approve for itself through a script.** `cos_approve_pr.py` refuses without the user's message. Skills forbid any other status write in that context, and any merge route except `merge_pr.py`.
+- **What script-only gives up.** With no protection, GitHub enforces nothing on `main`:
+  - Anyone with write access can merge from the web UI or with `gh pr merge` and skip `merge_pr.py` entirely. That includes every agent here, since they all run as the owner.
+  - Anyone with write access can push to `main` directly, force-push it or delete it.
+  - GitHub doesn't require the approval status, the checks or the reviews on the merged head. Only the script checks them.
+  - GitHub doesn't dismiss stale approvals. The script's head checks and the SHA-tied status still void them for merges that go through the script.
+
+  The remaining guard is policy: the skills' "only `merge_pr.py` merges" and "never push to `main`" rules, `git.sh`'s push checks (a guardrail, not a boundary), and the relayed merge approval.
+- **Opt-in and visible.** The mode is a `project.md` row on root `main`, so a feature branch can't turn it on for its own merge. Changing it takes a user-approved merge, and the reviewers flag the diff. It never applies when protection exists or can't be read for another reason.
+- **The residual risk is the same as today's for a direct API call.** With every role `none`, an agent could post the status by hand. The same is already true of the review API. Separate agent accounts plus protection close that; both are out of scope here.
 
 ## Non-goals
 
 - Letting the Chief of Staff approve without the user's message (NH-22).
-- Creating the agent GitHub accounts.
-- A script-only merge gate for repos without branch protection (see § Blocker; a separate call for the user).
-- Changing the code review or security review rules.
-- Merging the collective-wisdom PR or cutting its tag from a NoHands child.
+- Creating the agent GitHub accounts, or buying GitHub Pro.
+- Changing the code review or security review rules beyond flagging the new row.
+- Merging the collective-wisdom PR, or cutting its tag, from a NoHands child.
 
 ## Calls I made
 
-- ⚠ **Protection is still required, even though this repo can't have it on its plan.** Without Pro or a public repo, `approve N` still won't end in a merge here after this ships. I kept the gate rather than weaken it (§ Blocker, option 2 is yours to ask for).
-- ⚠ **The record is a commit status (`agent-team/owner-approval`), not a comment.** A comment can be edited and isn't tied to a SHA. A status is tied to one head, can be required by branch protection, and needs no new kind of "review" exception.
-- ⚠ **The owner-authored setup needs 0 required approvals and no Code Owners review on `main`.** A repo uses one setup or the other. A repo set up for builder PRs gets a clear stop on an owner-authored PR (and the reverse), not a fallback.
-- The status path applies only when the PR author is the Owner login. A builder-authored PR with only a status doesn't merge (ticket: "exactly as before").
-- The newest status in the context wins. Any non-success state, or one by another login, voids the approval. Any `CHANGES_REQUESTED` review after it voids it too, from any author.
-- `cos_approve_pr.py` picks the path from the PR author itself; the Chief of Staff doesn't choose. There is no new flag.
-- `merge_pr.py` doesn't re-read T3's message store. That would tie merges to T3 and change the solo flow; the user check stays in `cos_approve_pr.py`, as for reviews.
-- The collective-wisdom branch uses this ticket's name, `feat/nh-29-owner-self-authored-approval`, so the "push only `feat/nh-29-*`" rule covers it.
-- The status description holds the message id, not the user's words (140-character limit, and the words are already in the T3 thread).
+- ⚠ **Script-only means GitHub enforces nothing on `main`.** Any agent running as the owner could merge or push past the script. The only guards are the skills' rules (only `merge_pr.py` merges; never push to `main`), `git.sh`'s push checks and the relayed approval. You chose this in the thread ("1"); this spells out what it costs.
+- ⚠ **NH-29's own install PR can't merge through `approve 29`.** Root `main` still has the old scripts until that PR lands, so the user merges it by hand on GitHub once. After that, `approve N` works.
+- ⚠ **What script-only checks instead of protection:** the approval record on the exact head (the owner's review, or the owner's `success` status for an owner-authored PR, with no later changes-requested review or newer status), head equal to the approved SHA, a merge guarded with `sha=<head>`, gh signed in as the owner and not an agent user, green checks (or `no CI` per `project.md`), both PASS reviews current for the head, closeout docs, and a clean root `main`. It drops only the "protection exists and requires an approving review" check.
+- Script-only is opt-in per repo, through a `project.md` row, `off` by default. It applies only when no protection exists or the only unread reason is the plan 403. A repo that has protection, or a 403 for any other reason, still stops. NoHands sets it to `script-only`.
+- The approval record for an owner-authored PR is a commit status, not a comment. A status is tied to the SHA, is readable without protection, and can be required by protection later.
+- In a protected repo, owner-authored PRs need 0 required approvals and the status as a required check. A repo picks one setup. A mismatch stops with a clear message instead of falling back.
+- The newest status in the context wins. Any non-success state, or a status by another login, voids the approval. So does any `CHANGES_REQUESTED` review after it.
+- `merge_pr.py` prints a `merge-pr: note ... script-only gate` line on every such merge, so the gap shows in `MERGED #N` reports.
+- `merge_pr.py` doesn't re-read T3's message store. The user check stays in `cos_approve_pr.py`, as it does for reviews.
+- The collective-wisdom branch reuses this ticket's name, `feat/nh-29-owner-self-authored-approval`.
