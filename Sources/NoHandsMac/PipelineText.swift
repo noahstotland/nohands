@@ -48,6 +48,7 @@ public enum PipelineText {
         case .execute(let actions): "execute \(detailed ? describe(actions) : ActionSummary.kinds(actions))"
         case .resolveWithLLM: "llm"
         case .ignore(let reason): "ignore(\(reason))"
+        case .reject(let message): detailed ? "reject(\(message))" : "reject"
         }
     }
 

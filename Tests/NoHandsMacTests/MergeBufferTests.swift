@@ -137,4 +137,5 @@ private func make(_ sink: Sink, window: Int = 80, unfinished: Int = 200) -> Merg
     #expect(!VoicePipeline.isComplete("scratch that", mode: .command, grammar: g))
     #expect(!VoicePipeline.isComplete("hello there", mode: .dictation, grammar: g))
     #expect(!VoicePipeline.isComplete("make it bigger", mode: .command, grammar: g))
+    #expect(!VoicePipeline.isComplete("spell kilo nine", mode: .command, grammar: g))   // waits so a pause can't split it
 }
