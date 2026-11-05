@@ -4,3 +4,8 @@
 .swiftpm/
 .superpowers/
 build/
+.agent-team/
+.worktrees/
+.env
+__pycache__/
+.pytest_cache/
