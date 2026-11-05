@@ -93,9 +93,8 @@ longest match first:
 - `SpellerTests` (new, one table): letters, homophones, NATO incl. `x ray`/`x-ray`, digit words and numerals,
   `capital`, each separator, `at sign`, and failures: unknown token (names the first unknown), `capital` before a
   digit, trailing `capital`, empty.
-- `CommandGrammarTests`: one table row each for a good spell (`[.typeText("K9x")]`) and a bad one (`parse` nil,
-  `rejection` non-nil); a non-spell phrase has `rejection == nil`.
-- `ModeMachineTests`: a bad spell routes to `.reject`, never `.resolveWithLLM`.
+- `SpellerTests` (same file): one test covers the grammar and routing: a good spell gives `[.typeText("K9x")]`; a bad one has
+  `parse` nil and a `rejection`, and routes to `.reject`, never `.resolveWithLLM`; a non-spell phrase has `rejection == nil`.
 - `MergeBufferTests` / `isComplete`: a valid spell phrase is not complete.
 - Manual (PR): "spell capital kilo nine x ray" types `K9x` into TextEdit; "spell kilo banana" types nothing and the
   HUD shows `can't spell "banana"`; a pause mid-spell still types one string.
