@@ -495,6 +495,66 @@ private func harnessSnapshot() -> DesktopSnapshot {
     #expect(h2.calls.filter { $0.hasPrefix("snapshot") }.count == 1)
 }
 
+private func tab(_ id: String, _ title: String, active: Bool = false) -> BrowserTab { BrowserTab(id: id, title: title, active: active) }
+
+@MainActor @Test func taskClosesAPopUnderTabButNeverTheUsersOwn() async throws {
+    let resolver = FakeResolver([
+        step("open the game", .continue, [.openURL(URL(string: "https://stream.example")!, app: nil)]),
+        step("close the pop-under", .continue, [.closeTab(3)]),
+        step("close the inbox", .continue, [.closeTab(1)]),
+        step("playing", .done)])
+    let r = rig(resolver)
+    r.ax.browser = [BrowserWindow(id: "w1", title: "Inbox", front: true, tabs: [tab("t1", "Inbox", active: true)])]
+    let ax = r.ax
+    ax.browserApp = "Google Chrome"
+    // The open_url step leaves the game in a new active tab and a pop-under behind it.
+    let afterOpen = [BrowserWindow(id: "w1", title: "Game", front: true,
+                                   tabs: [tab("t1", "Inbox"), tab("t2", "Game", active: true), tab("t3", "You won!")])]
+    resolver.onResolve = { n in if n == 1 { ax.browser = afterOpen } }
+    let outcome = await r.runner.run(goal: "watch the Raptors game", mode: .command)
+    #expect(outcome == .done("playing"))
+    let second = try #require(resolver.requests[1].observation.tabs)
+    #expect(second.tab(2)?.new == true && second.tab(2)?.task == true)
+    #expect(second.tab(3)?.new == true && second.tab(1)?.new == false)
+    #expect(second.app == "Google Chrome")   // the ledger and the list name the app the windows were read from
+    #expect(ax.closedTabs == ["t3"])
+    #expect(resolver.requests[3].history[2].failure == "blocked: tab 1 is not one this task opened")
+    // A media goal gets the longer step cap.
+    #expect(resolver.requests[0].maxSteps == 24)
+}
+
+@MainActor @Test func aBrowserFirstSeenLateIsBaselinedBeforeTheNextStepSoItsPopUpIsNew() async throws {
+    let resolver = FakeResolver([step("click play", .continue, [.wait(ms: 1)]), step("look", .continue, [.wait(ms: 1)]), step("done", .done)])
+    let r = rig(resolver)   // the front app is not a browser at the task's start
+    let ax = r.ax
+    let user = BrowserWindow(id: "w1", title: "Inbox", front: true, tabs: [tab("t1", "Inbox", active: true)])
+    resolver.onResolve = { n in
+        if n == 1 { ax.browser = [user] }   // the browser comes up during the first step
+        if n == 2 { ax.browser = [BrowserWindow(id: "w1", title: "Inbox", front: true, tabs: [tab("t1", "Inbox", active: true)]),
+                                  BrowserWindow(id: "w2", title: "Casino", tabs: [tab("c1", "Casino")])] }   // 'click play' opened a pop-up
+    }
+    _ = await r.runner.run(goal: "x", mode: .command)
+    let seen = try #require(resolver.requests[1].observation.tabs)
+    #expect(seen.windows.count == 1 && seen.tab(1)?.new == false)
+    let popped = try #require(resolver.requests[2].observation.tabs)
+    #expect(popped.window(2)?.new == true && popped.tab(2)?.new == true)
+}
+
+@MainActor @Test func aNavigationThatFailedMarksNoTaskTab() async throws {
+    let resolver = FakeResolver([step("open the game", .continue, [.openURL(URL(string: "https://stream.example")!, app: "Nonesuch")]),
+                                 step("look", .done)])
+    let r = rig(resolver)   // no app named Nonesuch: the step fails
+    r.ax.browser = [BrowserWindow(id: "w1", title: "Inbox", front: true, tabs: [tab("t1", "Inbox", active: true)])]
+    let ax = r.ax
+    resolver.onResolve = { n in
+        if n == 1 { ax.browser = [BrowserWindow(id: "w1", title: "Game", front: true, tabs: [tab("t1", "Inbox"), tab("t2", "Game", active: true)])] }
+    }
+    _ = await r.runner.run(goal: "x", mode: .command)
+    let seen = try #require(resolver.requests[1].observation.tabs)
+    #expect(resolver.requests[1].history.first?.failure != nil)
+    #expect(seen.tab(2)?.new == true && seen.tab(2)?.task == false)
+}
+
 @MainActor @Test func playGoalIsDoneOnlyWhenMediaPlays() async {
     func button(_ title: String) -> [UIElementInfo] { [el(1, title)] }
     let done = step("started it", .done)

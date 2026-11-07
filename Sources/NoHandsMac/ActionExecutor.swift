@@ -32,11 +32,43 @@ public protocol ElementProviding: Sendable {
     func searchFieldFrame() -> CGRect?
     /// Whether the frontmost app is a web browser (its address bar searches the web).
     func frontmostIsBrowser() -> Bool
+    /// The frontmost browser's name and its windows and tabs, with opaque ids that stay the same for the same window
+    /// or tab until `resetBrowserTokens()`; nil when the frontmost app is not a browser. The name is of the app
+    /// the windows were read from.
+    func browserWindows() -> (app: String, windows: [BrowserWindow])?
+    /// Closes the tab or window `id` names with its own close button. `.noControl` when it has none.
+    func closeBrowserTab(id: String) -> BrowserActionResult
+    func closeBrowserWindow(id: String) -> BrowserActionResult
+    /// Makes the tab `id` the selected one.
+    func selectBrowserTab(id: String) -> BrowserActionResult
+    func browserTabIsSelected(id: String) -> Bool
+    /// Whether the tab `id` belongs to the frontmost app and to that app's focused window: the only place a
+    /// keyboard shortcut reaches it.
+    func browserTabIsInFrontWindow(id: String) -> Bool
+    /// Forgets the ids handed out (the end of a task).
+    func resetBrowserTokens()
+}
+
+/// How a request to act on a browser tab or window went.
+public enum BrowserActionResult: Equatable, Sendable {
+    case done
+    /// The tab or window no longer exists.
+    case gone
+    /// It has no control for that (a tab with no close button): the caller falls back to a shortcut.
+    case noControl
+    case failed(String)
 }
 
 extension ElementProviding {
     public func searchFieldFrame() -> CGRect? { nil }
     public func frontmostIsBrowser() -> Bool { false }
+    public func browserWindows() -> (app: String, windows: [BrowserWindow])? { nil }
+    public func closeBrowserTab(id: String) -> BrowserActionResult { .failed("no browser tabs") }
+    public func closeBrowserWindow(id: String) -> BrowserActionResult { .failed("no browser windows") }
+    public func selectBrowserTab(id: String) -> BrowserActionResult { .failed("no browser tabs") }
+    public func browserTabIsSelected(id: String) -> Bool { false }
+    public func browserTabIsInFrontWindow(id: String) -> Bool { false }
+    public func resetBrowserTokens() {}
     public func focusedWindowTitle() -> String? { nil }
     public func webURL() -> String? { nil }
     public func didJustExpose() -> Bool { false }
@@ -104,6 +136,8 @@ extension OverlayController: OverlayPresenting {
     private var pressed: Set<MouseButton> = []
     /// Label snapshot of the current LLM-derived batch; `.label(n)` resolves only against this.
     var labelSnapshot: [Int: UIElementInfo]?
+    /// The `Tabs:` list the current batch was chosen from; tab and window numbers resolve only against this.
+    private var tabSnapshot: TabListing?
     /// Text the model asked to read (`read_*` actions) since the last `takeReadings()`.
     public private(set) var readings: [String] = []
 
@@ -139,10 +173,11 @@ extension OverlayController: OverlayPresenting {
     /// the prompt's row). Any mouse button pressed by this call is released before a failure is returned.
     /// Returns `cancelled` when the calling task is cancelled before an action.
     @discardableResult
-    public func execute(_ actions: [Action], labels: [Int: UIElementInfo]? = nil) async -> String? {
+    public func execute(_ actions: [Action], labels: [Int: UIElementInfo]? = nil, tabs: TabListing? = nil) async -> String? {
         pressed = []
         labelSnapshot = labels
-        defer { labelSnapshot = nil }
+        tabSnapshot = tabs
+        defer { labelSnapshot = nil; tabSnapshot = nil }
         for (i, action) in actions.enumerated() {
             // A cancelled task (stop phrase, pause) must not keep acting, e.g. after an interrupted `wait`.
             if Task.isCancelled {
@@ -253,6 +288,17 @@ extension OverlayController: OverlayPresenting {
                 addReading("Media", await mediaState().rawValue)
             case .ignore:
                 break
+            case .closeTab(let n):
+                guard let tab = tabSnapshot?.tab(n) else { return "no tab \(n)" }
+                if let failure = try await closeTab(id: tab.id) { return failure }
+            case .closeWindow(let n):
+                guard let window = tabSnapshot?.window(n) else { return "no window \(n)" }
+                if let failure = Self.failure(ax.closeBrowserWindow(id: window.id), gone: "window already closed",
+                                              noControl: "can't close that window") { return failure }
+            case .selectTab(let n):
+                guard let tab = tabSnapshot?.tab(n) else { return "no tab \(n)" }
+                if let failure = Self.failure(ax.selectBrowserTab(id: tab.id), gone: "tab already closed",
+                                              noControl: "can't select that tab") { return failure }
             case .setValue, .typeInto, .clearField, .selectOption, .setChecked, .setExpanded, .focusElement, .scrollTo,
                  .scrollIn, .drag, .clickIn, .menuItem, .closeApp, .windowAction, .clipboardSet, .readClipboard,
                  .readValue, .readNotifications, .dismissNotifications, .waitFor:
@@ -266,6 +312,40 @@ extension OverlayController: OverlayPresenting {
             return Self.needsHarness
         } catch {
             return "couldn't post input event"
+        }
+    }
+
+    private static func failure(_ r: BrowserActionResult, gone: String, noControl: String) -> String? {
+        switch r {
+        case .done: nil
+        case .gone: gone
+        case .noControl: noControl
+        case .failed(let m): m
+        }
+    }
+
+    /// Closes a tab with its own close button; without one, selects it, checks it is now the selected tab in the
+    /// front browser's focused window, and sends command-W. Naming the tab (not "the current one") and checking
+    /// where it lives keeps a focus change between observing and acting from closing the wrong one: command-W
+    /// closes whatever tab is selected in the focused window, not necessarily this tab's.
+    private func closeTab(id: String) async throws -> String? {
+        let gone = "tab already closed"
+        switch ax.closeBrowserTab(id: id) {
+        case .done: return nil
+        case .gone: return gone
+        case .failed(let m): return m
+        case .noControl:
+            guard ax.frontmostIsBrowser() else { return "browser not in front" }
+            let cannot = "can't close that tab"
+            guard ax.browserTabIsInFrontWindow(id: id) else { return cannot }
+            if let failure = Self.failure(ax.selectBrowserTab(id: id), gone: gone, noControl: "can't select that tab") { return failure }
+            try? await Task.sleep(for: .milliseconds(100))
+            // A spoken stop during the pause must not let command-W go out.
+            if Task.isCancelled { return Self.cancelled }
+            guard ax.browserTabIsSelected(id: id) else { return "couldn't select that tab" }
+            guard ax.browserTabIsInFrontWindow(id: id) else { return cannot }
+            try input.press(KeyChord(.w, [.command]))
+            return nil
         }
     }
 

@@ -151,14 +151,14 @@ import Foundation
     #expect(!IntentEval.matches(a, anyOf: [[.openURL(URL(string: "https://youtube.com")!, app: nil)]]))
 }
 
-@Test func requestShowsHarnessSurfaceWindowsStatesValuesAndReadings() {
+@Test func requestShowsHarnessSurfaceStatesValuesAndReadings() {
     var o = ScreenObservation(app: "Notes", mode: .command, elements: [
         ObservedElement(number: 1, role: "button", title: "Save", states: ["disabled"]),
         ObservedElement(number: 2, role: "textfield", title: "Name", value: "cats"),
         ObservedElement(number: 3, role: "checkbox", title: "Remember me", states: ["offscreen", "checked"])])
-    o.harness = .agentDesktop; o.surface = "sheet"; o.windows = ["Inbox", "Draft\nX"]; o.readings = ["clipboard: hi"]
+    o.harness = .agentDesktop; o.surface = "sheet"; o.readings = ["clipboard: hi"]
     let s = ClaudeRequestBuilder.userMessage(request: StepRequest(goal: "g", step: 1, maxSteps: 3, history: [], observation: o))
-    #expect(s.contains("Mode: command   Overlay: none   Harness: agent-desktop\nSurface: sheet\nWindows: \"Inbox\", \"Draft X\"\nVisible elements:\n"))
+    #expect(s.contains("Mode: command   Overlay: none   Harness: agent-desktop\nSurface: sheet\nVisible elements:\n"))
     #expect(s.contains("  1 [button] Save (disabled)\n  2 [textfield] Name = \"cats\"\n  3 [checkbox] Remember me (checked, offscreen)\n"))
     #expect(s.contains("Read:\n  clipboard: hi\n\nRequest: g"))
 }
@@ -176,8 +176,8 @@ import Foundation
     let o = ScreenObservation(app: "Finder", mode: .command, elements: [ObservedElement(number: 1, role: "button", title: "Back")])
     let s = ClaudeRequestBuilder.userMessage(request: StepRequest(goal: "g", step: 1, maxSteps: 3, history: [], observation: o))
     #expect(s.contains("Mode: command   Overlay: none   Harness: native\nVisible elements:\n  1 [button] Back\n\nRequest: g"))
-    #expect(!s.contains("Surface:") && !s.contains("Read:") && !s.contains("Windows:"))
-    #expect(o.harness == .native && o.surface == nil && o.windows.isEmpty && o.readings.isEmpty)
+    #expect(!s.contains("Surface:") && !s.contains("Read:") && !s.contains("Tabs"))
+    #expect(o.harness == .native && o.surface == nil && o.tabs == nil && o.readings.isEmpty)
 }
 
 @Test func searchKindDecodesToASearchAction() throws {
@@ -200,8 +200,13 @@ import Foundation
         let obj = try #require(JSONSerialization.jsonObject(with: ClaudeRequestBuilder(model: "m").body(request: req)) as? [String: Any])
         let sys = try #require(obj["system"] as? [[String: Any]])
         #expect(sys.count == 1)
-        #expect(sys[0]["text"] as? String == IntentSchema.systemPrompt(for: harness))
+        #expect(sys[0]["text"] as? String == ClaudeRequestBuilder.systemText(for: harness))
         #expect((sys[0]["cache_control"] as? [String: String]) == ["type": "ephemeral"])
+        // The schema is the same with or without a Tabs list: a changed output_config.format would drop the cached system block.
+        var withTabs = req
+        withTabs.observation.tabs = TabListing(app: "Chrome", windows: [], hiddenWindows: 0)
+        let tabbed = try #require(JSONSerialization.jsonObject(with: ClaudeRequestBuilder(model: "m").body(request: withTabs)) as? [String: Any])
+        #expect(tabbed["output_config"] as? NSDictionary == obj["output_config"] as? NSDictionary)
         let content = try #require((obj["messages"] as? [[String: Any]])?[0]["content"] as? [[String: Any]])
         let texts = content.compactMap { $0["text"] as? String }
         #expect(texts.count == 2 + req.history.count)

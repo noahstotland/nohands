@@ -36,8 +36,14 @@ public struct ScreenObservation: Equatable, Sendable {
     public var harness: HarnessKind = .native
     /// An open overlay surface (menu, sheet, alert, popover) whose elements are listed instead of the window's.
     public var surface: String? = nil
-    /// Titles of the frontmost app's other windows, when there are several.
-    public var windows: [String] = []
+    /// The frontmost browser's windows and tabs as read; nil when the front app is not a browser. The task loop
+    /// turns it into `tabs`.
+    public var browserWindows: [BrowserWindow]? = nil
+    /// The app `browserWindows` was read from (which can differ from `app` if focus moved during the walk); the
+    /// tab ledger is keyed on it.
+    public var browserApp: String? = nil
+    /// The numbered, capped window and tab list the model sees (the `Tabs:` block); nil for a non-browser.
+    public var tabs: TabListing? = nil
     /// Text the model asked to read in the previous step (clipboard, an element value, notifications).
     public var readings: [String] = []
     /// Whether media plays in the front window; nil when not observed (the one-shot path), which prints no line.

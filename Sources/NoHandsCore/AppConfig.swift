@@ -26,6 +26,8 @@ public struct AppConfig: Codable, Equatable, Sendable {
     public var ollamaURL: String = AppConfig.defaultOllamaURL
     /// Task loop: maximum observe→act steps per task.
     public var maxTaskSteps: Int = 12
+    /// Task loop: the step cap for a goal about playing media (a stream site throws overlays and pop-unders first).
+    public var maxMediaTaskSteps: Int = 24
     /// Task loop: per-step model deadline (ms).
     public var llmDeadlineMs: Int = 12000
     /// Task loop: how long (ms) to wait for the screen to settle after acting.
@@ -66,7 +68,7 @@ public struct AppConfig: Codable, Equatable, Sendable {
         case anthropicAPIKey, intentModel, intentEffort, asrModelVersion, silenceMs, mergeWindowMs, mergeWindowUnfinishedMs
         case gridColumns, gridRows, moveStepPx, scrollStepLines
         case intentBackend, localModel, ollamaURL
-        case maxTaskSteps, llmDeadlineMs, settleMs, maxObservedElements
+        case maxTaskSteps, maxMediaTaskSteps, llmDeadlineMs, settleMs, maxObservedElements
         case localLlmDeadlineMs, localMaxObservedElements
         case desktopHarness, agentDesktopPath, agentDesktopTimeoutMs, agentDesktopSnapshotMs, agentDesktopHeadedFallback, agentDesktopTrace
         case echoCancellation, attentionWord
@@ -91,6 +93,7 @@ public struct AppConfig: Codable, Equatable, Sendable {
         d.localModel = try c.decodeIfPresent(String.self, forKey: .localModel)
         d.ollamaURL = try c.decodeIfPresent(String.self, forKey: .ollamaURL) ?? d.ollamaURL
         d.maxTaskSteps = try c.decodeIfPresent(Int.self, forKey: .maxTaskSteps) ?? d.maxTaskSteps
+        d.maxMediaTaskSteps = try c.decodeIfPresent(Int.self, forKey: .maxMediaTaskSteps) ?? d.maxMediaTaskSteps
         d.llmDeadlineMs = try c.decodeIfPresent(Int.self, forKey: .llmDeadlineMs) ?? d.llmDeadlineMs
         d.settleMs = try c.decodeIfPresent(Int.self, forKey: .settleMs) ?? d.settleMs
         d.maxObservedElements = try c.decodeIfPresent(Int.self, forKey: .maxObservedElements) ?? d.maxObservedElements
@@ -122,6 +125,7 @@ public struct AppConfig: Codable, Equatable, Sendable {
         config.mergeWindowMs = min(max(config.mergeWindowMs, 0), 5000)
         config.mergeWindowUnfinishedMs = min(max(config.mergeWindowUnfinishedMs, config.mergeWindowMs), 5000)
         config.maxTaskSteps = min(max(config.maxTaskSteps, 1), 30)
+        config.maxMediaTaskSteps = min(max(config.maxMediaTaskSteps, 1), 30)
         config.llmDeadlineMs = min(max(config.llmDeadlineMs, 2000), 60000)
         config.settleMs = min(max(config.settleMs, 0), 10000)
         config.maxObservedElements = min(max(config.maxObservedElements, 10), 300)

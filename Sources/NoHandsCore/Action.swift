@@ -86,4 +86,9 @@ public enum Action: Equatable, Codable, Sendable {
     case readNotifications
     case dismissNotifications(app: String?)
     case waitFor(WaitCondition, timeoutMs: Int)
+
+    // Browser tabs and windows, by number from the request's `Tabs:` list (the task loop's pop-up cleanup).
+    case closeTab(Int)
+    case closeWindow(Int)
+    case selectTab(Int)
 }

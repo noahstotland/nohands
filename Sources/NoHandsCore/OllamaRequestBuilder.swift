@@ -19,7 +19,7 @@ public struct OllamaRequestBuilder: Sendable {
         let obj: OrderedJSON = .object([
             ("model", .string(model)),
             ("stream", .bool(false)),
-            ("format", IntentSchema.orderedSchema),
+            ("format", IntentSchema.orderedSchema(for: request)),
             ("options", .object([("temperature", .int(0)), ("num_ctx", .int(Self.numCtx))])),
             ("keep_alive", .string(Self.ollamaKeepAlive)),
             ("messages", .array(Self.messages(ending: ClaudeRequestBuilder.userMessage(request: request),

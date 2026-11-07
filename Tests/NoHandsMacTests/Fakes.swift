@@ -39,6 +39,27 @@ final class FakeElements: ElementProviding, @unchecked Sendable {
     /// Set to report that the next walk freshly exposed a Chromium page tree (cleared when read).
     var exposeOnNextWalk = false
     func searchFieldFrame() -> CGRect? { searchBox }
+    /// The browser's windows and tabs (nil: the front app is not a browser) and the tab and window ids closed or selected.
+    var browser: [BrowserWindow]?
+    var closedTabs: [String] = []
+    var closedWindows: [String] = []
+    var selectedTabs: [String] = []
+    /// The app the windows were read from (nil: the front app's name).
+    var browserApp: String?
+    func browserWindows() -> (app: String, windows: [BrowserWindow])? { browser.map { (browserApp ?? front ?? "Browser", $0) } }
+    /// Whether a tab is in the front app's focused window.
+    var tabInFrontWindow = true
+    func browserTabIsInFrontWindow(id: String) -> Bool { tabInFrontWindow }
+    /// A tab with no close button of its own, and whether selecting a tab really makes it the selected one.
+    var tabHasNoCloseButton = false
+    var selectingWorks = true
+    func closeBrowserTab(id: String) -> BrowserActionResult {
+        if tabHasNoCloseButton { return .noControl }
+        closedTabs.append(id); return .done
+    }
+    func browserTabIsSelected(id: String) -> Bool { selectingWorks && selectedTabs.last == id }
+    func closeBrowserWindow(id: String) -> BrowserActionResult { closedWindows.append(id); return .done }
+    func selectBrowserTab(id: String) -> BrowserActionResult { selectedTabs.append(id); return .done }
     func frontmostIsBrowser() -> Bool { isBrowser }
     private var justExposed = false
     /// Number of `actionableElements()` walks.
