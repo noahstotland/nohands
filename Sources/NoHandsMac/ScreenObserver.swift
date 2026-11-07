@@ -87,9 +87,16 @@ public struct ScreenObserver: Sendable {
         // Player controls are looked for among every element found; the audio hint only when there is none.
         result.observation.media = MediaSignal.state(elements: every, audioPlaying: audio.isPlaying)
         result.observation.harness = harnessKind
+        let browser = ax.browserWindows()
+        result.observation.browserWindows = browser?.windows
+        result.observation.browserApp = browser?.app
         result.observation.readings = readings
         return (result.observation, result.labels, fromHarness)
     }
+
+    /// The frontmost browser's windows and tabs, read again on their own (the task runner's second look at a
+    /// browser it first saw late).
+    public func browserWindows() -> (app: String, windows: [BrowserWindow])? { ax.browserWindows() }
 
     /// Whether agent-desktop can read the frontmost app right now; decides a task's harness.
     public func probe() async -> Bool {
@@ -114,6 +121,9 @@ public struct ScreenObserver: Sendable {
                                             overlay: overlay.kindName, elements: listed)
         return (observation, labels)
     }
+
+    /// Forgets the browser window and tab ids handed out during a task.
+    public func resetBrowserTokens() { ax.resetBrowserTokens() }
 
     /// True once right after an observation first exposed a Chromium page tree: observe again before trusting it.
     public func didJustExpose() -> Bool { ax.didJustExpose() }
