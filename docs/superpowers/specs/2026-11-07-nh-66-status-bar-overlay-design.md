@@ -1,6 +1,8 @@
 # NH-66: Always-on status bar overlay — Design
 
-**Date:** 2026-11-07  **Status:** Proposed  **Ticket:** [NH-66](https://github.com/noahstotland/nohands/issues/66)
+**Date:** 2026-11-07  **Ticket:** [NH-66](https://github.com/noahstotland/nohands/issues/66)
+**Status:** Shipped
+**Shipped:** in PR #68, as specified
 
 ## Intent
 
