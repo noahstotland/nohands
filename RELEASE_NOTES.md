@@ -1,5 +1,11 @@
 # Release notes
 
+## 2026-11-07 install collective-wisdom f49afcc, reject a negated approval (NH-35) (#64)
+
+Merged 2026-11-07 05:59 UTC.
+
+The Chief of Staff no longer treats a message such as "don't approve 30 yet" or "approve 30, no rush" as an approval. Send a plain `approve N` to approve; `cancel N` and `resume` need the same plain form. `stop everything`, `hold N`, `changes N` and answers are not affected by a "don't" in the message.
+
 ## 2026-11-07 close pop-ups, overlays and tabs a page opened until the video plays (NH-42) (#65)
 
 Merged 2026-11-07 05:41 UTC.
