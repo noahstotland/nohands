@@ -69,7 +69,7 @@ public var statusBarPosition: StatusBarPosition { get set } // redraws at once
 
 ## Setting
 
-- `NoHandsCore/StatusBarPosition.swift`: `enum StatusBarPosition: String, CaseIterable, Sendable { case off,
+- `NoHandsCore/StatusBar.swift`: `enum StatusBarPosition: String, CaseIterable, Sendable { case off,
   top, bottom }` and `static func stored(_ raw: String?) -> StatusBarPosition`, which returns `.top` for `nil`
   or an unknown value.
 - Stored in `UserDefaults.standard` under `statusBarPosition` as the raw string. Read once at launch; written on
@@ -96,7 +96,7 @@ Open config.json…
 
 ## Tests
 
-- `StatusBarTextTests` (Core, one table): each row of the table above, including the priority cases that would
+- `StatusBarTests.swift` (Core; `statusBarLine`, one table): each row of the table above, including the priority cases that would
   hurt if they broke (a running task beats a held one; a problem state beats a running row; paused beats a
   stopped row; a final row beats idle; idle command mode gives `Listening`, sleep and dictation give their
   lines).
