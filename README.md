@@ -47,6 +47,8 @@ scripts/bundle.sh && open build/NoHands.app
 
 **Prompt board.** Every prompt you speak gets a row at the top of the screen (below the menu bar, on the screen the pointer is on): your words on the left and how it is being serviced on the right, coloured by state. Blue while it is live (`listening…` while you are still speaking, `heard`, then `step n · <what the model is doing>` for a task, with `✗ <why>` after a step that failed), yellow when `held` behind a running task, green when `done` (with the step count for a task), red when it `failed`, was `dropped` or `skipped (busy)`, grey when `stopped` or ignored. Finished rows leave after six seconds; at most four prompts are shown. Notices such as `NoHands is listening` or `microphone error` appear as a line above the prompts.
 
+**Status bar.** A small bar stays on screen and says what NoHands is doing right now: `Listening` when idle, the prompt and its step while a task runs (then `done`, `stopped` or the failure for a few seconds), `Dictating`, `Asleep · say wake up`, `Paused`, `Loading speech model…`, or the problem with its fix (`Needs Accessibility: allow NoHands in System Settings`, `Microphone denied …`, `Error: … · choose Retry in the menu`). It is on by default, at the top centre of the screen the pointer is on (the prompt board sits below it). The menu's Status Bar item chooses Off, Top or Bottom; the choice applies at once and is remembered across launches (macOS user defaults, not `config.json`). The bar ignores clicks and hides while the grid or number badges are showing.
+
 **First run:**
 
 1. **Microphone** — macOS asks when the app starts. If you click Don't Allow, the menu shows "Microphone denied — open Settings".
