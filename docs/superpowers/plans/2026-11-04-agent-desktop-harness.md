@@ -680,5 +680,5 @@ Routing (per the spec's table), all inside `run(_:isLast:)`:
 
 ### Task 12: Memory note and wrap-up
 
-- [ ] Update `/Users/noahstotland/.claude/projects/-Users-noahstotland--t3-projects-nohands/memory/nohands-plan-status.md` with the harness branch state and the live-test caveat.
+- [ ] Update the plan-status memory note with the harness branch state and the live-test caveat.
 - [ ] `swift test` full run; `git log --oneline -12`; report.
