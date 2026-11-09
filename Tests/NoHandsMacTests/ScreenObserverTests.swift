@@ -38,6 +38,18 @@ import NoHandsCore
         #expect(f.walks == 0)                                   // no fresh walk with different numbering
     }
 
+    @Test func taskLoopNumbersTheMenuBarAfterThePageAndOneShotDoesNot() async {
+        let f = FakeElements()
+        func at(_ y: Int) -> CGRect { CGRect(x: 0, y: y, width: 50, height: 20) }
+        f.elements = [UIElementInfo(id: 0, frame: at(0), title: "Edit", role: "AXMenuBarItem"),
+                      UIElementInfo(id: 0, frame: at(100), title: "Videos", role: "AXLink")]
+        let o = ScreenObserver(ax: f, maxElements: 1)
+        let task = await o.observe(mode: .command, overlay: .none, harnessKind: .native).observation
+        #expect(task.elements.map(\.title) == ["Videos"])      // the cap now cuts the menu bar
+        #expect(task.menuBarTitles == ["Edit"])                 // but its titles are still known
+        #expect(o.observe(mode: .command, overlay: .none).observation.elements.map(\.title) == ["Edit"])
+    }
+
     // MARK: harness
 
     private func harnessSnapshot() -> DesktopSnapshot {
