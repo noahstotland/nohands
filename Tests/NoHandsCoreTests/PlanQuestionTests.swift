@@ -45,19 +45,21 @@ private func objects(in node: Any) -> [(properties: Set<String>, required: Set<S
 
 @Test func planSchemaOffersOnlyListedSitesAndHasNoOptionalProperties() throws {
     let schema = PlanQuestion.orderedSchema.foundationObject
-    func site(_ n: Any) -> [String]? {
+    func sites(_ n: Any) -> [[String]] {
         if let d = n as? [String: Any] {
-            if let s = (d["properties"] as? [String: Any])?["site"] as? [String: Any] { return s["enum"] as? [String] }
-            return d.values.lazy.compactMap(site).first
+            let own = ((d["properties"] as? [String: Any])?["site"] as? [String: Any])?["enum"] as? [String]
+            return (own.map { [$0] } ?? []) + d.values.flatMap(sites)
         }
-        if let a = n as? [Any] { return a.lazy.compactMap(site).first }
-        return nil
+        if let a = n as? [Any] { return a.flatMap(sites) }
+        return []
     }
-    // The enum is the site list plus "" (a step with no site): constrained decoding cannot write an address.
-    #expect(site(schema) == [""] + SiteSearch.siteNames)
-    // Claude refuses a schema with many optional properties: all of them are required.
+    // Each site property is exactly the site list, with no empty option: constrained decoding cannot write an address.
+    let found = sites(schema)
+    #expect(found.count == 1)
+    for e in found { #expect(e == SiteSearch.siteNames) }
+    // Claude refuses a schema with many optional properties: every property of every object is required.
     let all = objects(in: schema)
-    #expect(all.count == 3)
+    #expect(all.count == 3)   // root, step, expect
     for o in all { #expect(o.properties == o.required) }
 }
 
