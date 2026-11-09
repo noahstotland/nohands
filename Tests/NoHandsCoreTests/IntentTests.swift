@@ -7,7 +7,7 @@ import Foundation
     let data = try ClaudeRequestBuilder(model: "claude-opus-5-5").body(transcript: "go back", context: ctx)
     let obj = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
     #expect(obj["model"] as? String == "claude-opus-5-5")
-    #expect(obj["max_tokens"] as? Int == 1024)
+    #expect(obj["max_tokens"] as? Int == 2048)
     #expect(obj["fallbacks"] as? String == "default")
     let oc = try #require(obj["output_config"] as? [String: Any])
     #expect(oc["effort"] as? String == "low")

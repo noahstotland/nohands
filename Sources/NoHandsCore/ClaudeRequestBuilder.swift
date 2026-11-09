@@ -23,7 +23,7 @@ public struct ClaudeRequestBuilder: Sendable {
         return try body(request: StepRequest(oneShot: "ping", context: screen), maxTokens: 1)
     }
 
-    public func body(request original: StepRequest, maxTokens: Int = 1024) throws -> Data {
+    public func body(request original: StepRequest, maxTokens: Int = 2048) throws -> Data {
         // A builder with vision off never sends pixels, whatever the request holds.
         var request = original
         if !vision { request.vision = nil }

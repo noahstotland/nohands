@@ -58,7 +58,8 @@ public enum IntentDecoder {
     private enum Opt<T> { case absent, invalid, value(T) }
     private static func optInt(_ o: [String: Any], _ k: String) -> Opt<Int> {
         guard let v = o[k] else { return .absent }
-        return int(v).map(Opt.value) ?? .invalid
+        // The Claude schema sends 0 for a number that does not apply, so 0 means omitted (the default applies).
+        return int(v).map { $0 == 0 ? .absent : .value($0) } ?? .invalid
     }
     private static func optButton(_ o: [String: Any]) -> Opt<MouseButton> {
         guard let v = o["button"] else { return .absent }
@@ -141,7 +142,7 @@ public enum IntentDecoder {
 
         // Harness kinds.
         case "set_value":
-            guard let t = elementTarget(o), let v = o["value"] as? String else { return nil }
+            guard let t = elementTarget(o), let v = o["value"] as? String, !misfiled(o) else { return nil }
             return v.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? .clearField(t) : .setValue(t, v)
         case "type_into":
             guard let t = elementTarget(o), let text = nonBlank(o["text"]) else { return nil }
@@ -176,7 +177,7 @@ public enum IntentDecoder {
         case "window":
             guard let op = (o["window_action"] as? String).flatMap(DesktopWindowOp.init(rawValue:)) else { return nil }
             return .windowAction(op, app: nonBlank(o["app_name"]), title: op == .focus ? nonBlank(o["title"]) : nil)
-        case "clipboard_set": return (o["value"] as? String).map(Action.clipboardSet)
+        case "clipboard_set": return misfiled(o) ? nil : (o["value"] as? String).map(Action.clipboardSet)
         case "read_clipboard": return .readClipboard
         case "read_value": return elementTarget(o).map(Action.readValue)
         case "read_notifications": return .readNotifications
@@ -186,6 +187,12 @@ public enum IntentDecoder {
         case "dismiss_notifications": return .dismissNotifications(app: nonBlank(o["app_name"]))
         default: return nil
         }
+    }
+
+    /// A blank `value` next to a filled `text` or `option`: the Claude schema shares those fields across kinds, so the
+    /// model put the text in the wrong one. Clearing the field or the clipboard on that would destroy something.
+    private static func misfiled(_ o: [String: Any]) -> Bool {
+        nonBlank(o["value"]) == nil && (nonBlank(o["text"]) != nil || nonBlank(o["option"]) != nil)
     }
 
     private static func elementTarget(_ o: [String: Any]) -> ElementTarget? {

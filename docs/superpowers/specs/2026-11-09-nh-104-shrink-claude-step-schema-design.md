@@ -99,7 +99,11 @@ I walked every other kind against blanks and nothing else changes meaning:
 
 - `0` fails `number()`, and `""` fails `nonBlank`, so a required target or name that is blank still drops the action.
 - Fields a kind does not read are ignored, and `target_kind` decides which target field is used.
-- `count` and `amount` of `0` clamp to `1`, as any out-of-range value does today.
+- A `0` in an integer field means the field was omitted (`optInt`), so its default applies: `count` and `scroll` `amount`
+  1, `scroll_element` `amount` 3, `wait` `ms` 1000, `timeout_ms` 5000.
+- `set_value` and `clipboard_set` with a blank `value` and a filled `text` or `option` are dropped: branch 11 shares
+  those fields, so the model put the text in the wrong one, and clearing the field or clipboard would destroy data. A
+  `set_value` with nothing else filled still clears, as before.
 - A blank `app_name` means no app, which is the meaning of leaving it out. A blank wait-element `value` falls through
   to `exists`.
 
@@ -129,8 +133,8 @@ I walked every other kind against blanks and nothing else changes meaning:
 
 - Anthropic does not publish the grammar limit, so it could change. The test catches our own growth, not theirs. A new
   action kind should join an existing branch wherever it can.
-- Actions get longer. A `click` now carries about 12 fields, roughly 50 more output tokens. `max_tokens` is 1024, which
-  still fits around ten clicks in one step. A much longer step would be cut off and fail to decode, so it would run
+- Actions get longer. A `click` now carries about 12 fields, roughly 50 more output tokens. `max_tokens` is 2048, which
+  still fits around twenty clicks in one step. A much longer step would be cut off and fail to decode, so it would run
   nothing.
 - A branch shared by unrelated kinds asks the model to fill irrelevant fields. The live calls behaved, but a one-shot
   sample is not a measurement, which is why the eval run is listed.
@@ -147,7 +151,8 @@ I walked every other kind against blanks and nothing else changes meaning:
 - **A tripwire test at 13 branches and 57 fields**, beyond the optional-count test the ticket asked for, because that
   count alone passed shapes Anthropic still rejected.
 - **The eval against Claude spends a few cents of real credit.** The ticket only required the local model's eval.
-- **`max_tokens` stays 1024.** Raising it is not needed for the typical one to three actions, and a test pins it.
+- **`max_tokens` is raised from 1024 to 2048** for real steps (the connection check stays 1), so a long step is not cut off
+  and dropped; a test pins it.
 - **Key order is fixed in this PR (changed during the build).** The spec first left it alone, because it does not cause
   the 400. The live eval showed it matters: `foundationObject` goes through a Swift dictionary, so the keys came out
   scrambled (`kind` late in a branch, `actions` before `status`). Claude Haiku scored 37% and 0% on the two fixture

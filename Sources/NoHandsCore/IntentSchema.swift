@@ -102,8 +102,10 @@ public enum IntentSchema {
     /// The Claude shape of the step schema. Anthropic rejects the flat `schema(kinds:)` (32 optional fields, over the
     /// documented limit of 24) and also rejects one `anyOf` branch per kind (grammar too large, a limit it does not
     /// publish). This is the grouping a live call accepted: 13 branches, 57 fields, every field required. A field that
-    /// does not apply is sent blank (`""` or `0`; see `claudeFieldsRule`), and the field names are the flat shape's, so
-    /// `IntentDecoder` reads it unchanged. Branches with no kind in `kinds` are left out.
+    /// does not apply is sent blank (`""` or `0`; see `claudeFieldsRule`). The field names are the flat shape's and the
+    /// decoder reads a blank as an omitted field: `""` is not a name, and `0` is not a number, a count or a duration,
+    /// nor (as a pair) a drag source. A `set_value` or `clipboard_set` whose `value` is blank while `text` or `option` is
+    /// filled is a misfiled value and is dropped. Branches with no kind in `kinds` are left out.
     private static func claudeSchema(kinds: [String]) -> OrderedJSON {
         func str(_ e: [String]? = nil) -> OrderedJSON {
             var p: [(String, OrderedJSON)] = [("type", .string("string"))]
