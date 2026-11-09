@@ -31,9 +31,12 @@ public actor VoiceActivity {
         cfg.minSilenceDuration = Double((chunks - 1) * VadManager.chunkSize) / Double(VadManager.sampleRate)
         cfg.negativeThreshold = negativeThreshold
         segmentation = cfg
-        self.speechThreshold = speechThreshold
+        // FluidAudio derives its speech threshold from a pinned negative one (negative + 0.15); the detector and the
+        // voiced flag must read the same threshold or they drift from the VAD's own events.
+        let effectiveSpeech = negativeThreshold.map { min(1, $0 + 0.15) } ?? speechThreshold
+        self.speechThreshold = effectiveSpeech
         early = EarlySilenceDetector(earlySilenceMs: earlySilenceMs, silenceMs: silenceMs,
-                                     speechThreshold: speechThreshold, negativeThreshold: negativeThreshold)
+                                     speechThreshold: effectiveSpeech, negativeThreshold: negativeThreshold)
         state = await m.makeStreamState()
     }
 
@@ -52,7 +55,9 @@ public actor VoiceActivity {
         }
         let wantsEarly = early.feed(probability: r.probability)
         if own != .none {
-            early.reset()
+            // Only speechEnd clears the run state: on speechStart this chunk was already fed as voiced, and
+            // resetting here would forget it (a one-chunk "stop" would then never close early).
+            if own == .speechEnd { early.reset() }
             return Step(event: own, voiced: voiced)
         }
         return Step(event: wantsEarly ? .earlySilence : .none, voiced: voiced)
