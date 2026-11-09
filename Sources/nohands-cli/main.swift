@@ -212,7 +212,9 @@ var exitStatus: Int32 = 0
                     let actions = grammar.parse(text)
                     let parseMs = Double(p0.duration(to: .now) / .nanoseconds(1)) / 1_000_000
                     let outcome: String
-                    if let actions {
+                    if config.attentionGate.isStop(text) {
+                        outcome = "stop"   // the pipeline halts on a stop phrase before the grammar sees it
+                    } else if let actions {
                         outcome = "\(actions)"
                     } else if let message = grammar.rejection(text) {
                         outcome = "rejected: \(message)"
