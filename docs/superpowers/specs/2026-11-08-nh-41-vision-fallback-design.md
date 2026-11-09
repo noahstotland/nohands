@@ -1,7 +1,8 @@
 # NH-41: Vision fallback for the task loop — Design
 
 **Date:** 2026-11-08  **Ticket:** [NH-41](https://github.com/noahstotland/nohands/issues/41)
-**Status:** Draft
+**Status:** Shipped
+**Shipped:** in PR #86, as specified
 
 ## Intent
 
