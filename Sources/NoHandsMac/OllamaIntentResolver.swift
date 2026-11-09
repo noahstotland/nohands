@@ -16,16 +16,36 @@ public actor OllamaIntentResolver: IntentResolving {
     }
 
     public func resolve(_ stepRequest: StepRequest) async throws -> IntentStep {
+        let body: Data
+        do {
+            body = try OllamaRequestBuilder(model: config.resolvedLocalModel).body(request: stepRequest)
+        } catch {
+            throw IntentError.decode(.malformed("could not encode request"))
+        }
+        let data = try await post(body)
+        do {
+            return try IntentDecoder.step(fromOllamaResponse: data)
+        } catch let e as IntentDecodeError {
+            throw IntentError.decode(e)
+        }
+    }
+
+    public func plan(goal: String) async throws -> TaskPlan? {
+        let started = ContinuousClock.now
+        let data = try await post(OllamaRequestBuilder(model: config.resolvedLocalModel).planBody(goal: goal))
+        let plan = TaskPlan.decode(fromOllamaResponse: data)
+        let ms = Int(started.duration(to: .now) / .milliseconds(1))
+        PipelineLog.info("ollama: plan \(ms)ms \(plan.map { "\($0.steps.count) steps" } ?? "none")")
+        return plan
+    }
+
+    /// One POST to the local model; returns the 2xx response body.
+    private func post(_ body: Data) async throws -> Data {
         var request = URLRequest(url: config.ollamaBaseURL.appendingPathComponent("api/chat"))
         request.httpMethod = "POST"
         request.timeoutInterval = TimeInterval(deadline.components.seconds) + 2
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        do {
-            request.httpBody = try OllamaRequestBuilder(model: config.resolvedLocalModel)
-                .body(request: stepRequest)
-        } catch {
-            throw IntentError.decode(.malformed("could not encode request"))
-        }
+        request.httpBody = body
 
         let data: Data
         let http: HTTPURLResponse
@@ -43,11 +63,7 @@ public actor OllamaIntentResolver: IntentResolving {
             if http.statusCode == 404, text.contains("not found") { throw IntentError.modelMissing }
             throw IntentError.http(http.statusCode, String(text.prefix(Self.bodyPrefixLimit)))
         }
-        do {
-            return try IntentDecoder.step(fromOllamaResponse: data)
-        } catch let e as IntentDecodeError {
-            throw IntentError.decode(e)
-        }
+        return data
     }
 
     private static let refusedCodes: Set<Int> = [

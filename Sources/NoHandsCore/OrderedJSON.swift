@@ -9,6 +9,7 @@ public indirect enum OrderedJSON: Equatable, Sendable {
     case string(String)
     case int(Int)
     case bool(Bool)
+    case null
 
     public static func == (a: OrderedJSON, b: OrderedJSON) -> Bool {
         switch (a, b) {
@@ -17,6 +18,7 @@ public indirect enum OrderedJSON: Equatable, Sendable {
         case (.string(let x), .string(let y)): return x == y
         case (.int(let x), .int(let y)): return x == y
         case (.bool(let x), .bool(let y)): return x == y
+        case (.null, .null): return true
         default: return false
         }
     }
@@ -31,6 +33,7 @@ public indirect enum OrderedJSON: Equatable, Sendable {
         case .string(let s): return Self.quote(s)
         case .int(let i): return String(i)
         case .bool(let b): return b ? "true" : "false"
+        case .null: return "null"
         }
     }
 
@@ -47,6 +50,7 @@ public indirect enum OrderedJSON: Equatable, Sendable {
         case .string(let s): return s
         case .int(let i): return i
         case .bool(let b): return b
+        case .null: return NSNull()
         }
     }
 

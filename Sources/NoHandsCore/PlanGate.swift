@@ -1,7 +1,7 @@
 import Foundation
 
 /// How plan text is compared everywhere: lower-cased, accents folded, letters and digits only, spaces removed.
-/// "outdoorboys" matches "Outdoor Boys - YouTube".
+/// "outdoorboys" matches "Outdoor Boys - Home".
 public enum PlanText {
     static func fold(_ s: String) -> String {
         String(s.lowercased().folding(options: .diacriticInsensitive, locale: nil).filter { $0.isLetter || $0.isNumber })
