@@ -1,7 +1,8 @@
 # NH-94: Menu item to enter the Claude API key: Design
 
 **Date:** 2026-11-09  **Ticket:** [NH-94](https://github.com/noahstotland/nohands/issues/94)
-**Status:** Proposed
+**Status:** Shipped
+**Shipped:** in PR #107, as specified
 
 ## Intent
 
