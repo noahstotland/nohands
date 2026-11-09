@@ -1,7 +1,8 @@
 # NH-70: Corner panel with the phrase, step trail and progress bar — Design
 
 **Date:** 2026-11-08  **Ticket:** [NH-70](https://github.com/noahstotland/nohands/issues/70)
-**Status:** Draft
+**Status:** Shipped
+**Shipped:** in PR #73, as specified
 
 ## Intent
 
