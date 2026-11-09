@@ -160,6 +160,9 @@ public enum TaskOutcome: Equatable, Sendable {
                 if case .unavailable(let why) = picture { return await finish(.stuck("\(step.intent) (\(why))")) }
                 request.vision = picture
             }
+            // A typed web address is opened instead, before anything records the step: History, repeat detection and
+            // the task-tab mark all see the `open_url` that runs.
+            step.actions = TypedAddressGuard.rewrite(step.actions, goal: goal)
             switch step.status {
             // An `ignore` after earlier steps already acted is the model giving up mid-task, not chatter.
             case .ignore: return await finish(.ignored, hud: n > 1 ? Self.stoppedHUD(step.intent) : nil)
@@ -176,7 +179,8 @@ public enum TaskOutcome: Equatable, Sendable {
             // A blocked step runs nothing and is recorded as a failed step so the model can react.
             // On a step that carried a picture, a point is in the picture's pixels: map it to the screen, and run
             // nothing if it is outside the picture or the photographed window has since moved.
-            var actions = step.actions
+            // A click by name is pointed at the element list the model read (list-dependent, so not in History).
+            var actions = ElementNames.bind(step.actions, labels: labels, menuBarTitles: observation.menuBarTitles, goal: goal)
             var pointFailure: String?
             if case .image(let shot)? = request.vision, ScreenshotGeometry.holdsPoint(actions) {
                 switch ScreenshotGeometry.mapPoints(actions, shot: shot) {
@@ -198,7 +202,9 @@ public enum TaskOutcome: Equatable, Sendable {
             let failure: String?
             if let pointFailure { failure = pointFailure }
             else if let blocked = ShortcutGuard.blocked(actions, goal: goal)
-                ?? TabGuard.blocked(actions, listing: observation.tabs, goal: goal) { failure = blocked }
+                ?? TabGuard.blocked(actions, listing: observation.tabs, goal: goal)
+                ?? MenuBarGuard.blocked(actions, labels: labels, menuBarTitles: observation.menuBarTitles, goal: goal,
+                                        badgesShowing: observation.overlay == "labels") { failure = blocked }
             else {
                 let shown = overlay.state
                 failure = await executeCancellable(actions, labels: labels, tabs: observation.tabs)

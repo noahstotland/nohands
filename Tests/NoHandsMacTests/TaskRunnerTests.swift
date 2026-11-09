@@ -317,14 +317,38 @@ private actor SleepCounter {
 }
 
 @MainActor @Test func blockedShortcutRunsNothingAndRecordsFailure() async {
-    let resolver = FakeResolver([step("go to the url", .continue, [.pressKey(KeyChord(.w, [.command])), .typeText("youtube.com")]),
+    let resolver = FakeResolver([step("go to the url", .continue, [.pressKey(KeyChord(.w, [.command])), .typeText("cats")]),
                                  step("gave up", .stuck)])
     let r = rig(resolver)
     #expect(await r.runner.run(goal: "open the latest video", mode: .command) == .stuck("gave up"))
     #expect(r.input.calls.allSatisfy { $0 == "releaseAll" })   // nothing typed or pressed
     #expect(resolver.requests[1].history == [StepRecord(
-        intent: "go to the url", actions: [.pressKey(KeyChord(.w, [.command])), .typeText("youtube.com")],
+        intent: "go to the url", actions: [.pressKey(KeyChord(.w, [.command])), .typeText("cats")],
         failure: "blocked: command-w not allowed for this request")])
+}
+
+@MainActor @Test func typedAddressIsOpenedAndMenuBarClicksAreRefused() async {
+    // A typed web address runs as open_url (its Return dropped) and History records what ran.
+    let url = URL(string: "https://youtube.com/@x/videos")!
+    let typed = FakeResolver([step("go to the channel", .continue, [.typeText("youtube.com/@x/videos"), .pressKey(KeyChord(.return))]),
+                              step("done", .done)])
+    let a = rig(typed)
+    #expect(await a.runner.run(goal: "open the latest video", mode: .command) == .done("done"))
+    #expect(a.ax.opened.map(\.url) == [url])
+    #expect(a.input.calls.allSatisfy { $0 == "releaseAll" })   // nothing typed or pressed
+    #expect(typed.requests[1].history.map(\.actions) == [[.openURL(url, app: nil)]])
+
+    // The menu bar is numbered after the page, and a click on its item runs nothing and is recorded as a failure.
+    let click: Action = .click(.label(2), button: .left, count: 1)
+    let bar = FakeResolver([step("click edit", .continue, [click]), step("gave up", .stuck)])
+    let b = rig(bar)
+    b.ax.elements = [UIElementInfo(id: 0, frame: CGRect(x: 0, y: 0, width: 40, height: 20), title: "Edit", role: "AXMenuBarItem"),
+                     UIElementInfo(id: 0, frame: CGRect(x: 0, y: 200, width: 80, height: 30), title: "Videos", role: "AXLink")]
+    #expect(await b.runner.run(goal: "open the latest video", mode: .command) == .stuck("gave up"))
+    #expect(bar.requests[0].observation.elements.map(\.title) == ["Videos", "Edit"])   // the page first
+    #expect(b.input.calls.allSatisfy { $0 == "releaseAll" })
+    #expect(bar.requests[1].history == [StepRecord(
+        intent: "click edit", actions: [click], failure: "label 2 is the \"Edit\" menu bar item, not a page element")])
 }
 
 // MARK: - first observation, badge numbers, mid-task ignore, exit status
