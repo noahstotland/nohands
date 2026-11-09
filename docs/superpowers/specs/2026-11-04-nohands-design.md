@@ -36,7 +36,7 @@ mic (AVAudioEngine with voice processing / echo cancellation unless `echoCancell
   → ActionExecutor
       ├─ InputSynthesizer (CGEvent keys / unicode typing / mouse)
       ├─ AXQuery (element lookup in the frontmost app)
-      └─ OverlayController (grid, numbered labels, prompt board, status bar)
+      └─ OverlayController (grid, numbered labels, prompt board, status bar, corner task panel)
 ```
 
 **Single vocabulary.** `Action` is the one enum every stage produces or consumes. The grammar, the LLM decoder, and the executor all speak `Action`; adding a capability means adding a case and handling it in three places.
