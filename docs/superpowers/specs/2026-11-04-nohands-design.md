@@ -53,7 +53,7 @@ mic (AVAudioEngine with voice processing / echo cancellation unless `echoCancell
 | `dictation` | "start dictating", "dictation mode" | every utterance is typed, except "stop dictating" / "command mode", "scratch that" and "delete word" |
 | `sleep` | "go to sleep" | everything ignored except "wake up" |
 
-Mode is shown in the menu bar: `mic` icon + `CMD` / `DICT` / `ZZZ` text.
+Mode is shown in the menu bar: the winking-face glyph (`Resources/MenuBarIcon.png`, with an `@2x`; the `mic` symbol only when they are missing, as in an unbundled `swift run`) + `CMD` / `DICT` / `ZZZ` text.
 
 The menu ends with a group above Quit: **Start at Login** (a checkbox backed by `SMAppService.mainApp`, read from the system each time the menu opens), **Status Bar** (a submenu Off / Top / Bottom for the always-on status bar, kept in user defaults) and **Open config.json…** (creates the file with mode 600 if missing, opens it in the default editor, and says to restart NoHands to apply changes).
 

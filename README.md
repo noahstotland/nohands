@@ -1,4 +1,4 @@
-<img src="assets/icon.svg" width="64" height="64" alt="">
+<img src="assets/icon.svg" width="64" height="64" alt="NoHands logo">
 
 # nohands
 
@@ -152,6 +152,7 @@ In dictation mode, say `period`, `comma`, `question mark`, `new line`, `new para
 | `observe` | Prints what the task loop sends the model about the frontmost app: window title, URL, a `Media:` line (`playing`, `paused` or `none`) and numbered elements with roles |
 | `resolve "<text>"` | Dry run: sends text and the frontmost app's labels to the configured backend and prints the step (`intent`, `status`, actions); executes nothing (Claude spends API credit) |
 | `task "<goal>"` | Waits 3 s, then runs the goal as a multi-step task on the frontmost app for real, printing each step's intent, actions and settle time, then the outcome; Ctrl-C stops it like "stop", a second Ctrl-C quits at once (status 130); exits 2 when the task ends stuck, failed or stopped |
+| `scenarios [file] [--only name]` | Waits 3 s, then runs each scripted task goal in `scripts/task-scenarios.json` (or `file`) for real, one at a time, and scores it against a fresh screen check rather than the model's word: `pass`, `false-done` (the model said done, the screen disagrees), `unclaimed` (the screen is right but the task did not end done), `fail`, `stopped`, `start-failed` or `not-run`. Prints each scenario's steps and time, then a summary and a markdown table. Exits 0 only when every scenario passes, 2 otherwise (1 for a bad file or `--only` name). It takes over the screen, mouse and keyboard for several minutes and leaves tabs open: close the tabs an earlier run left first. Ctrl-C stops the suite; a second quits at once (130) |
 | `listen` | Microphone to VAD to speech recognition, printing transcripts |
 | `desktop-status` | Where the agent-desktop binary was found, its version, what it reports for Accessibility, and the harness in use |
 | `snapshot [app]` | Waits 3 s, then prints the task-loop observation of the frontmost (or named) app as agent-desktop sees it: a `Media:` line and numbered elements with roles, values and states |

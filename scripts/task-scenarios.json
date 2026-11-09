@@ -1,0 +1,66 @@
+[
+  {
+    "name": "youtube-latest",
+    "goal": "Turn on the latest Outdoor Boys video",
+    "start": { "url": "https://example.com/" },
+    "success": [
+      { "urlMatches": "youtube\\.com/watch" },
+      { "mediaPlaying": true },
+      { "elementVisible": "Outdoor Boys" }
+    ],
+    "maxSteps": 24
+  },
+  {
+    "name": "youtube-search-play",
+    "goal": "Search YouTube for how a jet engine works and play the first result",
+    "start": { "url": "https://www.youtube.com/" },
+    "success": [
+      { "urlMatches": "youtube\\.com/watch" },
+      { "mediaPlaying": true },
+      { "windowTitleContains": "engine" }
+    ],
+    "maxSteps": 24
+  },
+  {
+    "name": "wikipedia-article",
+    "goal": "Open the Wikipedia article for the speed of light",
+    "start": { "url": "https://example.com/" },
+    "success": [
+      { "urlMatches": "wikipedia\\.org/wiki/Speed_of_light" },
+      { "windowTitleContains": "Speed of light" }
+    ],
+    "maxSteps": 12
+  },
+  {
+    "name": "site-search",
+    "goal": "Open github.com and search it for swift collections",
+    "start": { "url": "https://example.com/" },
+    "success": [
+      { "urlMatches": "github\\.com/search\\?.*q=swift" }
+    ],
+    "maxSteps": 12
+  },
+  {
+    "name": "textedit-save",
+    "goal": "Make a new TextEdit document, type hello from NoHands, and save it as nohands-scenario-{run}",
+    "start": { "app": "TextEdit" },
+    "success": [
+      { "windowTitleContains": "nohands-scenario-{run}" }
+    ],
+    "maxSteps": 12
+  },
+  {
+    "name": "cookie-banner",
+    "goal": "Dismiss the cookie banner on this page",
+    "start": { "url": "https://www.forbes.com/" },
+    "ready": [
+      { "elementVisible": "Accept All" }
+    ],
+    "success": [
+      { "urlMatches": "forbes\\.com" },
+      { "elementVisible": "Billionaires" },
+      { "elementAbsent": "Accept All" }
+    ],
+    "maxSteps": 12
+  }
+]
