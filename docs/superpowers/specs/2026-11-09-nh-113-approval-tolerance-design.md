@@ -1,7 +1,8 @@
 # NH-113: Set approval risk tolerance to permissive
 
 **Date:** 2026-11-09
-**Status:** Draft
+**Status:** Shipped
+**Shipped:** in PR #115, as specified
 **Ticket:** [NH-113](https://github.com/noahstotland/nohands/issues/113)
 
 ## Goal
