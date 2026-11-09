@@ -1,7 +1,8 @@
 # NH-32: A fun logo for the README and the menu bar — Design
 
 **Date:** 2026-11-08  **Ticket:** [NH-32](https://github.com/noahstotland/nohands/issues/32)
-**Status:** Draft
+**Status:** Shipped
+**Shipped:** in PR #100, as specified
 
 ## Intent
 
