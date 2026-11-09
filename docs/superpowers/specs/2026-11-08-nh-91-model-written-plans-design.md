@@ -124,7 +124,7 @@ sidebar's links (`Jef. New content available.`, 204 wide, 40 apart, all at the s
 tab and the first video card in the native order, so "the first multi-word link after `Videos`" clicks a subscription.
 A navigation stack is three or more links with the same left edge and width whose rows are no more than the link's own
 height plus 16 points apart. Video cards, search results and file rows are told apart by their spacing, not by any word.
-The rule reads frames from the numbered `labels` the runner already holds. Where a backend gives no frames (agent-desktop
+The rule reads frames from the numbered `labels` the runner already holds. Where a backend gives no frames, or only zero-width ones (agent-desktop
 without bounds), the stack test cannot run, so the rule is not applied: `click_first_item` hands over, and the build
 reports how often that happens. The pinned rows come from the captured real lists
 ([Build gate](#build-gate-real-element-lists)).
