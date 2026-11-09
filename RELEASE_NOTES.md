@@ -1,5 +1,11 @@
 # Release notes
 
+## 2026-11-09 winking logo and menu-bar icon (NH-32) (#100)
+
+Merged 2026-11-09 05:14 UTC.
+
+NoHands has a new logo, a winking face with its tongue out. It is in the README and replaces the microphone symbol in the menu bar. The mode text beside it is unchanged.
+
 ## 2026-11-09 small-model slip guards for the task loop (NH-90) (#97)
 
 Merged 2026-11-09 04:55 UTC.
