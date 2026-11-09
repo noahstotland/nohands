@@ -2,7 +2,7 @@
 
 **Date:** 2026-11-09  **Ticket:** [NH-94](https://github.com/noahstotland/nohands/issues/94)
 **Status:** Shipped
-**Shipped:** in PR #107, as specified
+**Shipped:** in PR #107, with differences: [as-built](../as-built/2026-11-09-nh-94-claude-api-key-menu.md)
 
 ## Intent
 
