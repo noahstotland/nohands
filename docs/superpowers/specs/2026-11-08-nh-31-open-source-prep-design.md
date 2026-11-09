@@ -1,8 +1,9 @@
 # NH-31: Prepare the repo for open sourcing
 
 **Date:** 2026-11-08
-**Status:** Draft
+**Status:** Shipped
 **Ticket:** [NH-31](https://github.com/noahstotland/nohands/issues/31)
+**Shipped:** in PR #89, with differences: [as-built](../as-built/2026-11-08-nh-31-open-source-prep.md)
 
 ## Goal
 
