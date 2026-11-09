@@ -1,7 +1,8 @@
 # NH-104: Shrink the Claude step schema so Anthropic stops rejecting it — Design
 
 **Date:** 2026-11-09  **Ticket:** [NH-104](https://github.com/noahstotland/nohands/issues/104)
-**Status:** Approved
+**Status:** Shipped
+**Shipped:** in PR #108, with differences: [as-built](../as-built/2026-11-09-nh-104-shrink-claude-step-schema.md)
 
 ## Intent
 
