@@ -38,6 +38,8 @@ func usage() -> Never {
                                       default file scripts/task-scenarios.json; Ctrl-C stops the suite)
       nohands-cli eval <file> [--runs N]  (scores the configured backend on a fixture set; executes nothing)
       nohands-cli listen             (mic -> VAD -> ASR; Ctrl-C to quit)
+      nohands-cli claude-check       (sends one small request to Claude with your key and prints whether commands will
+                                      work; exits 0 only when connected; spends about one step's input tokens)
       nohands-cli desktop-status     (agent-desktop binary, version, permissions and the harness in use)
       nohands-cli snapshot [app]     (waits 3 s, prints the task-loop observation through agent-desktop of the
                                       frontmost app, or of the named app)
@@ -288,6 +290,12 @@ var exitStatus: Int32 = 0
             let kind: HarnessKind = probed ? .agentDesktop : .native
             let (obs, _, _) = await observer.observe(mode: .command, overlay: .none, harnessKind: kind)
             print(ClaudeRequestBuilder.userMessage(request: StepRequest(goal: "-", step: 1, maxSteps: 12, history: [], observation: obs)))
+        case "claude-check":
+            guard rest.isEmpty else { usage() }
+            let config = try loadConfig()
+            let result = await ClaudeConnectionCheck(config: config).run()
+            print(result.cliText(model: config.intentModel))
+            exitStatus = result.kind == .connected ? 0 : 1
         case "desktop-status":
             let config = try loadConfig()
             let status = await HarnessStatus.probe(config: config)
