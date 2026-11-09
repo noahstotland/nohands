@@ -16,6 +16,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let screenRecordingItem = NSMenuItem(title: "Grant Screen Recording…", action: #selector(grantScreenRecording), keyEquivalent: "")
     private let micItem = NSMenuItem(title: "Microphone denied — open Settings", action: #selector(openMicrophoneSettings), keyEquivalent: "")
     private let harnessItem = NSMenuItem(title: "Harness: checking…", action: nil, keyEquivalent: "")
+    private let claudeItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
+    private let checkClaudeItem = NSMenuItem(title: "Check Claude connection", action: #selector(checkClaude), keyEquivalent: "")
     private let loginItem = NSMenuItem(title: "Start at Login", action: #selector(loginItemClicked), keyEquivalent: "")
     private let statusBarItem = NSMenuItem(title: "Status Bar", action: nil, keyEquivalent: "")
     private let statusBarMenu = NSMenu(title: "Status Bar")
@@ -26,6 +28,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var harnessProbeInFlight = false
     /// The harness the running pipeline was built with (built once at pipeline start); nil before it starts.
     private var pipelineHarnessKind: HarnessKind?
+    /// The last Claude check (kept in memory only) and whether one is running.
+    private var lastClaudeCheck: (result: ClaudeCheckResult, time: String)?
+    private var claudeChecking = false
 
     private let overlay = OverlayController()
     private var config = AppConfig()
@@ -80,7 +85,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         configItem.isEnabled = false
         transcriptItem.isEnabled = false
         harnessItem.isEnabled = false
-        for item in [localModelItem, pauseItem, retryItem, accessibilityItem, screenRecordingItem, micItem, loginItem, openConfigItem] { item.target = self }
+        claudeItem.isEnabled = false
+        for item in [checkClaudeItem, localModelItem, pauseItem, retryItem, accessibilityItem, screenRecordingItem, micItem, loginItem, openConfigItem] { item.target = self }
         let title = NSMutableAttributedString(string: "● ", attributes: [.foregroundColor: NSColor.systemRed])
         title.append(NSAttributedString(string: "Grant Accessibility…"))
         accessibilityItem.attributedTitle = title
@@ -98,7 +104,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let quit = NSMenuItem(title: "Quit NoHands", action: #selector(quit), keyEquivalent: "q")
         quit.target = self
 
-        for item in [stateItem, configItem, NSMenuItem.separator(), transcriptItem, localModelItem, harnessItem, NSMenuItem.separator(),
+        for item in [stateItem, configItem, NSMenuItem.separator(), transcriptItem, localModelItem, harnessItem, claudeItem, checkClaudeItem, NSMenuItem.separator(),
                      pauseItem, retryItem, accessibilityItem, screenRecordingItem, micItem, NSMenuItem.separator(), loginItem, statusBarItem, openConfigItem,
                      NSMenuItem.separator(), quit] {
             menu.addItem(item)
@@ -127,11 +133,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                                                        ollamaInstalled: OllamaClient.installedAppURL() != nil)
             localModelItem.isEnabled = LocalModelMenu.actionable(localStatus)
         }
+        refreshClaudeItems()
         refreshLoginItem()
         pauseItem.title = userPaused ? "Resume Listening" : "Pause Listening"
         if let harnessStatus { harnessItem.title = harnessStatus.menuText(inUse: pipelineHarnessKind) }
         statusItem.button?.title = " " + MenuState.title(mode: mode, paused: state == .paused)
         overlay.setAppState(state, mode: mode)
+    }
+
+    // MARK: - Claude status
+
+    /// The Claude line (config and last check only, no network) and the check item. The menu autoenables items that
+    /// have a target and action, so the item is disabled by removing its action, not by `isEnabled`.
+    private func refreshClaudeItems() {
+        claudeItem.title = ClaudeStatus.menuLine(config: config, checking: claudeChecking, last: lastClaudeCheck)
+        checkClaudeItem.action = claudeChecking || !ClaudeStatus.hasKey(config) ? nil : #selector(checkClaude)
+    }
+
+    @objc private func checkClaude() {
+        guard !claudeChecking, ClaudeStatus.hasKey(config) else { return }
+        claudeChecking = true
+        refresh()
+        let check = ClaudeConnectionCheck(config: config)
+        Task { @MainActor in
+            let result = await check.run()
+            let formatter = DateFormatter()
+            formatter.dateFormat = "HH:mm"
+            lastClaudeCheck = (result, formatter.string(from: Date()))
+            claudeChecking = false
+            refresh()
+        }
     }
 
     // MARK: - status bar setting

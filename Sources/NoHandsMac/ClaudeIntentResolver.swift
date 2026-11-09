@@ -49,6 +49,17 @@ public actor ClaudeIntentResolver: IntentResolving {
         self.deadline = deadline ?? .milliseconds(config.llmDeadlineMs)
     }
 
+    /// The one place a Claude `URLRequest` is set up, shared by real steps, plans and the connection check.
+    static func makeRequest(url: URL, key: String, deadline: Duration, body: Data) -> URLRequest {
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.timeoutInterval = TimeInterval(deadline.components.seconds) + 2
+        for (name, value) in ClaudeRequestBuilder.headers(key) { request.setValue(value, forHTTPHeaderField: name) }
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = body
+        return request
+    }
+
     public func resolve(_ stepRequest: StepRequest) async throws -> IntentStep {
         let started = ContinuousClock.now
         let builder = makeBuilder()
@@ -88,12 +99,7 @@ public actor ClaudeIntentResolver: IntentResolving {
 
     /// One POST of `body()` with the key in the header only; returns the 2xx response body.
     private func post(key: String, body: () throws -> Data) async throws -> Data {
-        var request = URLRequest(url: baseURL)
-        request.httpMethod = "POST"
-        request.timeoutInterval = TimeInterval(deadline.components.seconds) + 2
-        for (name, value) in ClaudeRequestBuilder.headers(key) { request.setValue(value, forHTTPHeaderField: name) }
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try body()
+        let request = Self.makeRequest(url: baseURL, key: key, deadline: deadline, body: try body())
         let (data, http) = try await IntentHTTP.send(request, session: session, deadline: deadline)
         if !(200..<300).contains(http.statusCode) {
             let text = String(decoding: data.prefix(Self.bodyPrefixLimit * 4), as: UTF8.self)
