@@ -25,7 +25,10 @@ private func el(_ id: Int, _ title: String, x: CGFloat = 100) -> UIElementInfo {
 }
 
 /// What `onStatus` reported, in order (the prompt's row as the user reads it).
-@MainActor private final class StatusLog { var texts: [String] = [] }
+@MainActor private final class StatusLog {
+    var texts: [String] = []
+    var trails: [TaskTrail] = []
+}
 
 @MainActor private struct Rig {
     var runner: TaskRunner
@@ -52,11 +55,45 @@ private func el(_ id: Int, _ title: String, x: CGFloat = 100) -> UIElementInfo {
                             overlay: overlay, sleep: { _ in })
     let log = StatusLog()
     runner.onStatus = { log.texts.append($0.text) }
+    runner.onTrail = { log.trails.append($0) }
     return Rig(runner: runner, log: log, resolver: resolver, input: input, ax: ax, overlay: overlay)
 }
 
 private func step(_ intent: String, _ status: StepStatus, _ actions: [Action] = []) -> IntentStep {
     IntentStep(intent: intent, status: status, actions: actions)
+}
+
+@MainActor @Test func trailFollowsTheTask() async {
+    typealias S = TaskStepRecord.State
+    func scrolls(_ n: Int) -> [IntentStep] { (1...n).map { step("scroll \($0)", .continue, [.scroll(.down, amount: $0)]) } }
+    // (goal, steps, maxSteps, states at the end, ending, the trail's cap)
+    let table: [(String, [IntentStep], Int, [S], TaskTrail.Ending?, Int)] = [
+        ("type hi", [step("open", .continue, [.typeText("a")]), step("type", .done, [.typeText("hi")])], 12, [.done, .done], nil, 12),
+        ("open nope", [step("open it", .continue, [.openApp("Nope")]), step("type", .done, [.typeText("hi")])], 12,
+         [.failed("no app named Nope"), .done], nil, 12),
+        ("scroll forever", scrolls(5), 3, [.done, .done, .done], .stepCap, 3),
+        ("press it", [step("one", .continue, [.typeText("a")]), step("hmm", .stuck)], 12, [.done], .stuck, 12),
+        ("watch cats on youtube", [step("playing", .done)], 12, [.done], nil, AppConfig().maxMediaTaskSteps),
+    ]
+    for (goal, steps, maxSteps, states, ending, cap) in table {
+        let r = rig(FakeResolver(steps), maxSteps: maxSteps)
+        _ = await r.runner.run(goal: goal, mode: .command)
+        #expect(r.log.trails.first == TaskTrail(maxSteps: cap), "\(goal)")   // each run starts from the empty trail
+        let last = r.log.trails.last
+        #expect(last?.steps.map(\.state) == states, "\(goal)")
+        #expect(last?.ending == ending, "\(goal)")
+        #expect(last?.maxSteps == cap, "\(goal)")
+    }
+
+    // A step cut short by stop stays running, so the panel shows it as stopped and not failed.
+    let r = rig(FakeResolver([step("wait then type", .continue, [.wait(ms: 5000), .typeText("late")])]))
+    let runner = r.runner
+    let task = Task { await runner.run(goal: "slow", mode: .command) }
+    try? await Task.sleep(for: .milliseconds(100))
+    runner.cancel()
+    #expect(await task.value == .stopped)
+    #expect(r.log.trails.last?.steps.map(\.state) == [.running])
+    #expect(r.log.trails.last?.ending == nil)
 }
 
 @MainActor @Test func doneOnFirstStepIsOneCall() async {
@@ -427,6 +464,7 @@ private func harnessSnapshot() -> DesktopSnapshot {
                             overlay: overlay, sleep: { _ in }, harness: harness)
     let log = StatusLog()
     runner.onStatus = { log.texts.append($0.text) }
+    runner.onTrail = { log.trails.append($0) }
     return Rig(runner: runner, log: log, resolver: resolver, input: input, ax: ax, overlay: overlay)
 }
 

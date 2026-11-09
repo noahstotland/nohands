@@ -458,8 +458,10 @@ import NoHandsCore
         // The runner's step and finish lines go on this prompt's row.
         let id = pending.id, text = pending.transcript
         runner.onStatus = { [weak self] status in self?.overlay.report(id, text: text, status: status) }
+        runner.onTrail = { [weak self] trail in self?.overlay.report(id, trail: trail) }
         let outcome = await runner.run(goal: pending.goal, mode: modeMachine.mode)
         runner.onStatus = nil
+        runner.onTrail = nil
         lastTaskOutcome = outcome
         var trace = pending.trace
         trace.actionsDone = .now

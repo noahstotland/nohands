@@ -49,6 +49,8 @@ scripts/bundle.sh && open build/NoHands.app
 
 **Status bar.** A small bar stays on screen and says what NoHands is doing right now: `Listening` when idle, the prompt and its step while a task runs (then `done`, `stopped` or the failure for a few seconds), `Dictating`, `Asleep · say wake up`, `Paused`, `Loading speech model…`, or the problem with its fix (`Needs Accessibility: allow NoHands in System Settings`, `Microphone denied …`, `Error: … · choose Retry in the menu`). It is on by default, at the top centre of the screen the pointer is on (the prompt board sits below it). The menu's Status Bar item chooses Off, Top or Bottom; the choice applies at once and is remembered across launches (macOS user defaults, not `config.json`). The bar ignores clicks and hides while the grid or number badges are showing.
 
+**Corner panel.** While a request runs, a panel at the bottom right of the screen the pointer is on shows what you said, the steps so far (`✓` done, `✗` failed, `▸` the one running) and a progress bar, `step 3 of 12`, which is the steps taken out of the step limit (`maxTaskSteps`, or `maxMediaTaskSteps` for a request to play something). The bar only fills as steps run, because NoHands decides one step at a time and cannot know how many remain. When the request ends the panel keeps the outcome (`done`, `stopped`, or the failure with what to try next) for a few seconds, then hides. A short command like `scroll down` shows only the phrase and the result. The panel has no setting, ignores clicks, and hides while the grid or number badges are showing.
+
 **First run:**
 
 1. **Microphone** — macOS asks when the app starts. If you click Don't Allow, the menu shows "Microphone denied — open Settings".

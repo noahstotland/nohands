@@ -17,6 +17,11 @@ public final class OverlayController {
     private var statusMenu: MenuState = .loading
     private var statusMode: Mode = .command
     private var shownStatus: (line: StatusLine, size: CGSize)?
+    /// Where the status bar is on screen (CG space), nil while hidden; the corner panel steps aside for it.
+    private var shownStatusFrame: CGRect?
+    /// The bottom-right panel with the current prompt's phrase, steps and progress (see `TaskPanelText`).
+    private var taskPanel: NSPanel?
+    private var shownTask: (content: TaskPanelContent, size: CGSize)?
 
     /// Where the status bar sits; changing it redraws at once.
     public var statusBarPosition: StatusBarPosition = .top {
@@ -91,6 +96,12 @@ public final class OverlayController {
         renderBoard()
     }
 
+    /// A running task's step trail, kept on the prompt's row.
+    public func report(_ id: Int, trail: TaskTrail) {
+        board.report(id: id, trail: trail, now: .now)
+        renderBoard()
+    }
+
     static let boardWidth: CGFloat = 720
     static let boardRowHeight: CGFloat = 30
     static let boardPadding: CGFloat = 8
@@ -105,6 +116,7 @@ public final class OverlayController {
         let rows = board.visibleRows(now: now)
         let notice = board.visibleNotice(now: now)
         renderStatusBar()
+        renderTaskPanel(rows: rows)
         guard !rows.isEmpty || notice != nil else {
             boardPanel?.orderOut(nil)
             return
@@ -139,6 +151,7 @@ public final class OverlayController {
         guard statusBarShown else {
             statusPanel?.orderOut(nil)
             shownStatus = nil
+            shownStatusFrame = nil
             return
         }
         let line = StatusBarText.line(menu: statusMenu, mode: statusMode, rows: board.visibleRows(now: .now))
@@ -148,6 +161,7 @@ public final class OverlayController {
         let size = CGSize(width: width, height: Self.statusBarHeight)
         let y = statusBarPosition == .bottom ? screenCG.maxY - 8 - size.height : screenCG.minY + 8
         let originCG = CGPoint(x: screenCG.midX - size.width / 2, y: y)
+        shownStatusFrame = CGRect(origin: originCG, size: size)
         let frame = CoordinateMapper.toAppKit(CGRect(origin: originCG, size: size), primaryScreenHeight: Self.primaryHeight)
         let panel = statusPanel ?? Self.makePanel()
         statusPanel = panel
@@ -155,6 +169,35 @@ public final class OverlayController {
         if shownStatus?.line != line || shownStatus?.size != size {
             panel.contentView = StatusBarView(frame: CGRect(origin: .zero, size: size), line: line)
             shownStatus = (line, size)
+        }
+        panel.orderFrontRegardless()
+    }
+
+    static let taskPanelInset: CGFloat = 16
+
+    /// Draws the corner panel 16 pt from the bottom-right of the pointer's screen, above the status bar if that is
+    /// there too. Hidden while the grid or number badges are up, or when no prompt has anything to show.
+    private func renderTaskPanel(rows: [PromptRow]) {
+        guard state == .none, let content = TaskPanelText.content(rows: rows) else {
+            taskPanel?.orderOut(nil)
+            return
+        }
+        let screenCG = Self.visibleBoundsCG(containing: Self.pointerCG())
+        let inset = Self.taskPanelInset
+        let width = min(340, max(1, screenCG.width - 2 * inset))
+        let size = CGSize(width: width, height: TaskPanelView.height(of: content, width: width))
+        var originCG = CGPoint(x: screenCG.maxX - inset - size.width, y: screenCG.maxY - inset - size.height)
+        if let bar = shownStatusFrame, bar.intersects(CGRect(origin: originCG, size: size)) {
+            originCG.y -= Self.statusBarHeight + 6
+        }
+        originCG.y = max(screenCG.minY, originCG.y)
+        let frame = CoordinateMapper.toAppKit(CGRect(origin: originCG, size: size), primaryScreenHeight: Self.primaryHeight)
+        let panel = taskPanel ?? Self.makePanel()
+        taskPanel = panel
+        if panel.frame != frame { panel.setFrame(frame, display: false) }
+        if shownTask?.content != content || shownTask?.size != size {
+            panel.contentView = TaskPanelView(frame: CGRect(origin: .zero, size: size), content: content)
+            shownTask = (content, size)
         }
         panel.orderFrontRegardless()
     }
@@ -375,5 +418,131 @@ private final class StatusBarView: NSView {
         let h = s.size().height
         s.draw(with: CGRect(x: 30, y: (bounds.height - h) / 2, width: bounds.width - 44, height: h),
                options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine])
+    }
+}
+
+/// The corner panel: the phrase, one line per step, a progress bar and a closing line on the board's dark fill.
+private final class TaskPanelView: NSView {
+    let content: TaskPanelContent
+    init(frame: CGRect, content: TaskPanelContent) { self.content = content; super.init(frame: frame) }
+    required init?(coder: NSCoder) { fatalError() }
+    override var isFlipped: Bool { true }
+
+    private static let hPad: CGFloat = 14
+    private static let vPad: CGFloat = 10
+    private static let gap: CGFloat = 6
+    private static let markWidth: CGFloat = 16
+    private static let trackHeight: CGFloat = 6
+    private static let phraseFont = NSFont.systemFont(ofSize: 14, weight: .medium)
+    private static let smallFont = NSFont.systemFont(ofSize: 12, weight: .regular)
+    private static let currentFont = NSFont.systemFont(ofSize: 12, weight: .medium)
+
+    private static func lineHeight(_ font: NSFont) -> CGFloat {
+        ceil(NSLayoutManager().defaultLineHeight(for: font))
+    }
+
+    /// `wrap` lays the text out over several lines (the phrase and the footer, whose ends matter); otherwise it is
+    /// one line cut at the tail.
+    private static func tail(_ text: String, font: NSFont, color: NSColor, wrap: Bool = false) -> NSAttributedString {
+        let style = NSMutableParagraphStyle()
+        style.lineBreakMode = wrap ? .byWordWrapping : .byTruncatingTail
+        return NSAttributedString(string: text, attributes: [
+            .font: font, .foregroundColor: color, .paragraphStyle: style,
+        ])
+    }
+
+    /// Height of `text` wrapped to `width`, at most `maxLines` lines.
+    private static func wrappedHeight(_ text: String, font: NSFont, width: CGFloat, maxLines: Int) -> CGFloat {
+        let one = lineHeight(font)
+        let box = tail(text, font: font, color: .white, wrap: true)
+            .boundingRect(with: CGSize(width: width, height: .greatestFiniteMagnitude), options: [.usesLineFragmentOrigin])
+        return min(max(one, ceil(box.height)), one * CGFloat(maxLines))
+    }
+
+    private static func stepHeight() -> CGFloat { lineHeight(smallFont) + 3 }
+
+    static func height(of content: TaskPanelContent, width: CGFloat) -> CGFloat {
+        let inner = width - 2 * hPad
+        var h = vPad + wrappedHeight(content.phrase, font: phraseFont, width: inner, maxLines: 2)
+        if content.earlierSteps > 0 || !content.lines.isEmpty { h += gap }
+        if content.earlierSteps > 0 { h += stepHeight() }
+        h += CGFloat(content.lines.count) * stepHeight()
+        if content.progress != nil { h += gap + stepHeight() }
+        if let footer = content.footer {
+            h += gap + wrappedHeight(footer.text, font: smallFont, width: inner, maxLines: 2)
+        }
+        return h + vPad
+    }
+
+    private static func mark(_ m: TaskPanelContent.Mark) -> (glyph: String, color: NSColor) {
+        switch m {
+        case .done: ("\u{2713}", BoardView.color(.good))
+        case .failed: ("\u{2717}", BoardView.color(.bad))
+        case .current: ("\u{25B8}", BoardView.color(.active))
+        case .stopped: ("\u{25A0}", BoardView.color(.muted))
+        }
+    }
+
+    private func draw(_ s: NSAttributedString, x: CGFloat, y: CGFloat, width: CGFloat, height: CGFloat) {
+        s.draw(with: CGRect(x: x, y: y, width: width, height: height),
+               options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine])
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        NSColor(white: 0.08, alpha: 0.88).setFill()
+        NSBezierPath(roundedRect: bounds, xRadius: 12, yRadius: 12).fill()
+        let hPad = Self.hPad, gap = Self.gap
+        let inner = bounds.width - 2 * hPad
+        var y = Self.vPad
+
+        let phraseH = Self.wrappedHeight(content.phrase, font: Self.phraseFont, width: inner, maxLines: 2)
+        draw(Self.tail(content.phrase, font: Self.phraseFont, color: .white, wrap: true), x: hPad, y: y, width: inner, height: phraseH)
+        y += phraseH
+        if content.earlierSteps > 0 || !content.lines.isEmpty { y += gap }
+
+        let stepH = Self.stepHeight(), textH = Self.lineHeight(Self.smallFont)
+        if content.earlierSteps > 0 {
+            let text = content.earlierSteps == 1 ? "+ 1 earlier step" : "+ \(content.earlierSteps) earlier steps"
+            draw(Self.tail(text, font: Self.smallFont, color: BoardView.color(.muted)),
+                 x: hPad + Self.markWidth, y: y, width: inner - Self.markWidth, height: textH)
+            y += stepH
+        }
+        for line in content.lines {
+            let m = Self.mark(line.mark)
+            let current = line.mark == .current
+            let font = current ? Self.currentFont : Self.smallFont
+            draw(Self.tail(m.glyph, font: font, color: m.color), x: hPad, y: y, width: Self.markWidth, height: textH)
+            let color = NSColor(white: current ? 1 : 0.8, alpha: 1)
+            draw(Self.tail(line.text, font: font, color: color),
+                 x: hPad + Self.markWidth, y: y, width: inner - Self.markWidth, height: textH)
+            y += stepH
+        }
+
+        if let progress = content.progress {
+            y += gap
+            let label = Self.tail(progress.label, font: Self.smallFont, color: BoardView.color(.muted))
+            let labelW = ceil(label.size().width)
+            let trackW = max(0, inner - labelW - 10)
+            let trackY = y + (stepH - Self.trackHeight) / 2
+            let track = CGRect(x: hPad, y: trackY, width: trackW, height: Self.trackHeight)
+            NSColor(white: 1, alpha: 0.18).setFill()
+            NSBezierPath(roundedRect: track, xRadius: Self.trackHeight / 2, yRadius: Self.trackHeight / 2).fill()
+            let fillW = trackW * CGFloat(min(1, max(0, progress.fraction)))
+            if fillW > 0 {
+                let tone = content.footer?.tone ?? .active
+                BoardView.color(tone == .muted || tone == .waiting ? .active : tone).setFill()
+                let fill = CGRect(x: hPad, y: trackY, width: max(fillW, Self.trackHeight), height: Self.trackHeight)
+                NSBezierPath(roundedRect: fill, xRadius: Self.trackHeight / 2, yRadius: Self.trackHeight / 2).fill()
+            }
+            draw(label, x: hPad + trackW + 10, y: y + (stepH - textH) / 2, width: labelW, height: textH)
+            y += stepH
+        }
+
+        if let footer = content.footer {
+            y += gap
+            let h = Self.wrappedHeight(footer.text, font: Self.smallFont, width: inner, maxLines: 2)
+            draw(Self.tail(footer.text, font: Self.smallFont, color: BoardView.color(footer.tone), wrap: true),
+                 x: hPad, y: y, width: inner, height: h)
+        }
     }
 }

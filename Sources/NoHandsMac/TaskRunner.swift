@@ -60,6 +60,10 @@ public enum TaskOutcome: Equatable, Sendable {
     /// The prompt's status as the task goes: each step as it starts, a step's failure, and the finish line. The
     /// pipeline puts it on the prompt's row; the CLI prints it.
     public var onStatus: ((PromptStatus) -> Void)?
+    /// The steps so far as data, for the corner panel: emitted when the run starts (empty), when a step starts, when
+    /// it ends and when the run ends stuck. The CLI leaves it nil.
+    public var onTrail: ((TaskTrail) -> Void)?
+    private var trail = TaskTrail(maxSteps: 1)
 
     public init(config: AppConfig, resolver: any IntentResolving, executor: ActionExecutor,
                 observer: ScreenObserver, overlay: any OverlayPresenting,
@@ -89,6 +93,8 @@ public enum TaskOutcome: Equatable, Sendable {
         stepsRun = 0
         // A goal about playing media gets a longer budget: stream sites throw overlays and pop-unders first.
         let maxSteps = max(1, MediaGoal.matches(goal) ? config.maxMediaTaskSteps : config.maxTaskSteps)
+        trail = TaskTrail(maxSteps: maxSteps)
+        onTrail?(trail)   // before the first screen read, which can take a second or two
         ledger = TabLedger()
         markTaskTab = false
         atTaskStart = true
@@ -136,6 +142,8 @@ public enum TaskOutcome: Equatable, Sendable {
 
             if isCancelled { return await finish(.stopped) }
             onStatus?(.running("step \(n) · \(step.intent)"))
+            trail.begin(number: n, intent: step.intent)
+            onTrail?(trail)
             // Code-level guard: never close a tab/window or quit an app the goal did not ask to close or quit.
             // A blocked step runs nothing and is recorded as a failed step so the model can react.
             let failure: String?
@@ -153,6 +161,11 @@ public enum TaskOutcome: Equatable, Sendable {
                 if !step.actions.isEmpty && shown != .none && overlay.state == shown { overlay.hide() }
             }
             stepsRun = n
+            // A step cut short by stop stays running, so the panel shows it as stopped, not failed.
+            if failure != ActionExecutor.cancelled {
+                trail.end(number: n, failure: failure)
+                onTrail?(trail)
+            }
             onStep?(n, step, settled, failure)
             if let failure, failure != ActionExecutor.cancelled { onStatus?(.running("step \(n) · \(step.intent) ✗ \(failure)")) }
             if isCancelled { return await finish(.stopped) }
@@ -325,6 +338,10 @@ public enum TaskOutcome: Equatable, Sendable {
         // Spec Safety: a held mouse button is released on any exit; a successful `done` keeps what it did.
         if case .done = outcome {} else { executor.releaseAll() }
         observer.resetBrowserTokens()
+        if case .stuck(let why) = outcome {
+            trail.ending = why == Self.stepLimit ? .stepCap : .stuck
+            onTrail?(trail)
+        }
         onStatus?(Self.finalStatus(outcome, text: hud ?? PipelineText.hud(for: outcome), steps: stepsRun))
         // The HUD is already up; ending the traced session is quick bookkeeping.
         if let id = sessionID, let harness {
