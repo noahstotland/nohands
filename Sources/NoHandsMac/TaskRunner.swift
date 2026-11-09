@@ -94,6 +94,7 @@ public enum TaskOutcome: Equatable, Sendable {
         // A goal about playing media gets a longer budget: stream sites throw overlays and pop-unders first.
         let maxSteps = max(1, MediaGoal.matches(goal) ? config.maxMediaTaskSteps : config.maxTaskSteps)
         trail = TaskTrail(maxSteps: maxSteps)
+        onTrail?(trail)   // before the first screen read, which can take a second or two
         ledger = TabLedger()
         markTaskTab = false
         atTaskStart = true
@@ -122,7 +123,6 @@ public enum TaskOutcome: Equatable, Sendable {
         var (observation, labels) = first.result
         await annotateTabs(&observation)
         var settled = settleStart.duration(to: .now)
-        onTrail?(trail)
 
         for n in 1...maxSteps {
             if isCancelled { return await finish(.stopped) }

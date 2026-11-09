@@ -441,9 +441,11 @@ private final class TaskPanelView: NSView {
         ceil(NSLayoutManager().defaultLineHeight(for: font))
     }
 
-    private static func tail(_ text: String, font: NSFont, color: NSColor) -> NSAttributedString {
+    /// `wrap` lays the text out over several lines (the phrase and the footer, whose ends matter); otherwise it is
+    /// one line cut at the tail.
+    private static func tail(_ text: String, font: NSFont, color: NSColor, wrap: Bool = false) -> NSAttributedString {
         let style = NSMutableParagraphStyle()
-        style.lineBreakMode = .byTruncatingTail
+        style.lineBreakMode = wrap ? .byWordWrapping : .byTruncatingTail
         return NSAttributedString(string: text, attributes: [
             .font: font, .foregroundColor: color, .paragraphStyle: style,
         ])
@@ -452,7 +454,7 @@ private final class TaskPanelView: NSView {
     /// Height of `text` wrapped to `width`, at most `maxLines` lines.
     private static func wrappedHeight(_ text: String, font: NSFont, width: CGFloat, maxLines: Int) -> CGFloat {
         let one = lineHeight(font)
-        let box = tail(text, font: font, color: .white)
+        let box = tail(text, font: font, color: .white, wrap: true)
             .boundingRect(with: CGSize(width: width, height: .greatestFiniteMagnitude), options: [.usesLineFragmentOrigin])
         return min(max(one, ceil(box.height)), one * CGFloat(maxLines))
     }
@@ -494,7 +496,7 @@ private final class TaskPanelView: NSView {
         var y = Self.vPad
 
         let phraseH = Self.wrappedHeight(content.phrase, font: Self.phraseFont, width: inner, maxLines: 2)
-        draw(Self.tail(content.phrase, font: Self.phraseFont, color: .white), x: hPad, y: y, width: inner, height: phraseH)
+        draw(Self.tail(content.phrase, font: Self.phraseFont, color: .white, wrap: true), x: hPad, y: y, width: inner, height: phraseH)
         y += phraseH
         if content.earlierSteps > 0 || !content.lines.isEmpty { y += gap }
 
@@ -539,7 +541,7 @@ private final class TaskPanelView: NSView {
         if let footer = content.footer {
             y += gap
             let h = Self.wrappedHeight(footer.text, font: Self.smallFont, width: inner, maxLines: 2)
-            draw(Self.tail(footer.text, font: Self.smallFont, color: BoardView.color(footer.tone)),
+            draw(Self.tail(footer.text, font: Self.smallFont, color: BoardView.color(footer.tone), wrap: true),
                  x: hPad, y: y, width: inner, height: h)
         }
     }
