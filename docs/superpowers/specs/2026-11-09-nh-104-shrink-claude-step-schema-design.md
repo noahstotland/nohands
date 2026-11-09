@@ -1,7 +1,7 @@
 # NH-104: Shrink the Claude step schema so Anthropic stops rejecting it — Design
 
 **Date:** 2026-11-09  **Ticket:** [NH-104](https://github.com/noahstotland/nohands/issues/104)
-**Status:** Proposed
+**Status:** Approved
 
 ## Intent
 
@@ -147,7 +147,8 @@ I walked every other kind against blanks and nothing else changes meaning:
   count alone passed shapes Anthropic still rejected.
 - **The eval against Claude spends a few cents of real credit.** The ticket only required the local model's eval.
 - **`max_tokens` stays 1024.** Raising it is not needed for the typical one to three actions, and a test pins it.
-- **Left alone: schema key order on the Claude path.** `foundationObject` goes through a Swift dictionary, so the JSON
-  key order is not guaranteed and can differ between launches. `intent` is therefore not guaranteed to come first for
-  Claude today, and a new launch may recompile the grammar. That was already so and is not what causes the 400. It
-  deserves its own ticket.
+- **Key order is fixed in this PR (changed during the build).** The spec first left it alone, because it does not cause
+  the 400. The live eval showed it matters: `foundationObject` goes through a Swift dictionary, so the keys came out
+  scrambled (`kind` late in a branch, `actions` before `status`). Claude Haiku scored 37% and 0% on the two fixture
+  files with the scrambled order and 70% and 78% with the declared order kept. `ClaudeRequestBuilder` now builds the
+  whole request as `OrderedJSON`, which also makes the request byte-stable for the prompt cache. A test pins the order.
