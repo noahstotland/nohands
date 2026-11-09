@@ -1,7 +1,8 @@
 # NH-33: A full-colour app icon: Design
 
 **Date:** 2026-11-09  **Ticket:** [NH-33](https://github.com/noahstotland/nohands/issues/33)
-**Status:** Proposed
+**Status:** Shipped
+**Shipped:** in PR #114, as specified
 
 ## Intent
 
