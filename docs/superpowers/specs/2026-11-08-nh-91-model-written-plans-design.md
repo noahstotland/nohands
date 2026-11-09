@@ -154,7 +154,7 @@ One compact request: a short system prompt with the step types and check kinds, 
 
 ### Plans are untrusted (`TaskPlan.validated`, Core)
 
-The whole plan is rejected, and the loop runs, unless all of these hold:
+The whole plan is rejected, and the loop runs, unless all of these hold (the playback rule below is the exception: code repairs it):
 
 - It has 2 to 8 steps, and every step and check kind is known. An unknown field value rejects the plan rather than
   dropping the step, so a plan never runs with a hole in it.
@@ -165,8 +165,9 @@ The whole plan is rejected, and the loop runs, unless all of these hold:
   as `latest`, `newest`, `top`, `first`). At least one check's text (or a `search` step's text) must contain one under the matching above. On "watch
   the newest veritasium video", a check on `watch` or `video` does not count and a check on `veritasium` does. A plan for
   a channel or page the model invented cannot be reported as a success.
-- **A goal for which `MediaSignal.wantsPlayback` is true must end with `wait_for_media`.** Otherwise a plan could report
-  `done` with nothing playing, since the existing `done` path only holds back on `Media: paused`.
+- **A goal for which `MediaSignal.wantsPlayback` is true ends with `wait_for_media`.** When the plan does not, code
+  appends that step. The plan is rejected only if the appended step would take it past 8 steps. Otherwise a plan could
+  report `done` with nothing playing, since the existing `done` path only holds back on `Media: paused`.
 
 The plan has no step that types, presses keys, closes anything or runs a menu command. Everything it does compiles to
 existing `Action`s and passes the existing guards. Model output is treated as the `Security overlays` in
@@ -176,7 +177,9 @@ existing `Action`s and passes the existing guards. Model output is treated as th
 
 ```swift
 public enum PlanMove: Equatable, Sendable { case step(IntentStep), finish(String), handOver(String) }
-public struct PlanEngine: Sendable { public mutating func next(_ observation: ScreenObservation) -> PlanMove }
+public struct PlanEngine: Sendable {
+    public mutating func next(_ observation: ScreenObservation, frames: [Int: CGRect] = [:]) -> PlanMove
+}
 ```
 
 A pure state machine over observations.
@@ -238,7 +241,10 @@ cannot get them, it stops with `BLOCKED:` and the exact commands for the user to
 
 ## Measuring
 
-The build runs these through `nohands-cli task`, on the local model and on Claude, and puts a table in the PR: goal,
+**Not delivered as written:** the end-to-end table below was not produced (screen locked during the build; see Calls
+I made 12). The PR reports plan-request results for the same goals instead.
+
+The build was to run these through `nohands-cli task`, on the local model and on Claude, and puts a table in the PR: goal,
 whether a valid plan came back, steps run, whether it handed over and at which step, how it ended, and wall time. It
 also reports the plan-valid and finished counts for each backend, and the extra latency of the plan request.
 
@@ -281,7 +287,7 @@ One table-driven test per rule, per `AGENTS.md` § Testing.
 Core:
 
 - `PlanGate`: passes and rejects, including short goals and a browser name.
-- Plan decoding and `validated`: each rejection above, `null`, an unknown step or check kind, a site not in the list, a check tied only to a general word, a playback goal not ending in `wait_for_media`, too many steps.
+- Plan decoding and `validated`: each rejection above, `null`, an unknown step or check kind, a site not in the list, a check tied only to a general word, too many steps; a playback goal without `wait_for_media` gets one appended, and a plan already at 8 steps is rejected.
 - Text matching: folded match and miss.
 - Element picks: `click` exact over partial, `click_first_item` with and without `after`, on the captured real lists.
 - `PlanEngine`: for each step type, the step produced, the extra look, the hand-over reason, `.finish` after the last
