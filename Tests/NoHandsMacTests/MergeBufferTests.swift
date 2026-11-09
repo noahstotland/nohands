@@ -18,6 +18,7 @@ private func make(_ sink: Sink, window: Int = 80, unfinished: Int = 200, attenti
         merger: UtteranceMerger(windowMs: window, unfinishedWindowMs: unfinished),
         gate: attention,
         isComplete: { VoicePipeline.isComplete($0, mode: $1, grammar: grammar, attention: attention) },
+        carriesSpokenText: { VoicePipeline.carriesSpokenText($0, grammar: grammar, attention: attention) },
         onHold: { sink.hold($0) },
         emit: { text, _ in sink.emit(text) })
 }
@@ -181,4 +182,60 @@ private func make(_ sink: Sink, window: Int = 80, unfinished: Int = 200, attenti
     await b.transcript("alpha", trace: LatencyTrace())
     try await Task.sleep(for: .milliseconds(600))
     #expect(sink.out == ["Computer, spell kilo nine alpha"])        // one phrase, so it types as one string
+}
+
+// MARK: - early pass
+
+@Test func earlyTranscriptAcceptsOnlyWhatIsSafeToActOnNow() async throws {
+    struct Row {
+        var text: String
+        var mode: Mode = .command
+        var pending: String? = nil
+        var attention = ""
+        var window = 80
+        var accepted: Bool
+        var emitted: [String]
+    }
+    let rows = [
+        Row(text: "new tab", accepted: true, emitted: ["new tab"]),
+        Row(text: "scroll down", accepted: true, emitted: ["scroll down"]),
+        Row(text: "click twelve", accepted: true, emitted: ["click twelve"]),           // numbered click
+        Row(text: "stop", accepted: true, emitted: ["stop"]),
+        Row(text: "type hello", accepted: false, emitted: []),                          // free text keeps the full window
+        Row(text: "open youtube", accepted: false, emitted: []),
+        Row(text: "go to example.com", accepted: false, emitted: []),
+        Row(text: "click reload", accepted: false, emitted: []),
+        Row(text: "click", accepted: false, emitted: []),                               // parses, but the last word dangles
+        Row(text: "spell kilo nine", accepted: false, emitted: []),
+        Row(text: "make it bigger", window: 0, accepted: false, emitted: []),           // not a command, even with no merge window
+        Row(text: "go back", pending: "click the", accepted: false, emitted: []),       // a mid-way pause still merges
+        Row(text: "stop", pending: "open the", accepted: true, emitted: ["stop"]),      // pending words are discarded, never merged
+        Row(text: "go back", mode: .dictation, accepted: false, emitted: []),
+        Row(text: "stop", mode: .dictation, accepted: false, emitted: []),
+        Row(text: "stop", mode: .sleep, accepted: false, emitted: []),
+        Row(text: "computer go back", attention: "computer", accepted: true, emitted: ["computer go back"]),
+        Row(text: "go back", attention: "computer", accepted: false, emitted: []),
+        Row(text: "computer click", attention: "computer", accepted: false, emitted: []),
+        Row(text: "computer stop", attention: "computer", accepted: true, emitted: ["computer stop"]),
+    ]
+    for row in rows {
+        let sink = Sink()
+        let b = make(sink, window: row.window, unfinished: 5000, attention: AttentionGate(configured: row.attention))
+        await b.set(mode: row.mode)
+        if let pending = row.pending {
+            await b.transcript(pending, trace: LatencyTrace())
+            await b.speechStarted()
+        }
+        let accepted = await b.earlyTranscript(row.text, trace: LatencyTrace())
+        #expect(accepted == row.accepted, "\(row.text) \(row.mode)")
+        #expect(sink.out == row.emitted, "\(row.text) \(row.mode)")
+    }
+}
+
+@Test func earlyPassIsWantedOnlyInCommandMode() async {
+    let b = make(Sink())
+    for (mode, wanted) in [(Mode.command, true), (.dictation, false), (.sleep, false)] {
+        await b.set(mode: mode)
+        #expect(await b.wantsEarlyPass == wanted, "\(mode)")
+    }
 }

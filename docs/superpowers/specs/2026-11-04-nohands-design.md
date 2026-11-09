@@ -118,7 +118,8 @@ Text is typed with `CGEvent` keyboard events carrying a Unicode string, in chunk
   "anthropicAPIKey": "sk-ant-…",       // or env ANTHROPIC_API_KEY (env wins)
   "intentModel": "claude-opus-5-5",
   "asrModelVersion": "v2",             // "v2" English-only (default) | "v3" multilingual
-  "silenceMs": 350,                    // VAD end-of-utterance silence
+  "silenceMs": 1000,                   // VAD end-of-utterance silence (raised from 350 so you can pause mid-command)
+  "earlySilenceMs": 350,               // shorter silence that ends a complete grammar command or "stop" early (0 = off)
   "gridColumns": 10, "gridRows": 8,
   "moveStepPx": 50, "scrollStepLines": 5
 }
@@ -128,10 +129,12 @@ Text is typed with `CGEvent` keyboard events carrying a Unicode string, in chunk
 
 | Stage | Budget |
 |---|---|
-| end-of-speech detection (silence) | 350 ms |
+| end-of-speech detection (silence) | 350 ms (`earlySilenceMs`, complete grammar commands and stop phrases only; anything else waits `silenceMs`, 1000 ms) |
 | Parakeet TDT v2 on a ≤ 5 s utterance, M1 Pro | ≤ 250 ms |
 | grammar + executor | ≤ 20 ms |
 | **total** | **≤ 650 ms** |
+
+Measured numbers for the early-close path are in [the NH-36 as-built](../as-built/2026-11-08-nh-36-early-grammar-endpointing.md).
 
 The LLM path adds one network round trip (typically 1–3 s). Every utterance logs `t_speech_end, t_asr_done, t_actions_done` to the console so the budget can be verified.
 
@@ -139,7 +142,7 @@ The LLM path adds one network round trip (typically 1–3 s). Every utterance lo
 
 - Microphone (`NSMicrophoneUsageDescription`) and Accessibility (`AXIsProcessTrustedWithOptions`) are requested on first launch; the menu shows a red dot and an "Open Accessibility Settings" item until granted.
 - The SwiftPM executable is wrapped into `NoHands.app` by `scripts/bundle.sh` (Info.plist with `LSUIElement = true`, bundle id `dev.nohands.app`), signed with `$CODESIGN_IDENTITY` (default ad-hoc `-`). Accessibility trust is tied to the code signature, so with ad-hoc signing every rebuild needs re-granting; a stable self-signed or Apple Development identity avoids that.
-- `nohands-cli` (same package) exposes each subsystem for manual verification and latency measurement: `listen`, `transcribe <wav>`, `parse "<text>"`, `type "<text>"`, `elements`, `click "<name>"`, `grid`, `resolve "<text>"`.
+- `nohands-cli` (same package) exposes each subsystem for manual verification and latency measurement: `listen`, `transcribe <wav>`, `endpoint-test <wav>…`, `parse "<text>"`, `type "<text>"`, `elements`, `click "<name>"`, `grid`, `resolve "<text>"`.
 
 ## 14. Acceptance (manual, end to end)
 
@@ -150,4 +153,4 @@ The LLM path adds one network round trip (typically 1–3 s). Every utterance lo
 5. Say "scroll down 10", "hold click", "move down 100", "release click" — a drag happens.
 6. Say "go to sleep", "click" (nothing happens), "wake up", "click" (click happens).
 7. With an API key configured, say "make this window full screen" (unmatched by grammar). The LLM returns `press_key control command f` and the window toggles.
-8. Console shows per-utterance latency lines; grammar-path totals are under 650 ms.
+8. Console shows per-utterance latency lines; grammar-path totals are under 650 ms for complete grammar commands and stop phrases (early close, NH-36).

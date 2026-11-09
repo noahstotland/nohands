@@ -14,6 +14,9 @@ actor MergeBuffer {
     private let merger: UtteranceMerger
     private let gate: AttentionGate
     private let isComplete: @Sendable (String, Mode) -> Bool
+    /// True when the transcript's parsed actions carry words the speaker may still be saying (typed text, a name).
+    /// The default answers true, so a buffer built without the grammar never closes early.
+    private let carriesSpokenText: @Sendable (String) -> Bool
     private let emit: @Sendable (String, LatencyTrace) -> Void
     private let onHold: @Sendable (String) -> Void
     private var pending: Pending?
@@ -27,16 +30,37 @@ actor MergeBuffer {
     init(merger: UtteranceMerger,
          gate: AttentionGate = .off,
          isComplete: @escaping @Sendable (String, Mode) -> Bool,
+         carriesSpokenText: @escaping @Sendable (String) -> Bool = { _ in true },
          onHold: @escaping @Sendable (String) -> Void,
          emit: @escaping @Sendable (String, LatencyTrace) -> Void) {
         self.merger = merger
         self.gate = gate
         self.isComplete = isComplete
+        self.carriesSpokenText = carriesSpokenText
         self.onHold = onHold
         self.emit = emit
     }
 
     func set(mode: Mode) { self.mode = mode }
+
+    /// Only command mode gets an early ASR pass: in dictation and sleep nothing may close before the full silence.
+    var wantsEarlyPass: Bool { mode == .command }
+
+    /// Text from the early pass, heard after a short silence while the utterance is still open. Accepted (released
+    /// through `transcript`) only when it can be acted on now: a stop phrase, or a complete grammar command with
+    /// nothing pending, nothing left hanging and no free text that may still be coming. Anything else returns false
+    /// and the full pass decides. Calls `isComplete` itself: a zero `holdDuration` also means "merge window off".
+    func earlyTranscript(_ text: String, trace: LatencyTrace) -> Bool {
+        guard mode == .command else { return false }
+        if !gate.isStop(text) {
+            guard pending == nil, isComplete(text, mode) else { return false }
+            var phrase = text
+            if case .addressed(let rest) = gate.check(text) { phrase = rest }
+            guard !UtteranceMerger.isUnfinished(phrase), !carriesSpokenText(text) else { return false }
+        }
+        transcript(text, trace: trace)
+        return true
+    }
 
     func transcript(_ text: String, trace: LatencyTrace) {
         speechActive = false
