@@ -10,7 +10,7 @@ A menu-bar macOS app that lets the user operate the whole computer with their vo
 ## 2. Non-goals (this version)
 
 - Wake word. The app is always listening; "go to sleep" / "wake up" gate it (an optional transcript-matched attention word exists, NH-12).
-- Vision-model fallback (screenshot → click). The accessibility tree plus a numbered grid covers element targeting; a vision fallback is a follow-up plan.
+- Vision-model fallback (screenshot → click). The accessibility tree plus a numbered grid covers element targeting; a vision fallback shipped later as an opt-in, Claude-only fallback (NH-41, `docs/superpowers/specs/2026-11-08-nh-41-vision-fallback-design.md`).
 - LLM "polish" of dictated text (Wispr-Flow-style rewriting). Spoken punctuation and auto-capitalization are deterministic in this version; LLM polish is a follow-up.
 - Custom vocabulary boosting, multi-language ASR, Intel Macs, macOS < 14.
 - App Store distribution / notarization.

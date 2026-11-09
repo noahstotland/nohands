@@ -129,7 +129,7 @@ In dictation mode, say `period`, `comma`, `question mark`, `new line`, `new para
 
 ## CLI tools
 
-`nohands-cli` exercises the pieces without the menu-bar app (`swift run nohands-cli <subcommand>`). Subcommands that act on other apps need Accessibility for your terminal and wait a few seconds so you can focus the target app.
+`nohands-cli` exercises the pieces without the menu-bar app (`swift run nohands-cli <subcommand>`). Subcommands that act on other apps need Accessibility for your terminal and wait a few seconds so you can focus the target app. `task` with `visionFallback` on (see Configuration) also needs Screen Recording for your terminal, and sends pictures of the focused window to Claude on the steps described under Vision fallback.
 
 | Subcommand | Does |
 |---|---|
