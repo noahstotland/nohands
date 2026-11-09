@@ -29,6 +29,9 @@ public enum ScreenshotGeometry {
             && abs(a.width - b.width) <= windowTolerance && abs(a.height - b.height) <= windowTolerance
     }
 
+    /// True when any action holds a `.point` (click, move_cursor, or either end of a drag).
+    public static func holdsPoint(_ actions: [Action]) -> Bool { actions.contains { !points(in: $0).isEmpty } }
+
     /// Longest side at most `maxSide`, never larger than the window's real pixels. Aspect kept, whole pixels, each side at least 1.
     public static func imageSize(window: CGSize, backingScale: CGFloat, maxSide: CGFloat = 1200) -> CGSize {
         let w = window.width * backingScale, h = window.height * backingScale

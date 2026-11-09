@@ -236,3 +236,31 @@ final class FakeClock: @unchecked Sendable {
     func now() -> ContinuousClock.Instant { lock.withLock { current } }
     func advance(_ d: Duration) { lock.withLock { current = current.advanced(by: d) } }
 }
+
+/// A scripted `ScreenshotProviding`: records each capture's badges, answers from preset results (the last repeats),
+/// and can be told to hang.
+final class FakeScreenshots: ScreenshotProviding, @unchecked Sendable {
+    private let lock = NSLock()
+    private var results: [ScreenshotResult]
+    private var badgeCalls: [[Int: UIElementInfo]] = []
+    var hangs = false
+    var calls: Int { lock.withLock { badgeCalls.count } }
+    var badges: [[Int: UIElementInfo]] { lock.withLock { badgeCalls } }
+
+    /// A 200x150 picture of the 400x300 window at (100, 100): scale 2, so a picture point (x, y) is screen (100 + 2x, 100 + 2y).
+    static let shot = StepScreenshot(jpeg: Data([1, 2, 3]), imageSize: CGSize(width: 200, height: 150),
+                                     windowFrame: CGRect(x: 100, y: 100, width: 400, height: 300), app: "Safari")
+
+    init(_ results: [ScreenshotResult] = [.image(FakeScreenshots.shot)]) { self.results = results }
+
+    func capture(badges: [Int: UIElementInfo]) async -> ScreenshotResult {
+        let (hang, result): (Bool, ScreenshotResult) = lock.withLock {
+            badgeCalls.append(badges)
+            let r = results.first ?? .failed
+            if results.count > 1 { results.removeFirst() }
+            return (hangs, r)
+        }
+        if hang { try? await Task.sleep(for: .seconds(30)) }   // a capture that never comes back in time
+        return result
+    }
+}

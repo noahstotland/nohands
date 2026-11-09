@@ -282,7 +282,8 @@ var exitStatus: Int32 = 0
                                               maxElements: config.observedElementCap, harness: harness,
                                               snapshotTimeoutMs: config.agentDesktopSnapshotMs)
                 let runner = TaskRunner(config: config, resolver: resolver, executor: executor,
-                                        observer: observer, overlay: overlay, harness: harness)
+                                        observer: observer, overlay: overlay, harness: harness,
+                                        screenshots: config.visionEnabled ? WindowScreenshotter(ax: AXQuery()) : nil)
                 let t0 = ContinuousClock.now
                 var last = t0
                 runner.onStatus = { status in if status.isFinal { print("status: \(sanitized(status.text))") } }

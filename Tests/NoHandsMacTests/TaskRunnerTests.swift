@@ -38,25 +38,30 @@ private func el(_ id: Int, _ title: String, x: CGFloat = 100) -> UIElementInfo {
     var input: FakeInput
     var ax: FakeElements
     var overlay: FakeOverlay
+    var screenshots: FakeScreenshots?
     var typed: [String] { input.calls.filter { $0.hasPrefix("type:") } }
     var releaseAllCalls: Int { input.calls.filter { $0 == "releaseAll" }.count }
 }
 
-@MainActor private func rig(_ resolver: FakeResolver, maxSteps: Int = 12, settleMs: Int = 3000) -> Rig {
+@MainActor private func rig(_ resolver: FakeResolver, maxSteps: Int = 12, settleMs: Int = 3000,
+                            vision: FakeScreenshots? = nil, visionFlag: Bool = true) -> Rig {
     let input = FakeInput(), ax = FakeElements(), overlay = FakeOverlay(), audio = FakeAudio()
     ax.front = "Safari"
     ax.elements = [el(1, "Reload")]
     var config = AppConfig()
     config.maxTaskSteps = maxSteps
     config.settleMs = settleMs
+    config.visionFallback = visionFlag
+    config.intentBackend = .claude
+    config.anthropicAPIKey = "test-key"
     let executor = ActionExecutor(input: input, ax: ax, overlay: overlay, config: config, frontTimeout: .milliseconds(100), audio: audio)
     let runner = TaskRunner(config: config, resolver: resolver, executor: executor,
                             observer: ScreenObserver(ax: ax, maxElements: config.maxObservedElements, audio: audio),
-                            overlay: overlay, sleep: { _ in })
+                            overlay: overlay, sleep: { _ in }, screenshots: vision)
     let log = StatusLog()
     runner.onStatus = { log.texts.append($0.text) }
     runner.onTrail = { log.trails.append($0) }
-    return Rig(runner: runner, log: log, resolver: resolver, input: input, ax: ax, overlay: overlay)
+    return Rig(runner: runner, log: log, resolver: resolver, input: input, ax: ax, overlay: overlay, screenshots: vision)
 }
 
 private func step(_ intent: String, _ status: StepStatus, _ actions: [Action] = []) -> IntentStep {
@@ -450,22 +455,26 @@ private func harnessSnapshot() -> DesktopSnapshot {
         UIElementInfo(id: 1, frame: CGRect(x: 0, y: 0, width: 10, height: 10), title: "Reload", role: "button", ref: "@s1:e1")])
 }
 
-@MainActor private func harnessRig(_ resolver: FakeResolver, harness: FakeHarness, trace: Bool = false, settleMs: Int = 0) -> Rig {
+@MainActor private func harnessRig(_ resolver: FakeResolver, harness: FakeHarness, trace: Bool = false, settleMs: Int = 0,
+                                   vision: FakeScreenshots? = nil) -> Rig {
     let input = FakeInput(), ax = FakeElements(), overlay = FakeOverlay()
     ax.front = "Safari"
     ax.elements = [el(1, "Reload")]
     var config = AppConfig()
     config.settleMs = settleMs
     config.agentDesktopTrace = trace
+    config.visionFallback = vision != nil
+    config.intentBackend = .claude
+    config.anthropicAPIKey = "test-key"
     let executor = ActionExecutor(input: input, ax: ax, overlay: overlay, config: config, frontTimeout: .milliseconds(100),
                                   harness: harness, clipboard: FakeClipboard())
     let runner = TaskRunner(config: config, resolver: resolver, executor: executor,
                             observer: ScreenObserver(ax: ax, maxElements: 120, harness: harness),
-                            overlay: overlay, sleep: { _ in }, harness: harness)
+                            overlay: overlay, sleep: { _ in }, harness: harness, screenshots: vision)
     let log = StatusLog()
     runner.onStatus = { log.texts.append($0.text) }
     runner.onTrail = { log.trails.append($0) }
-    return Rig(runner: runner, log: log, resolver: resolver, input: input, ax: ax, overlay: overlay)
+    return Rig(runner: runner, log: log, resolver: resolver, input: input, ax: ax, overlay: overlay, screenshots: vision)
 }
 
 @MainActor @Test func readingsFlowIntoTheNextObservation() async {
@@ -618,4 +627,151 @@ private func tab(_ id: String, _ title: String, active: Bool = false) -> Browser
             #expect(resolver.requests[1].observation.media == .paused)
         }
     }
+}
+
+// MARK: vision fallback
+
+private let seesScreen = "step 2 · looking at the screen"
+
+@MainActor @Test func aPictureIsTakenOnlyWhereTheTreeFailed() async {
+    let namedClick = Action.click(.element(named: "Play"), button: .left, count: 1)
+    let click1 = Action.click(.label(1), button: .left, count: 1)
+    // (steps, picture on request 2?, captures, the flag, the strings VisionTrigger matches are what the executor says)
+    let table: [(String, [IntentStep], Bool, Int, Bool)] = [
+        ("named click that fails", [step("play", .continue, [namedClick]), step("done", .done)], true, 1, true),
+        ("a step that worked", [step("click", .continue, [click1]), step("done", .done)], false, 0, true),
+        ("look", [step("look", .continue, [.look]), step("done", .done)], true, 1, true),
+        ("flag off", [step("play", .continue, [namedClick]), step("done", .done)], false, 0, false),
+    ]
+    for (name, steps, picture, captures, flag) in table {
+        let fake = FakeScreenshots()
+        let r = rig(FakeResolver(steps), vision: fake, visionFlag: flag)
+        _ = await r.runner.run(goal: "play it", mode: .command)
+        let sent = r.resolver.requests.map(\.vision)
+        #expect(fake.calls == captures, "\(name)")
+        #expect((sent[1] != nil) == picture, "\(name)")
+        #expect(sent[0] == nil && sent.dropFirst(2).allSatisfy { $0 == nil }, "\(name)")
+        if picture { #expect(r.statuses.contains(seesScreen), "\(name)") }
+    }
+    // The failure the executor really produces, and its own stale-element text, are what the trigger matches.
+    let r = rig(FakeResolver([step("play", .continue, [namedClick]), step("done", .done)]), vision: FakeScreenshots())
+    _ = await r.runner.run(goal: "play it", mode: .command)
+    let failure = r.resolver.requests[1].history[0].failure
+    #expect(failure?.hasPrefix("no element named") == true)
+    #expect(VisionTrigger.wantsPicture(lastFailure: failure, lastActions: [namedClick]))
+    #expect(VisionTrigger.wantsPicture(lastFailure: ActionExecutor.elementChanged, lastActions: []))
+    // No provider at all: the same task, no picture.
+    let none = rig(FakeResolver([step("play", .continue, [namedClick]), step("done", .done)]))
+    _ = await none.runner.run(goal: "play it", mode: .command)
+    #expect(none.resolver.requests.allSatisfy { $0.vision == nil })
+}
+
+@MainActor @Test func lookKeepsTheBadgesUpAndOtherActingStepsHideThem() async {
+    let badges: [Int: UIElementInfo] = [1: el(1, "Reload")]
+    let fake = FakeScreenshots()
+    let r = rig(FakeResolver([step("look", .continue, [.look]), step("done", .done)]), vision: fake)
+    r.overlay.state = .labels(badges)
+    _ = await r.runner.run(goal: "play it", mode: .command)
+    #expect(fake.badges == [badges])
+    let acted = rig(FakeResolver([step("scroll", .continue, [.scroll(.down, amount: 1)]), step("done", .done)]), vision: FakeScreenshots())
+    acted.overlay.state = .labels(badges)
+    _ = await acted.runner.run(goal: "scroll", mode: .command)
+    #expect(acted.overlay.state == .none)
+}
+
+@MainActor @Test func stuckWithoutAPictureLooksOnceAndAsksAgain() async {
+    let stuck = step("cannot find it", .stuck)
+    let image = ScreenshotResult.image(FakeScreenshots.shot)
+    // (steps, capture result, requests, captures, outcome, steps run)
+    let table: [(String, [IntentStep], ScreenshotResult, Int, Int, TaskOutcome, Int)] = [
+        ("a picture helps", [stuck, step("clicked it", .done, [.typeText("x")])], image, 2, 1, .done("clicked it"), 1),
+        ("stuck even with a picture", [stuck], image, 2, 1, .stuck("cannot find it"), 0),
+        ("no grant", [stuck], .notGranted, 1, 1, .stuck("cannot find it (screen recording not granted)"), 0),
+        ("capture failed", [stuck], .failed, 1, 1, .stuck("cannot find it (screen capture failed)"), 0),
+    ]
+    for (name, steps, result, requests, captures, outcome, stepsRun) in table {
+        let fake = FakeScreenshots([result])
+        let r = rig(FakeResolver(steps), vision: fake)
+        #expect(await r.runner.run(goal: "play it", mode: .command) == outcome, "\(name)")
+        #expect(r.resolver.requests.count == requests && fake.calls == captures, "\(name)")
+        #expect(r.runner.stepsRun == stepsRun, "\(name)")
+        if requests == 2 {
+            #expect(r.resolver.requests.map(\.step) == [1, 1] && r.resolver.requests[0].vision == nil, "\(name)")
+            #expect(r.resolver.requests[1].vision == .image(FakeScreenshots.shot), "\(name)")
+        }
+    }
+    // Stuck on a request that already said why there was no picture ends the task: no capture, no second call.
+    let namedClick = Action.click(.element(named: "Play"), button: .left, count: 1)
+    let fake = FakeScreenshots([.notGranted])
+    let r = rig(FakeResolver([step("play", .continue, [namedClick]), stuck]), vision: fake)
+    #expect(await r.runner.run(goal: "play it", mode: .command) == .stuck("cannot find it"))
+    #expect(r.resolver.requests.count == 2 && fake.calls == 1)
+}
+
+@MainActor @Test func noPictureStepsSayWhyAndTheTaskGoesOn() async {
+    let rows: [(ScreenshotResult, String)] = [(.notGranted, "screen recording not granted"), (.failed, "screen capture failed")]
+    for (result, why) in rows {
+        let r = rig(FakeResolver([step("look", .continue, [.look]), step("done", .done)]), vision: FakeScreenshots([result]))
+        #expect(await r.runner.run(goal: "play it", mode: .command) == .done("done"), "\(why)")
+        #expect(r.resolver.requests[1].vision == .unavailable(why), "\(why)")
+        #expect(r.statuses.contains("step 2 · \(why)"), "\(why)")
+    }
+    // A menu or sheet is open: no capture at all, the element list already shows it.
+    let h = FakeHarness(); h.snapshotResults = [harnessSnapshot()]; h.surfacesAfterAct = ["sheet"]
+    let fake = FakeScreenshots()
+    let r = harnessRig(FakeResolver([step("open", .continue, [.click(.label(1), button: .left, count: 1), .look]), step("done", .done)]),
+                       harness: h, settleMs: 3000, vision: fake)
+    _ = await r.runner.run(goal: "save it", mode: .command)
+    #expect(fake.calls == 0)
+    #expect(r.resolver.requests[1].vision == .unavailable("a menu or sheet is open"))
+    #expect(r.statuses.contains("step 2 · a menu or sheet is open"))
+}
+
+@MainActor @Test func pictureClicksAreMappedAndCheckedBeforeActing() async {
+    let point = { (x: CGFloat, y: CGFloat) in Action.click(.point(CGPoint(x: x, y: y)), button: .left, count: 1) }
+    // (actions on the picture step, window moved before acting, clicks, the failure the model is told)
+    let table: [(String, [Action], Bool, [String], String?)] = [
+        ("mapped to the screen", [point(100, 50)], false, ["click:300,200"], nil),
+        ("a click after another action", [.wait(ms: 0), point(100, 50)], false, [], ScreenshotGeometry.notFirstReason),
+        ("past the picture", [point(500, 50)], false, [], ScreenshotGeometry.outsideReason),
+        ("window moved", [point(100, 50)], true, [], ActionExecutor.elementChanged),
+        ("window within tolerance", [point(100, 50)], false, ["click:300,200"], nil),
+    ]
+    for (name, actions, moves, clicks, failure) in table {
+        let resolver = FakeResolver([step("look", .continue, [.look]), step("click it", .continue, actions), step("done", .done)])
+        let r = rig(resolver, vision: FakeScreenshots())
+        let ax = r.ax
+        resolver.onResolve = { n in
+            if n == 2 { ax.windowFrame = moves ? CGRect(x: 160, y: 100, width: 400, height: 300) : CGRect(x: 101, y: 99, width: 400, height: 300) }
+        }
+        _ = await r.runner.run(goal: "play it", mode: .command)
+        #expect(r.input.calls.filter { $0.hasPrefix("click:") } == clicks, "\(name)")
+        #expect(resolver.requests[2].history[1].failure == failure, "\(name)")
+        #expect(resolver.requests[2].history[1].actions == actions, "\(name)")   // history keeps what the model sent
+    }
+    // A point on a step with no picture is a screen point, untouched.
+    let r = rig(FakeResolver([step("click", .done, [point(100, 50)])]), vision: FakeScreenshots())
+    _ = await r.runner.run(goal: "click", mode: .command)
+    #expect(r.input.calls.filter { $0.hasPrefix("click:") } == ["click:100,50"])
+}
+
+@MainActor @Test func aHungCaptureNeverDelaysStopOrTheStep() async {
+    let namedClick = Action.click(.element(named: "Play"), button: .left, count: 1)
+    // Stop while the capture hangs: the task ends stopped at once.
+    let hung = FakeScreenshots(); hung.hangs = true
+    let r = rig(FakeResolver([step("play", .continue, [namedClick]), step("done", .done)]), vision: hung)
+    let runner = r.runner
+    let task = Task { await runner.run(goal: "play it", mode: .command) }
+    for _ in 0..<200 where hung.calls == 0 { try? await Task.sleep(for: .milliseconds(10)) }
+    #expect(hung.calls == 1)
+    let start = ContinuousClock.now
+    runner.cancel()
+    #expect(await task.value == .stopped)
+    #expect(start.duration(to: .now) < .seconds(1))
+    // Without a stop the deadline ends the wait: the step goes on with no picture.
+    let slow = FakeScreenshots(); slow.hangs = true
+    let late = rig(FakeResolver([step("play", .continue, [namedClick]), step("done", .done)]), vision: slow)
+    late.runner.captureDeadline = .milliseconds(100)
+    #expect(await late.runner.run(goal: "play it", mode: .command) == .done("done"))
+    #expect(late.resolver.requests[1].vision == .unavailable("screen capture failed"))
 }
