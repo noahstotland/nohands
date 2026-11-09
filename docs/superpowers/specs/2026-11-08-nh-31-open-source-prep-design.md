@@ -16,7 +16,7 @@ Checked 2026-11-08 on `origin/main` (`d525aab`).
 **The ticket is out of date in three places.**
 
 - `.claude/`, `scripts/cos_*.py` and all of `docs/agents/` except `project.md` are no longer tracked, since the move to the machine install. They are still in git history (65 distinct paths under those folders across all refs), so going public exposes them unless the owner decides otherwise.
-- History has 662 commits, not 81, and two author emails: `noahstotland@gmail.com` (230 commits) and `t3code@users.noreply.github.com` (432).
+- History has 662 commits, not 81, and two author emails: the owner's address (230 commits) and `t3code@users.noreply.github.com` (432).
 - The FluidAudio question is now narrower: see the table below.
 
 **What NoHands actually uses.** Only `VadManager` and `AsrManager` / `AsrModels.downloadAndLoad` from FluidAudio. No diarizer, no text-to-speech. So the Sortformer model and its NVIDIA licence are never downloaded.
