@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+import NoHandsCore
 @testable import NoHandsMac
 
 @Test func configFileEnsureExists() throws {
@@ -38,4 +39,78 @@ import Testing
     }
     #expect(try Data(contentsOf: target) == body)
     #expect(!fm.fileExists(atPath: dir.appendingPathComponent("missing").path))
+}
+
+@Test func configFileSaveAnthropicKey() throws {
+    let fm = FileManager.default
+    let root = fm.temporaryDirectory.appendingPathComponent("nohands-keysave-\(UUID().uuidString)")
+    defer { try? fm.removeItem(at: root) }
+    func mode(_ url: URL) throws -> Int { try fm.attributesOfItem(atPath: url.path)[.posixPermissions] as! Int }
+    func noTemps(_ dir: URL, _ name: String) {
+        #expect((try? fm.contentsOfDirectory(atPath: dir.path))?.allSatisfy { !$0.hasPrefix(".config.json.") } == true, "\(name)")
+    }
+    let key = "sk-test-SECRET-123"
+    func refuse(_ url: URL, _ expected: ConfigFile.SaveError, _ name: String) {
+        do {
+            try ConfigFile.saveAnthropicKey(key, at: url)
+            Issue.record("\(name): expected a refusal")
+        } catch {
+            #expect(error as? ConfigFile.SaveError == expected, "\(name)")
+            #expect(!"\(error)".contains(key) && !String(describing: error).contains(key), "\(name): error text")
+        }
+    }
+
+    // Fresh: folder and file are created, private, and the key reads back.
+    let fresh = root.appendingPathComponent("home/.config/nohands/config.json")
+    try ConfigFile.saveAnthropicKey(key, at: fresh)
+    #expect(try mode(fresh) == 0o600 && mode(fresh.deletingLastPathComponent()) == 0o700)
+    #expect(try AppConfig.load(from: Data(contentsOf: fresh), environment: [:]).anthropicAPIKey == key)
+    noTemps(fresh.deletingLastPathComponent(), "fresh")
+
+    // A wide file and folder are tightened, other keys kept.
+    let wide = root.appendingPathComponent("wide/nohands/config.json")
+    try fm.createDirectory(at: wide.deletingLastPathComponent(), withIntermediateDirectories: true)
+    try Data(#"{"gridRows": 3, "anthropicAPIKey": "old"}"#.utf8).write(to: wide)
+    try fm.setAttributes([.posixPermissions: 0o644], ofItemAtPath: wide.path)
+    try fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: wide.deletingLastPathComponent().path)
+    try ConfigFile.saveAnthropicKey(key, at: wide)
+    let loaded = try AppConfig.load(from: Data(contentsOf: wide), environment: [:])
+    #expect(loaded.anthropicAPIKey == key && loaded.gridRows == 3)
+    #expect(try mode(wide) == 0o600 && mode(wide.deletingLastPathComponent()) == 0o700)
+    noTemps(wide.deletingLastPathComponent(), "wide")
+
+    // A symlinked file (live or dangling) is refused and its target untouched.
+    let links = root.appendingPathComponent("links")
+    try fm.createDirectory(at: links, withIntermediateDirectories: true)
+    let target = links.appendingPathComponent("target.json")
+    let body = Data(#"{"gridRows": 3}"#.utf8)
+    try body.write(to: target)
+    for (name, dest) in [("live.json", target.path), ("dangling.json", links.appendingPathComponent("missing").path)] {
+        let link = links.appendingPathComponent(name)
+        try fm.createSymbolicLink(atPath: link.path, withDestinationPath: dest)
+        refuse(link, .symlink, name)
+        #expect(try fm.destinationOfSymbolicLink(atPath: link.path) == dest)
+    }
+    #expect(try Data(contentsOf: target) == body)
+    #expect(!fm.fileExists(atPath: links.appendingPathComponent("missing").path))
+    noTemps(links, "links")
+
+    // A symlinked folder is refused and the real folder untouched.
+    let real = root.appendingPathComponent("real")
+    try fm.createDirectory(at: real, withIntermediateDirectories: true)
+    try fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: real.path)
+    let linkedDir = root.appendingPathComponent("linked")
+    try fm.createSymbolicLink(atPath: linkedDir.path, withDestinationPath: real.path)
+    refuse(linkedDir.appendingPathComponent("config.json"), .symlink, "linked folder")
+    #expect(try fm.contentsOfDirectory(atPath: real.path).isEmpty && mode(real) == 0o755)
+
+    // Unparseable JSON and non-objects are left byte for byte.
+    for (name, text) in [("garbage", #"{"anthropicAPIKey": "#), ("array", "[]"), ("empty", "")] {
+        let url = root.appendingPathComponent("bad-\(name)/config.json")
+        try fm.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data(text.utf8).write(to: url)
+        refuse(url, .invalidJSON, name)
+        #expect(try Data(contentsOf: url) == Data(text.utf8), "\(name): unchanged")
+        noTemps(url.deletingLastPathComponent(), name)
+    }
 }
