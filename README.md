@@ -162,8 +162,8 @@ Optional file at `~/.config/nohands/config.json`. Every key may be omitted. For 
 ```json
 {
   "anthropicAPIKey": "sk-ant-...",
-  "intentModel": "claude-opus-5-5",
-  "intentEffort": "medium",
+  "intentModel": "claude-haiku-5-5",
+  "intentEffort": "low",
   "intentBackend": "auto",
   "localModel": "qwen2.5:7b-instruct",
   "ollamaURL": "http://127.0.0.1:11434",
@@ -199,7 +199,9 @@ Optional file at `~/.config/nohands/config.json`. Every key may be omitted. For 
 
 **Pausing mid-command.** You do not have to say a command in one breath. `silenceMs` is how long you can go quiet before the recognizer closes an utterance (1 s by default). A complete command that is not left open for more words (a key command, a mode change, a numbered click, scroll, move) and a stop phrase are the exception: they close after `earlySilenceMs` of quiet (about 350 ms by default, one 256 ms voice-detector chunk), so "new tab" or "stop" acts well before a full second passes. Commands that carry words you may still be saying (`type …`, `open …`, `go to …`, `search for …`, `click <name>`), anything the grammar does not parse, and anything said while words are already held keep `silenceMs`; dictation and sleep always do. Set `earlySilenceMs` to 0 to turn this off; the catch is that a pause of 350 ms or more inside a closed command acts on the first part ("click twenty … three" clicks 20). After the full silence, a transcript the fast grammar does not already understand is held for `mergeWindowMs` (longer, `mergeWindowUnfinishedMs`, when it starts with `spell`, which the grammar understands but holds so a pause mid-spelling stays one string, or when it ends on a word like "the" or "click" that leaves the command hanging); its row on the prompt board shows `listening…`. If you start speaking again inside that window, the next piece is appended and the whole thing is treated as one request, so "click the … uh, the back button" reaches the model as a single sentence. Set both windows to 0 to act on every utterance at once. A stop phrase ("stop", "cancel", "never mind", also "stop stop" or "um, stop") is never held or merged: it goes through at once, and in command mode it also discards the unfinished words before it. In dictation, "stop dictating" and "command mode" likewise go through on their own instead of being typed as part of the text, and so do "scratch that" and "delete word".
 
-**How the model reads a request.** The transcript comes from speech recognition, so the model is told to first write a one-sentence `intent` (what you meant, with recognition errors, filler and self-corrections resolved) and only then the actions that carry it out. `intentEffort` (`low` … `max`) sets how hard Claude thinks before answering; `medium` is the default, `low` is fastest.
+**How the model reads a request.** The transcript comes from speech recognition, so the model is told to first write a one-sentence `intent` (what you meant, with recognition errors, filler and self-corrections resolved) and only then the actions that carry it out. `intentEffort` (`low` … `max`) sets how hard Claude thinks before answering; `low` is the default and the fastest.
+
+The default model is `claude-haiku-5-5` at `low` effort, chosen for cost. For a stronger model, set `"intentModel": "claude-opus-5-5"` and `"intentEffort": "medium"` in `config.json` and restart. Haiku has no server-side fallback, so a request the model declines is not retried on another model; it just fails with the usual "didn't catch that" row.
 
 ## Multi-step tasks
 

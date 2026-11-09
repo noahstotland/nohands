@@ -103,7 +103,7 @@ Text is typed with `CGEvent` keyboard events carrying a Unicode string, in chunk
 ## 10. LLM intent resolution
 
 - **Provider:** Anthropic Messages API over raw HTTPS (`URLSession`); there is no official Swift SDK. Endpoint `POST https://api.anthropic.com/v1/messages`, headers `x-api-key`, `anthropic-version: 2026-10-21`, `anthropic-beta: server-side-fallback-2026-07-01`.
-- **Model:** default `claude-opus-5-5` at `output_config.effort: "low"` *(assumption: the Claude API skill's default; the user said "any model under the hood")*. `intentModel` in the config file overrides it; `claude-haiku-5-5` is the latency-oriented alternative. `fallbacks: "default"` is on so a safety refusal is re-run server-side instead of silently doing nothing.
+- **Model:** default `claude-haiku-5-5` at `output_config.effort: "low"` (NH-95, for cost; it started as `claude-opus-5-5`). `intentModel` and `intentEffort` in the config file override it; `claude-opus-5-5` at `medium` is the stronger alternative. `fallbacks: "default"` stays on: it re-runs a safety refusal server-side on Opus, but Haiku has no fallback, so there a declined request just fails.
 - **Request:** `system` = fixed description of the `Action` vocabulary and the rules below (stable prefix, cacheable); `messages` = one user turn containing a compact context block (frontmost app name, current mode, up to 60 visible element titles with their label numbers) followed by the transcript. `max_tokens: 1024`. `output_config.format` = `{type: "json_schema", schema: ActionsSchema}` so the reply is guaranteed to parse.
 - **ActionsSchema:** `{"actions": [ActionJSON]}` where `ActionJSON` is a flat object with `additionalProperties: false`, a required `kind` enum (`type_text, press_key, click, press_mouse, release_mouse, move_cursor, scroll, show_grid, zoom_grid, show_labels, hide_overlay, set_mode, open_app, search, ignore`) and optional `text, key, modifiers[], button, count, target_kind (cursor|grid_cell|label|element|point|relative), target_number, target_name, x, y, dx, dy, direction, amount, mode, app_name`. No recursion, no numeric constraints (the API rejects both).
 - **Rules in the system prompt:** emit the fewest actions that accomplish the request; if the request is ambiguous or not an action, return `[{"kind":"ignore"}]`; refer to visible elements by their label number when one is listed; never invent app names.
@@ -116,7 +116,8 @@ Text is typed with `CGEvent` keyboard events carrying a Unicode string, in chunk
 ```json
 {
   "anthropicAPIKey": "sk-ant-…",       // or env ANTHROPIC_API_KEY (env wins)
-  "intentModel": "claude-opus-5-5",
+  "intentModel": "claude-haiku-5-5",
+  "intentEffort": "low",
   "asrModelVersion": "v2",             // "v2" English-only (default) | "v3" multilingual
   "silenceMs": 1000,                   // VAD end-of-utterance silence (raised from 350 so you can pause mid-command)
   "earlySilenceMs": 350,               // shorter silence that ends a complete grammar command or "stop" early (0 = off)
