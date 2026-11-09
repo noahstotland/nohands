@@ -1,5 +1,13 @@
 # Release notes
 
+## 2026-11-09 task scenario suite with pass/fail and step counts (NH-49) (#101)
+
+Merged 2026-11-09 05:39 UTC.
+
+New `nohands-cli scenarios` command runs scripted multi-step goals on your Mac and scores each against the screen, with steps and time. It takes over the screen and keyboard while it runs.
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
 ## 2026-11-09 winking logo and menu-bar icon (NH-32) (#100)
 
 Merged 2026-11-09 05:14 UTC.
