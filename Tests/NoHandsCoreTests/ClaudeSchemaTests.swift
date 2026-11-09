@@ -132,7 +132,7 @@ private func claudeBodyKeepsSchemaOrderAndIsByteStable(vision: Bool) throws {
     let intent = try #require(first.range(of: #""properties":{"intent""#)), status = try #require(first.range(of: #""status":{"#))
     let actions = try #require(first.range(of: #""actions":{"#))
     #expect(intent.lowerBound < status.lowerBound && status.lowerBound < actions.lowerBound)
-    #expect(first.contains(#""properties":{"kind":"#))
+    #expect(first.components(separatedBy: #""properties":{"kind":"#).count - 1 == branches(schema(vision: vision)).count)
     // Everything before the user message is the cached prefix: it must not change from one request to the next.
     func prefix(_ body: String) throws -> Substring { body[..<(try #require(body.range(of: #","messages":"#)).lowerBound)] }
     #expect(try prefix(first) == prefix(text("open the downloads folder", "Safari")))
