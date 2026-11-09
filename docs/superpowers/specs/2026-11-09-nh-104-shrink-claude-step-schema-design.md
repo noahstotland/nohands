@@ -92,14 +92,14 @@ The rule is the same on every request, so the cached system block stays stable.
 
 ### `Sources/NoHandsCore/IntentDecoder.swift`
 
-One tightening. `dragSource` rejects `from_x` and `from_y` when both are `0`. Without this, a `drag` with all four
+Three tightenings. First, `dragSource` rejects `from_x` and `from_y` when both are `0`. Without this, a `drag` with all four
 source fields blank, which used to be dropped, would drag from the top-left corner of the screen.
 
 I walked every other kind against blanks and nothing else changes meaning:
 
 - `0` fails `number()`, and `""` fails `nonBlank`, so a required target or name that is blank still drops the action.
 - Fields a kind does not read are ignored, and `target_kind` decides which target field is used.
-- A `0` in an integer field means the field was omitted (`optInt`), so its default applies: `count` and `scroll` `amount`
+- A `0` in an integer field means the field was omitted (`optInt`, changed in this PR; it used to clamp up), so its default applies: `count` and `scroll` `amount`
   1, `scroll_element` `amount` 3, `wait` `ms` 1000, `timeout_ms` 5000.
 - `set_value` and `clipboard_set` with a blank `value` and a filled `text` or `option` are dropped: branch 11 shares
   those fields, so the model put the text in the wrong one, and clearing the field or clipboard would destroy data. A
@@ -143,8 +143,9 @@ I walked every other kind against blanks and nothing else changes meaning:
 
 - **Blanks instead of optional fields, and 13 merged branches instead of one per kind.** The ticket suggested one
   object per kind. Anthropic rejects that on grammar size, measured above.
-- **One decoder change, rejecting a `0,0` drag source.** The ticket allowed decoder changes only to match the shape.
-  This makes it stricter, and a real drag from the exact screen corner is no longer possible.
+- **Three decoder changes, all stricter or default-restoring:** a `0,0` drag source is rejected (a real drag from the exact
+  screen corner is no longer possible), `0` in `optInt` means omitted, and a misfiled blank `value` drops `set_value` and
+  `clipboard_set`. The ticket allowed decoder changes only to match the shape; the last two came out of code review.
 - **Ollama keeps its flat schema and prompt.** The ticket left this open. Its request is unchanged, so its pass rate
   stands and the local fixtures have nothing new to catch. Two existing tests are retargeted to say so.
 - **A Claude-only prompt rule** explains the blanks, rather than editing the shared prompt.
