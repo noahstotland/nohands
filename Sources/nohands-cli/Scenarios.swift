@@ -218,8 +218,6 @@ private struct Seen {
                     MediaSignal.control(role: $0.role, name: $0.title, value: $0.value) == .pause
                 }) {
                     await executor.execute([.click(.label(pause.number), button: .left, count: 1)], labels: seen.labels)
-                } else {
-                    print("still playing (no Pause control listed)")
                 }
             }
             if !control.stop { try? await Task.sleep(for: .seconds(2)) }
