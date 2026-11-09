@@ -1,7 +1,8 @@
 # NH-116: Menu toggle between Claude and the local model: Design
 
 **Date:** 2026-11-09  **Ticket:** [NH-116](https://github.com/noahstotland/nohands/issues/116)
-**Status:** Draft
+**Status:** Shipped
+**Shipped:** in PR #117, as specified
 
 ## Intent
 
