@@ -61,6 +61,8 @@ public enum TaskOutcome: Equatable, Sendable {
     /// True until the task's first observation has been annotated.
     private var atTaskStart = true
     private var cancelled = false
+    /// While a plan runs, the element cap for each observation (the model is not sent those lists); nil otherwise.
+    private var planLimit: Int?
     /// Steps whose actions were executed in the current (or last) `run`.
     public private(set) var stepsRun = 0
     /// The in-flight resolve or execute; `cancel()` cancels it so an HTTP request or `wait` aborts.
@@ -104,6 +106,7 @@ public enum TaskOutcome: Equatable, Sendable {
 
     public func run(goal: String, mode: Mode) async -> TaskOutcome {
         cancelled = false
+        planLimit = nil
         stepsRun = 0
         // A goal about playing media gets a longer budget: stream sites throw overlays and pop-unders first.
         let maxSteps = max(1, MediaGoal.matches(goal) ? config.maxMediaTaskSteps : config.maxTaskSteps)
@@ -138,27 +141,59 @@ public enum TaskOutcome: Equatable, Sendable {
         await annotateTabs(&observation)
         var settled = settleStart.duration(to: .now)
 
+        // A goal that looks multi-step may get a plan the model writes once; code then runs and checks it, and the
+        // loop below takes over on any miss. Every step still goes through the guards below.
+        var engine: PlanEngine?
+        if PlanGate.mayPlan(goal: goal) {
+            onStatus?(.running("planning the steps"))
+            if let plan = await askForPlan(goal) {
+                engine = PlanEngine(plan: plan)
+                planLimit = TaskPlan.observedElements
+            }
+            if isCancelled { return await finish(.stopped) }
+        }
+
         for n in 1...maxSteps {
             if isCancelled { return await finish(.stopped) }
-            var request = StepRequest(goal: goal, step: n, maxSteps: maxSteps, history: history, observation: observation)
-            // A picture of the focused window, only where the accessibility tree has just failed the model.
-            if screenshots != nil,
-               VisionTrigger.wantsPicture(lastFailure: history.last?.failure, lastActions: history.last?.actions ?? []) {
-                request.vision = await pictureInput(for: observation, step: n)
-                if isCancelled { return await finish(.stopped) }
-            }
-            var step: IntentStep
-            while true {
-                switch await resolveCancellable(request) {
-                case .step(let s): step = s
-                case .end(let outcome): return await finish(isCancelled ? .stopped : outcome)
+            var planned: IntentStep?
+            if engine != nil {
+                // A failed step (the executor, a guard, "not playing yet") ends the plan; the model sees that failure.
+                if history.last?.failure == nil {
+                    switch engine!.next(observation, frames: labels.mapValues(\.frame)) {
+                    case .step(let s): planned = s
+                    case .finish(let line): planned = IntentStep(intent: line, status: .done, actions: [])
+                    case .handOver(let reason):
+                        if let last = history.indices.last { history[last].failure = reason }
+                    }
                 }
-                // Stuck without a picture: look once and ask again at the same step (nothing ran, so no step is used).
-                guard step.status == .stuck, request.vision == nil, screenshots != nil, observation.surface == nil else { break }
-                let picture = await pictureInput(for: observation, step: n)
-                if isCancelled { return await finish(.stopped) }
-                if case .unavailable(let why) = picture { return await finish(.stuck("\(step.intent) (\(why))")) }
-                request.vision = picture
+                if planned == nil {
+                    engine = nil
+                    endPlan(&observation, &labels)
+                }
+            }
+            var request = StepRequest(goal: goal, step: n, maxSteps: maxSteps, history: history, observation: observation)
+            var step: IntentStep
+            if let planned {
+                step = planned
+            } else {
+                // A picture of the focused window, only where the accessibility tree has just failed the model.
+                if screenshots != nil,
+                   VisionTrigger.wantsPicture(lastFailure: history.last?.failure, lastActions: history.last?.actions ?? []) {
+                    request.vision = await pictureInput(for: observation, step: n)
+                    if isCancelled { return await finish(.stopped) }
+                }
+                while true {
+                    switch await resolveCancellable(request) {
+                    case .step(let s): step = s
+                    case .end(let outcome): return await finish(isCancelled ? .stopped : outcome)
+                    }
+                    // Stuck without a picture: look once and ask again at the same step (nothing ran, so no step is used).
+                    guard step.status == .stuck, request.vision == nil, screenshots != nil, observation.surface == nil else { break }
+                    let picture = await pictureInput(for: observation, step: n)
+                    if isCancelled { return await finish(.stopped) }
+                    if case .unavailable(let why) = picture { return await finish(.stuck("\(step.intent) (\(why))")) }
+                    request.vision = picture
+                }
             }
             // A typed web address is opened instead, before anything records the step: History, repeat detection and
             // the task-tab mark all see the `open_url` that runs.
@@ -257,6 +292,25 @@ public enum TaskOutcome: Equatable, Sendable {
         return await finish(.stuck(Self.stepLimit))
     }
 
+    /// Asks the resolver for a plan and keeps it only if it passes `TaskPlan.validated`. Any error, including an
+    /// outage, means no plan: the loop's first call then reports a real outage. A cancel is seen by the caller.
+    private func askForPlan(_ goal: String) async -> TaskPlan? {
+        let resolver = self.resolver
+        var plan: TaskPlan?
+        await runCancellable { plan = (try? await resolver.plan(goal: goal)) ?? nil }
+        return isCancelled ? nil : plan?.validated(goal: goal)
+    }
+
+    /// The plan is over: reads go back to the normal cap, and the observation the model is about to see is cut to it.
+    private func endPlan(_ observation: inout ScreenObservation, _ labels: inout [Int: UIElementInfo]) {
+        planLimit = nil
+        let cap = observer.elementCap
+        guard observation.elements.count > cap else { return }
+        observation.elements = Array(observation.elements.prefix(cap))
+        let kept = Set(observation.elements.map(\.number))
+        labels = labels.filter { kept.contains($0.key) }
+    }
+
     /// Steps that open or load a page in the browser: the tab they leave in front is the task's.
     nonisolated private static func navigates(_ action: Action) -> Bool {
         switch action {
@@ -332,10 +386,11 @@ public enum TaskOutcome: Equatable, Sendable {
         let screens = observer.screenRects()
         let kind = taskHarness
         let surfaces = pendingSurfaces
+        let limit = planLimit
         let start = now()
         let r = await Task.detached {
             await observer.observe(mode: mode, overlay: state, screens: screens, harnessKind: kind, readings: readings,
-                                   surfaces: surfaces)
+                                   surfaces: surfaces, limit: limit)
         }.value
         return ((r.observation, r.labels), Int(start.duration(to: now()) / .milliseconds(1)), r.fromHarness)
     }
@@ -446,6 +501,7 @@ public enum TaskOutcome: Equatable, Sendable {
         // Spec Safety: a held mouse button is released on any exit; a successful `done` keeps what it did.
         if case .done = outcome {} else { executor.releaseAll() }
         observer.resetBrowserTokens()
+        planLimit = nil
         if case .stuck(let why) = outcome {
             trail.ending = why == Self.stepLimit ? .stepCap : .stuck
             onTrail?(trail)

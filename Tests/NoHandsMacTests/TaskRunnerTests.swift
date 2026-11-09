@@ -10,6 +10,15 @@ private final class FakeResolver: IntentResolving, @unchecked Sendable {
     var requests: [StepRequest] = []
     /// Called with the 1-based call number before the step is returned.
     var onResolve: (@Sendable (Int) async -> Void)?
+    /// The scripted answer to `plan(goal:)` (nil result: no plan), the goals it was asked about, and a hook run first.
+    var planResult: Result<TaskPlan?, IntentError> = .success(nil)
+    var planGoals: [String] = []
+    var onPlan: (@Sendable () async -> Void)?
+    func plan(goal: String) async throws -> TaskPlan? {
+        planGoals.append(goal)
+        await onPlan?()
+        return try planResult.get()
+    }
     init(_ steps: [IntentStep]) { self.steps = steps.map { .success($0) } }
     init(results: [Result<IntentStep, IntentError>]) { self.steps = results }
     func resolve(_ request: StepRequest) async throws -> IntentStep {
@@ -805,4 +814,99 @@ private let seesScreen = "step 2 · looking at the screen"
     late.runner.captureDeadline = .milliseconds(100)
     #expect(await late.runner.run(goal: "play it", mode: .command) == .done("done"))
     #expect(late.resolver.requests[1].vision == .unavailable("screen capture failed"))
+}
+
+
+// MARK: model-written plans
+
+private let planGoal = "play the maple video on clipbox"
+
+private func planStep(_ kind: PlanStepKind, _ check: PlanCheck, url: String? = nil, text: String? = nil) -> PlanStep {
+    PlanStep(intent: "plan \(kind.rawValue)", kind: kind, url: url, text: text, check: check)
+}
+private let clickMaple = planStep(.click, PlanCheck(kind: .elementPresent, text: "Maple"), text: "Maple")
+private let playing = planStep(.waitForMedia, PlanCheck(kind: .mediaPlaying))
+private let pageHasMaple = [el(1, "Maple"), el(2, "Pause (k)")]
+
+@MainActor @Test func aValidPlanRunsWithoutAskingTheModelAndEndsDone() async {
+    let resolver = FakeResolver([step("never asked", .done)])
+    resolver.planResult = .success(TaskPlan(steps: [clickMaple, playing]))
+    let r = rig(resolver)
+    r.ax.elements = pageHasMaple
+    #expect(await r.runner.run(goal: planGoal, mode: .command) == .done("plan wait_for_media"))
+    #expect(resolver.planGoals == [planGoal])
+    #expect(resolver.requests.isEmpty)
+    #expect(r.input.calls.filter { $0.hasPrefix("click") }.count == 1)
+    #expect(r.runner.stepsRun == 3)   // two plan steps, then the finish step
+}
+
+@MainActor @Test func aPlanThatMissesHandsOverToTheModelWithItsStepsAsHistory() async {
+    let blocked = "no browser for clipbox.test"
+    // (the plan, the executor's browser, the failure the model's History ends with, the History length)
+    let table: [([PlanStep], String?, String, Int)] = [
+        ([planStep(.click, PlanCheck(kind: .elementPresent, text: "Maple banner"), text: "Maple"), playing], "Safari",
+         "plan step 1 did not reach its element_present check", 2),
+        ([planStep(.openURL, PlanCheck(kind: .titleContains, text: "maple"), url: "https://clipbox.test/maple"), playing], nil, blocked, 1),
+    ]
+    for (steps, browser, failure, length) in table {
+        let resolver = FakeResolver([step("took over", .done)])
+        resolver.planResult = .success(TaskPlan(steps: steps))
+        let r = rig(resolver)
+        r.ax.defaultBrowser = browser
+        r.ax.elements = pageHasMaple + (3...300).map { el($0, "Filler \($0)") }
+        #expect(await r.runner.run(goal: planGoal, mode: .command) == .done("took over"), "\(failure)")
+        let asked = resolver.requests.first
+        #expect(asked?.history.count == length, "\(failure)")
+        #expect(asked?.history.last?.failure == failure)
+        // The plan read up to 200 elements; the model is sent the normal cap.
+        #expect(asked?.observation.elements.count == AppConfig().maxObservedElements, "\(failure)")
+    }
+}
+
+@MainActor @Test func aPlanThatCannotBeUsedRunsTheNormalLoop() async {
+    let usable = TaskPlan(steps: [clickMaple, playing])
+    let noTie = TaskPlan(steps: [planStep(.click, PlanCheck(kind: .elementPresent, text: "Sign in"), text: "Sign in"), playing])
+    // (goal, what plan(goal:) answers, whether it is asked at all)
+    let table: [(String, Result<TaskPlan?, IntentError>, Bool)] = [
+        (planGoal, .success(nil), true),
+        (planGoal, .failure(.timeout), true),
+        (planGoal, .failure(.network(Boom())), true),
+        (planGoal, .success(noTie), true),
+        ("play it", .success(usable), false),
+        ("play the maple video in safari", .success(usable), false),
+        ("scroll down on this page a little", .success(usable), false),
+    ]
+    for (goal, answer, asked) in table {
+        let resolver = FakeResolver([step("looped", .done)])
+        resolver.planResult = answer
+        let r = rig(resolver)
+        r.ax.elements = pageHasMaple
+        #expect(await r.runner.run(goal: goal, mode: .command) == .done("looped"), "\(goal)")
+        #expect(resolver.planGoals.count == (asked ? 1 : 0), "\(goal)")
+        #expect(resolver.requests.count == 1 && resolver.requests[0].history.isEmpty, "\(goal)")
+    }
+}
+
+@MainActor @Test func stopEndsAPlanWhileItIsBeingAskedForAndWhileItRuns() async {
+    let resolver = FakeResolver([step("never", .done)])
+    resolver.planResult = .success(TaskPlan(steps: [clickMaple, playing]))
+    let r = rig(resolver)
+    r.ax.elements = [el(1, "Maple")]
+    let runner = r.runner
+    resolver.onPlan = { await runner.cancel() }
+    #expect(await runner.run(goal: planGoal, mode: .command) == .stopped)
+    #expect(resolver.requests.isEmpty && r.input.calls.filter { $0.hasPrefix("click") }.isEmpty)
+
+    // Mid-plan: nothing plays, so the wait step would run 20 s; stop ends it at once and runs no more.
+    let waiting = FakeResolver([step("never", .done)])
+    waiting.planResult = .success(TaskPlan(steps: [clickMaple, playing]))
+    let w = rig(waiting)
+    w.ax.elements = [el(1, "Maple")]
+    let task = Task { await w.runner.run(goal: planGoal, mode: .command) }
+    try? await Task.sleep(for: .milliseconds(200))
+    w.runner.cancel()
+    let start = ContinuousClock.now
+    #expect(await task.value == .stopped)
+    #expect(ContinuousClock.now - start < .seconds(2))
+    #expect(waiting.requests.isEmpty)
 }

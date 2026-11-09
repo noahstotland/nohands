@@ -35,7 +35,8 @@ public struct ScreenObserver: Sendable {
     /// The native walk; `all` is every element it found, before the untitled filter and the cap.
     /// `menuBarLast` (the task loop) numbers the menu bar after the page's elements; badges already showing keep the
     /// numbers the user can see.
-    private func observeNative(mode: Mode, overlay: OverlayState, screens: [CGRect]?, menuBarLast: Bool = false)
+    private func observeNative(mode: Mode, overlay: OverlayState, screens: [CGRect]?, menuBarLast: Bool = false,
+                               limit: Int? = nil)
         -> (observation: ScreenObservation, labels: [Int: UIElementInfo], all: [UIElementInfo]) {
         var all: [Int: UIElementInfo]
         if case .labels(let badges) = overlay { all = badges }
@@ -47,7 +48,7 @@ public struct ScreenObserver: Sendable {
         var snapshot: [Int: UIElementInfo] = [:]
         for n in all.keys.sorted() {
             guard let e = all[n], !e.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { continue }
-            if listed.count >= maxElements { break }
+            if listed.count >= (limit ?? maxElements) { break }
             var role = e.role
             if role.hasPrefix("AX") { role.removeFirst(2) }
             listed.append(ObservedElement(number: n, role: role.lowercased(), title: e.title))
@@ -70,8 +71,9 @@ public struct ScreenObserver: Sendable {
     /// decide the task's harness).
     /// `surfaces` are the overlays the last action left open (`DesktopHarness.takeOpenSurfaces()`, read once per
     /// settle by the caller so every poll of that settle targets the same surface); nil reads them here.
+    /// `limit` replaces the usual element cap for this observation (a running plan reads more than the model is sent).
     public func observe(mode: Mode, overlay: OverlayState, screens: [CGRect]? = nil, harnessKind: HarnessKind,
-                        readings: [String] = [], surfaces: [String]? = nil) async -> (observation: ScreenObservation, labels: [Int: UIElementInfo], fromHarness: Bool) {
+                        readings: [String] = [], surfaces: [String]? = nil, limit: Int? = nil) async -> (observation: ScreenObservation, labels: [Int: UIElementInfo], fromHarness: Bool) {
         var result: (observation: ScreenObservation, labels: [Int: UIElementInfo])
         var every: [UIElementInfo]
         var fromHarness = false
@@ -80,16 +82,16 @@ public struct ScreenObserver: Sendable {
             let surface = (surfaces ?? harness.takeOpenSurfaces()).lazy.compactMap { Self.overlaySurfaces[$0] }.first
             if let snap = await harness.snapshot(app: app, surface: surface, timeoutMs: snapshotTimeoutMs) {
                 result = Self.list(snap, app: app, windowTitle: ax.focusedWindowTitle() ?? snap.windowTitle ?? "",
-                                   url: ax.webURL(), mode: mode, overlay: overlay, limit: maxElements)
+                                   url: ax.webURL(), mode: mode, overlay: overlay, limit: limit ?? maxElements)
                 result.observation.surface = surface?.rawValue
                 every = snap.elements
                 fromHarness = true
             } else {
-                let native = observeNative(mode: mode, overlay: overlay, screens: screens, menuBarLast: true)
+                let native = observeNative(mode: mode, overlay: overlay, screens: screens, menuBarLast: true, limit: limit)
                 (result, every) = ((native.observation, native.labels), native.all)
             }
         } else {
-            let native = observeNative(mode: mode, overlay: overlay, screens: screens, menuBarLast: true)
+            let native = observeNative(mode: mode, overlay: overlay, screens: screens, menuBarLast: true, limit: limit)
             (result, every) = ((native.observation, native.labels), native.all)
         }
         // Player controls are looked for among every element found; the audio hint only when there is none.
@@ -101,6 +103,9 @@ public struct ScreenObserver: Sendable {
         result.observation.readings = readings
         return (result.observation, result.labels, fromHarness)
     }
+
+    /// The usual element cap.
+    public var elementCap: Int { maxElements }
 
     /// The frontmost browser's windows and tabs, read again on their own (the task runner's second look at a
     /// browser it first saw late).
