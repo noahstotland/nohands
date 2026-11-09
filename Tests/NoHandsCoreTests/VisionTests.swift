@@ -122,7 +122,8 @@ private func visionRequest(_ vision: VisionInput?) -> StepRequest {
         let format = try #require((o["output_config"] as? [String: Any])?["format"] as? [String: Any])
         let schema = try #require(format["schema"] as? [String: Any])
         let items = try #require(((schema["properties"] as? [String: Any])?["actions"] as? [String: Any])?["items"] as? [String: Any])
-        return try #require((((items["properties"] as? [String: Any])?["kind"]) as? [String: Any])?["enum"] as? [String])
+        let branches = try #require(items["anyOf"] as? [[String: Any]])
+        return branches.flatMap { ((($0["properties"] as? [String: Any])?["kind"]) as? [String: Any])?["enum"] as? [String] ?? [] }
     }
 
     let withImage = try parse(visionRequest(.image(shot)))

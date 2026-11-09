@@ -59,7 +59,7 @@ public struct ClaudeRequestBuilder: Sendable {
 
     /// The cached system block: one stable string per harness.
     static func systemText(for harness: HarnessKind, vision: Bool = false) -> String {
-        IntentSchema.systemPrompt(for: harness) + "\n\n" + IntentSchema.tabKindsRule
+        IntentSchema.systemPrompt(for: harness) + "\n\n" + IntentSchema.tabKindsRule + "\n\n" + IntentSchema.claudeFieldsRule
             + (vision ? "\n\n" + IntentSchema.visionRules : "")
     }
 

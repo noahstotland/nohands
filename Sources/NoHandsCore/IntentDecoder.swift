@@ -200,11 +200,12 @@ public enum IntentDecoder {
         }
     }
 
-    /// `drag`'s source: `from_number`, `from_name`, or `from_x`/`from_y`.
+    /// `drag`'s source: `from_number`, `from_name`, or `from_x`/`from_y`. The Claude schema sends `0,0` for a source
+    /// that does not apply, so that pair is not a source (a drag from the exact screen corner is not possible).
     private static func dragSource(_ o: [String: Any]) -> MoveTarget? {
         if let n = number(o["from_number"]) { return .label(n) }
         if let name = nonBlank(o["from_name"]) { return .element(named: name) }
-        if let x = double(o["from_x"]), let y = double(o["from_y"]),
+        if let x = double(o["from_x"]), let y = double(o["from_y"]), !(x == 0 && y == 0),
            (-20000...20000).contains(x), (-20000...20000).contains(y) { return .point(CGPoint(x: x, y: y)) }
         return nil
     }

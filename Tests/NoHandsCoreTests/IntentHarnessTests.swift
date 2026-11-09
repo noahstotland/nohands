@@ -56,7 +56,9 @@ import CoreGraphics
 }
 
 @Test func schemaListsNewKindsAndFieldsAndStaysClosed() {
-    let props = (IntentSchema.actionsJSONSchema["properties"] as! [String: Any])["actions"] as! [String: Any]
+    // The flat shape, which Ollama receives; Claude's grouped shape is covered in ClaudeSchemaTests.
+    let flat = IntentSchema.orderedSchema.foundationObject as! [String: Any]
+    let props = (flat["properties"] as! [String: Any])["actions"] as! [String: Any]
     let item = props["items"] as! [String: Any]
     let fields = item["properties"] as! [String: Any]
     for f in ["value", "option", "surface", "window_action", "title", "wait_for", "event", "predicate", "timeout_ms", "from_number", "from_name", "from_x", "from_y"] {

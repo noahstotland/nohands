@@ -99,11 +99,76 @@ public enum IntentSchema {
         ])
     }
 
-    /// The full schema plus `look`; sent only by a Claude builder with vision on, so the schema (and the cached
-    /// system block) of a flag-off run is untouched.
-    public static var visionActionsJSONSchema: [String: Any] { schema(kinds: kinds + ["look"]).foundationObject as! [String: Any] }
+    /// The Claude shape of the step schema. Anthropic rejects the flat `schema(kinds:)` (32 optional fields, over the
+    /// documented limit of 24) and also rejects one `anyOf` branch per kind (grammar too large, a limit it does not
+    /// publish). This is the grouping a live call accepted: 13 branches, 57 fields, every field required. A field that
+    /// does not apply is sent blank (`""` or `0`; see `claudeFieldsRule`), and the field names are the flat shape's, so
+    /// `IntentDecoder` reads it unchanged. Branches with no kind in `kinds` are left out.
+    private static func claudeSchema(kinds: [String]) -> OrderedJSON {
+        func str(_ e: [String]? = nil) -> OrderedJSON {
+            var p: [(String, OrderedJSON)] = [("type", .string("string"))]
+            if let e { p.append(("enum", .array(e.map(OrderedJSON.string)))) }
+            return .object(p)
+        }
+        let int: OrderedJSON = .object([("type", .string("integer"))])
+        let num: OrderedJSON = .object([("type", .string("number"))])
+        let elemT: [(String, OrderedJSON)] = [("target_kind", str(["label", "element"])), ("target_number", int), ("target_name", str())]
+        let ptr: [(String, OrderedJSON)] = [("target_kind", str(targetKinds)), ("target_number", int), ("target_name", str()),
+                                            ("x", num), ("y", num), ("dx", int), ("dy", int)]
+        let key = ("key", str(Key.allCases.map(\.rawValue)))
+        let modifiers = ("modifiers", OrderedJSON.object([("type", .string("array")), ("items", str(Modifier.allCases.map(\.rawValue)))]))
+        let branches: [(kinds: [String], fields: [(String, OrderedJSON)])] = [
+            (["show_grid", "show_labels", "hide_overlay", "ignore", "read_clipboard", "read_notifications", "look"], []),
+            (["type_text", "search"], [("text", str())]),
+            (["press_key"], [key, modifiers]),
+            (["click", "move_cursor", "drag", "press_mouse", "release_mouse"],
+             ptr + [("button", str(["left", "right", "middle"])), ("count", int), ("from_number", int), ("from_name", str()),
+                    ("from_x", num), ("from_y", num)]),
+            (["scroll", "scroll_element"], elemT + [("direction", str(["up", "down", "left", "right"])), ("amount", int)]),
+            (["set_mode"], [("mode", str(["command", "dictation", "sleep"]))]),
+            (["open_app", "close_app", "dismiss_notifications", "open_url"], [("app_name", str()), ("url", str())]),
+            (["move_window"], [("placement", str(WindowPlacement.allCases.map(\.rawValue)))]),
+            (["wait"], [("ms", int)]),
+            (["wait"], [("wait_for", str(DesktopWaitKind.allCases.map(\.rawValue))), ("event", str(DesktopEvent.allCases.map(\.rawValue))),
+                        ("value", str()), ("timeout_ms", int)] + elemT),
+            (["zoom_grid", "close_tab", "close_window", "select_tab", "clear", "check", "uncheck", "toggle", "expand", "collapse",
+              "focus", "scroll_to", "read_value", "set_value", "type_into", "select", "clipboard_set"],
+             elemT + [("value", str()), ("text", str()), ("option", str())]),
+            (["click_in", "menu_item"], [("surface", str(DesktopSurface.allCases.map(\.rawValue))), ("target_name", str())]),
+            (["window"], [("window_action", str(DesktopWindowOp.allCases.map(\.rawValue))), ("app_name", str()), ("title", str())]),
+        ]
+        let items: [OrderedJSON] = branches.compactMap { branch in
+            let own = branch.kinds.filter(kinds.contains)
+            guard !own.isEmpty else { return nil }
+            let props = [("kind", str(own))] + branch.fields
+            return .object([
+                ("type", .string("object")),
+                ("properties", .object(props)),
+                ("required", .array(props.map { .string($0.0) })),
+                ("additionalProperties", .bool(false)),
+            ])
+        }
+        return .object([
+            ("type", .string("object")),
+            ("properties", .object([
+                ("intent", .object([
+                    ("type", .string("string")),
+                    ("description", .string("One sentence: what the user wants done, with speech-recognition errors, filler and self-corrections resolved.")),
+                ])),
+                ("status", str(StepStatus.allCases.map(\.rawValue))),
+                ("actions", .object([("type", .string("array")), ("items", .object([("anyOf", .array(items))]))])),
+            ])),
+            ("required", .array([.string("intent"), .string("status"), .string("actions")])),
+            ("additionalProperties", .bool(false)),
+        ])
+    }
 
-    nonisolated(unsafe) public static let actionsJSONSchema: [String: Any] = orderedSchema.foundationObject as! [String: Any]
+    /// The Claude schema plus `look`; sent only by a Claude builder with vision on, so the schema (and the cached
+    /// system block) of a flag-off run is untouched.
+    public static var visionActionsJSONSchema: [String: Any] { claudeSchema(kinds: kinds + ["look"]).foundationObject as! [String: Any] }
+
+    /// What Claude receives. `orderedSchema` stays the flat shape, which is what Ollama receives.
+    nonisolated(unsafe) public static let actionsJSONSchema: [String: Any] = claudeSchema(kinds: kinds).foundationObject as! [String: Any]
 
     public static let systemPrompt: String = """
     You control a Mac hands-free, step by step, for a spoken request. You will see the screen again after your \
@@ -183,6 +248,13 @@ public enum IntentSchema {
     static let tabKindsRule = """
         Tab kinds: close_tab, close_window and select_tab are valid only when the request shows a "Tabs:" list, and \
         their target_number is a number from it. Without a list, never use them.
+        """
+
+    /// Added to the Claude system prompt only: the Claude schema requires every field of an action, so a field that does
+    /// not apply is sent blank. The decoder gives a blank the meaning of an omitted field.
+    static let claudeFieldsRule = """
+        Fields: send every field listed for an action. Send "" or 0 for a field that does not apply or that the \
+        instructions above say to omit. An enum field that does not apply takes any value and is ignored.
         """
 
     /// Added to the Claude system prompt only when vision is on. `look` is not in `kinds`, so the Ollama path never offers it.
