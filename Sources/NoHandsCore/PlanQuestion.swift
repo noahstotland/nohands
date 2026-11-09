@@ -26,7 +26,7 @@ public enum PlanQuestion {
 
     Rules:
     1. Choose the supported site where the thing in the request is normally found, then search it with the key words \
-    (a creator's or channel's videos, a show or an episode: the supported site whose main purpose is hosting long videos, not \
+    (a creator's videos, a show or an episode: the supported site whose main purpose is hosting long videos, not \
     short clips), or open its home page when the request is about the page itself. You never write a web address.
     2. Every text is a few words that the real page would show. At least one expect.text or search text must be a \
     distinctive word from the request (a name or topic), spelled as the page spells it.
