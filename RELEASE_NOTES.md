@@ -1,5 +1,15 @@
 # Release notes
 
+## 2026-11-09 default the Claude model to Haiku at low effort (NH-95) (#96)
+
+Merged 2026-11-09 04:49 UTC.
+
+NoHands now asks Claude Haiku at low effort by default instead of Opus, which cuts API cost. If you want the stronger model back, set `"intentModel": "claude-opus-5-5"` and `"intentEffort": "medium"` in `~/.config/nohands/config.json` and restart.
+
+Context size: pass skipped (not collective-wisdom)
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
 ## 2026-11-09 Apache-2.0 licence, third-party notices and community files (NH-31) (#89)
 
 Merged 2026-11-09 03:59 UTC.
