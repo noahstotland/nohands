@@ -17,7 +17,8 @@ public enum LatencyStats {
         return "\(name) p50=\(format(percentile(values, 50))) p95=\(format(percentile(values, 95)))"
     }
 
-    private static func format(_ ms: Double?) -> String {
+    /// One value as the summary and the per-file rows print it: two decimals under 10 ms, else whole milliseconds.
+    public static func format(_ ms: Double?) -> String {
         guard let ms else { return "n/a" }
         return abs(ms) < 10 ? String(format: "%.2fms", ms) : String(format: "%.0fms", ms)
     }
