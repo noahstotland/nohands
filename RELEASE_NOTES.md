@@ -1,5 +1,11 @@
 # Release notes
 
+## 2026-11-09 vision fallback for the task loop (NH-41) (#86)
+
+Merged 2026-11-09 03:59 UTC.
+
+With `visionFallback` turned on and a Claude key, NoHands can look at the focused window when it cannot find a control by name (an unnamed play button or close box) and click what it sees. It is off by default; turn it on in `config.json` and grant Screen Recording from the menu. Pixels leave your Mac only on those steps, only to Claude.
+
 ## 2026-11-09 close short grammar commands at 350 ms of silence (NH-36) (#87)
 
 Merged 2026-11-09 03:33 UTC.
