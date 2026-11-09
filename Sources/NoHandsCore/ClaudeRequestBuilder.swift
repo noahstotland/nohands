@@ -23,43 +23,46 @@ public struct ClaudeRequestBuilder: Sendable {
         return try body(request: StepRequest(oneShot: "ping", context: screen), maxTokens: 1)
     }
 
-    public func body(request original: StepRequest, maxTokens: Int = 1024) throws -> Data {
+    public func body(request original: StepRequest, maxTokens: Int = 2048) throws -> Data {
         // A builder with vision off never sends pixels, whatever the request holds.
         var request = original
         if !vision { request.vision = nil }
-        var userContent: [[String: Any]] = Self.userBlocks(request: request).map { ["type": "text", "text": $0] }
-        if case .image(let shot)? = request.vision {
-            userContent.append(["type": "image", "source": [
-                "type": "base64", "media_type": "image/jpeg", "data": shot.jpeg.base64EncodedString(),
-            ] as [String: Any]])
+        var userContent: [OrderedJSON] = Self.userBlocks(request: request).map {
+            .object([("type", .string("text")), ("text", .string($0))])
         }
-        let obj: [String: Any] = [
-            "model": model,
-            "max_tokens": maxTokens,
-            "fallbacks": "default",
+        if case .image(let shot)? = request.vision {
+            userContent.append(.object([("type", .string("image")), ("source", .object([
+                ("type", .string("base64")), ("media_type", .string("image/jpeg")),
+                ("data", .string(shot.jpeg.base64EncodedString())),
+            ]))]))
+        }
+        // Built as `OrderedJSON`, not a dictionary: the schema's key order is semantic (see `claudeOrderedSchema`), and
+        // a fixed order keeps the whole body byte-stable, so the cached prefix is too.
+        return OrderedJSON.object([
+            ("model", .string(model)),
+            ("max_tokens", .int(maxTokens)),
+            ("fallbacks", .string("default")),
             // The only breakpoint: the system prompt is the one prefix that is identical on every request. The
             // user message starts with `Step: n of m`, which changes each step, so nothing in it is reusable.
-            "system": [[
-                "type": "text",
-                "text": Self.systemText(for: request.observation.harness, vision: vision),
-                "cache_control": ["type": "ephemeral"],
-            ] as [String: Any]],
+            ("system", .array([.object([
+                ("type", .string("text")),
+                ("text", .string(Self.systemText(for: request.observation.harness, vision: vision))),
+                ("cache_control", .object([("type", .string("ephemeral"))])),
+            ])])),
             // The full schema on every request, tab kinds included (the Ollama path trims them per request). Changing
             // `output_config.format` between requests invalidates the cached system block, and a task flips between
             // browser and non-browser screens; the system text's tab-kinds rule limits them to a request with a Tabs list.
-            "output_config": [
-                "effort": effort,
-                "format": ["type": "json_schema",
-                           "schema": vision ? IntentSchema.visionActionsJSONSchema : IntentSchema.actionsJSONSchema] as [String: Any],
-            ] as [String: Any],
-            "messages": [["role": "user", "content": userContent]],
-        ]
-        return try JSONSerialization.data(withJSONObject: obj)
+            ("output_config", .object([
+                ("effort", .string(effort)),
+                ("format", .object([("type", .string("json_schema")), ("schema", IntentSchema.claudeOrderedSchema(vision: vision))])),
+            ])),
+            ("messages", .array([.object([("role", .string("user")), ("content", .array(userContent))])])),
+        ]).data
     }
 
     /// The cached system block: one stable string per harness.
     static func systemText(for harness: HarnessKind, vision: Bool = false) -> String {
-        IntentSchema.systemPrompt(for: harness) + "\n\n" + IntentSchema.tabKindsRule
+        IntentSchema.systemPrompt(for: harness) + "\n\n" + IntentSchema.tabKindsRule + "\n\n" + IntentSchema.claudeFieldsRule
             + (vision ? "\n\n" + IntentSchema.visionRules : "")
     }
 

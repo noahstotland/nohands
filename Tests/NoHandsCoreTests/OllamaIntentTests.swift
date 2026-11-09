@@ -18,7 +18,7 @@ import Foundation
     #expect(!String(decoding: data, as: UTF8.self).contains("close_tab"))
     var withTabs = request
     withTabs.observation.tabs = TabListing(app: "Chrome", windows: [], hiddenWindows: 0)
-    #expect(IntentSchema.orderedSchema(for: withTabs).foundationObject as? NSDictionary == IntentSchema.actionsJSONSchema as NSDictionary)
+    #expect(IntentSchema.orderedSchema(for: withTabs).foundationObject as? NSDictionary == IntentSchema.orderedSchema.foundationObject as? NSDictionary)
     let msgs = try #require(o["messages"] as? [[String: String]])
     #expect(msgs.first == ["role": "system", "content": IntentSchema.systemPrompt + "\n\n" + IntentSchema.localNamedTargetRule])
     #expect(msgs.count == 1 + 2 * IntentExamples.turns.count + 1)

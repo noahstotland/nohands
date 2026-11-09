@@ -96,6 +96,6 @@ private func apiError(_ type: String, _ message: String) -> Data {
         for field in ["output_config", "model", "system"] {
             #expect(NSDictionary(dictionary: [field: check[field] as Any]) == NSDictionary(dictionary: [field: real[field] as Any]), "\(field) vision=\(vision)")
         }
-        #expect(check["max_tokens"] as? Int == 1 && real["max_tokens"] as? Int == 1024)
+        #expect(check["max_tokens"] as? Int == 1 && real["max_tokens"] as? Int == 2048)
     }
 }
