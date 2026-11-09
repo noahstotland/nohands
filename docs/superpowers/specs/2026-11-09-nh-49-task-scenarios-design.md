@@ -1,7 +1,8 @@
 # NH-49: Task scenario suite: Design
 
 **Date:** 2026-11-09  **Ticket:** [NH-49](https://github.com/noahstotland/nohands/issues/49)
-**Status:** Draft
+**Status:** Shipped
+**Shipped:** in PR #101, with differences: [as-built](../as-built/2026-11-09-task-scenarios.md)
 
 ## Intent
 

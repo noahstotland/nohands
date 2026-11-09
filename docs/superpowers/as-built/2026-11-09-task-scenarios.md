@@ -1,6 +1,6 @@
 # As-built: NH-49 task scenario suite
 
-**Shipped:** in PR #N
+**Shipped:** in PR #101
 **Ticket:** NH-49
 **Spec:** [2026-11-09-nh-49-task-scenarios-design.md](../specs/2026-11-09-nh-49-task-scenarios-design.md)
 
