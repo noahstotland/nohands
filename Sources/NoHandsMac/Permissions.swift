@@ -29,4 +29,16 @@ public enum Permissions {
             NSWorkspace.shared.open(url)
         }
     }
+
+    /// Never prompts.
+    public static func screenRecordingGranted() -> Bool { CGPreflightScreenCaptureAccess() }
+
+    /// Asks macOS for the grant (shows its prompt the first time). macOS often applies it only after a relaunch.
+    @discardableResult public static func requestScreenRecording() -> Bool { CGRequestScreenCaptureAccess() }
+
+    public static func openScreenRecordingSettings() {
+        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture") {
+            NSWorkspace.shared.open(url)
+        }
+    }
 }

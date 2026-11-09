@@ -103,7 +103,8 @@ import NoHandsCore
         let observer = observer ?? ScreenObserver(ax: ax, maxElements: config.observedElementCap, harness: harness,
                                                   snapshotTimeoutMs: config.agentDesktopSnapshotMs)
         self.runner = taskRunner ?? resolver.map {
-            TaskRunner(config: config, resolver: $0, executor: executor, observer: observer, overlay: overlay, harness: harness)
+            TaskRunner(config: config, resolver: $0, executor: executor, observer: observer, overlay: overlay, harness: harness,
+                       screenshots: config.visionEnabled ? WindowScreenshotter(ax: ax) : nil)
         }
         self.executor = executor
         self.overlay = overlay

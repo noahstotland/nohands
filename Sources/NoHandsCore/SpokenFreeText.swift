@@ -20,7 +20,7 @@ extension Action {
         case .pressKey, .pressMouse, .releaseMouse, .scroll, .showGrid, .zoomGrid, .showLabels, .hideOverlay, .setMode,
              .moveWindow, .wait, .checkMedia, .ignore, .clearField, .setChecked, .setExpanded, .focusElement, .scrollTo,
              .scrollIn, .drag, .readClipboard, .readValue, .readNotifications, .dismissNotifications, .waitFor,
-             .closeTab, .closeWindow, .selectTab:
+             .closeTab, .closeWindow, .selectTab, .look:
             return false
         }
     }

@@ -13,6 +13,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let pauseItem = NSMenuItem(title: "Pause Listening", action: #selector(togglePause), keyEquivalent: "")
     private let retryItem = NSMenuItem(title: "Retry", action: #selector(retry), keyEquivalent: "")
     private let accessibilityItem = NSMenuItem(title: "Grant Accessibility…", action: #selector(grantAccessibility), keyEquivalent: "")
+    private let screenRecordingItem = NSMenuItem(title: "Grant Screen Recording…", action: #selector(grantScreenRecording), keyEquivalent: "")
     private let micItem = NSMenuItem(title: "Microphone denied — open Settings", action: #selector(openMicrophoneSettings), keyEquivalent: "")
     private let harnessItem = NSMenuItem(title: "Harness: checking…", action: nil, keyEquivalent: "")
     private let loginItem = NSMenuItem(title: "Start at Login", action: #selector(loginItemClicked), keyEquivalent: "")
@@ -68,10 +69,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         configItem.isEnabled = false
         transcriptItem.isEnabled = false
         harnessItem.isEnabled = false
-        for item in [localModelItem, pauseItem, retryItem, accessibilityItem, micItem, loginItem, openConfigItem] { item.target = self }
+        for item in [localModelItem, pauseItem, retryItem, accessibilityItem, screenRecordingItem, micItem, loginItem, openConfigItem] { item.target = self }
         let title = NSMutableAttributedString(string: "● ", attributes: [.foregroundColor: NSColor.systemRed])
         title.append(NSAttributedString(string: "Grant Accessibility…"))
         accessibilityItem.attributedTitle = title
+        let recordingTitle = NSMutableAttributedString(string: "● ", attributes: [.foregroundColor: NSColor.systemRed])
+        recordingTitle.append(NSAttributedString(string: "Grant Screen Recording…"))
+        screenRecordingItem.attributedTitle = recordingTitle
         for position in StatusBarPosition.allCases {
             let item = NSMenuItem(title: position.rawValue.capitalized, action: #selector(statusBarChosen(_:)), keyEquivalent: "")
             item.target = self
@@ -84,7 +88,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         quit.target = self
 
         for item in [stateItem, configItem, NSMenuItem.separator(), transcriptItem, localModelItem, harnessItem, NSMenuItem.separator(),
-                     pauseItem, retryItem, accessibilityItem, micItem, NSMenuItem.separator(), loginItem, statusBarItem, openConfigItem,
+                     pauseItem, retryItem, accessibilityItem, screenRecordingItem, micItem, NSMenuItem.separator(), loginItem, statusBarItem, openConfigItem,
                      NSMenuItem.separator(), quit] {
             menu.addItem(item)
         }
@@ -102,6 +106,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         retryItem.isHidden = !state.showsRetry
         configItem.isHidden = !configInvalid
         accessibilityItem.isHidden = axGranted
+        screenRecordingItem.isHidden = !config.visionEnabled || Permissions.screenRecordingGranted()
         micItem.isHidden = !micDenied
         pauseItem.isHidden = pipeline == nil
         let isLocal = config.effectiveBackend == .local
@@ -330,6 +335,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc private func grantAccessibility() { Permissions.openAccessibilitySettings() }
+
+    @objc private func grantScreenRecording() {
+        Permissions.requestScreenRecording()
+        Permissions.openScreenRecordingSettings()
+    }
 
     @objc private func openMicrophoneSettings() {
         if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone") {

@@ -128,6 +128,9 @@ public struct ScreenObserver: Sendable {
     /// True once right after an observation first exposed a Chromium page tree: observe again before trusting it.
     public func didJustExpose() -> Bool { ax.didJustExpose() }
 
+    /// The frontmost app and its focused window's frame, as the vision fallback's window check needs them.
+    public func frontWindow() -> (app: String, frame: CGRect?) { (ax.frontmostAppName() ?? "", ax.focusedWindowFrame()) }
+
     /// Screen rects in CG coordinates. Call on the main actor (reads NSScreen).
     public func screenRects() -> [CGRect] { ax.screenRectsCG() }
 }

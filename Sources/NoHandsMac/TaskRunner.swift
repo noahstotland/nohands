@@ -26,12 +26,23 @@ public enum TaskOutcome: Equatable, Sendable {
     static let notPlaying = "not playing yet"
     static let pollInterval = 250
     static let minSettleMs = 300
+    /// How long a capture may take before the step goes on without a picture.
+    static let captureDeadline: Duration = .seconds(2)
+    static let looking = "looking at the screen"
 
     private let config: AppConfig
     private let resolver: any IntentResolving
     private let executor: ActionExecutor
     private let observer: ScreenObserver
     private let overlay: any OverlayPresenting
+    /// Takes the vision fallback's picture; nil (flag off, local backend) means no step ever gets one.
+    private let screenshots: (any ScreenshotProviding)?
+    /// Test hook: shortens the capture deadline.
+    var captureDeadline = TaskRunner.captureDeadline
+    /// The capture being waited for, if any. `cancel()` resumes it so a hung capture cannot hold up a stop.
+    private var captureWait: CheckedContinuation<ScreenshotResult, Never>?
+    /// Identifies the current wait, so a capture or deadline that finishes late cannot resume a newer one.
+    private var captureWaitID = 0
     /// agent-desktop, when installed and chosen. The task's harness kind is decided by the first observation.
     private let harness: (any DesktopHarness)?
     private var taskHarness: HarnessKind = .native
@@ -69,8 +80,10 @@ public enum TaskOutcome: Equatable, Sendable {
                 observer: ScreenObserver, overlay: any OverlayPresenting,
                 sleep: @escaping @Sendable (Duration) async -> Void = { try? await Task.sleep(for: $0) },
                 now: @escaping @Sendable () -> ContinuousClock.Instant = { .now },
-                harness: (any DesktopHarness)? = nil) {
+                harness: (any DesktopHarness)? = nil,
+                screenshots: (any ScreenshotProviding)? = nil) {
         self.config = config
+        self.screenshots = config.visionEnabled ? screenshots : nil
         self.harness = harness
         self.resolver = resolver
         self.executor = executor
@@ -84,6 +97,7 @@ public enum TaskOutcome: Equatable, Sendable {
     public func cancel() {
         cancelled = true
         inFlight?.cancel()
+        endCaptureWait(with: .failed)
     }
 
     private var isCancelled: Bool { cancelled || Task.isCancelled }
@@ -126,11 +140,25 @@ public enum TaskOutcome: Equatable, Sendable {
 
         for n in 1...maxSteps {
             if isCancelled { return await finish(.stopped) }
-            let request = StepRequest(goal: goal, step: n, maxSteps: maxSteps, history: history, observation: observation)
-            let step: IntentStep
-            switch await resolveCancellable(request) {
-            case .step(let s): step = s
-            case .end(let outcome): return await finish(isCancelled ? .stopped : outcome)
+            var request = StepRequest(goal: goal, step: n, maxSteps: maxSteps, history: history, observation: observation)
+            // A picture of the focused window, only where the accessibility tree has just failed the model.
+            if screenshots != nil,
+               VisionTrigger.wantsPicture(lastFailure: history.last?.failure, lastActions: history.last?.actions ?? []) {
+                request.vision = await pictureInput(for: observation, step: n)
+                if isCancelled { return await finish(.stopped) }
+            }
+            var step: IntentStep
+            while true {
+                switch await resolveCancellable(request) {
+                case .step(let s): step = s
+                case .end(let outcome): return await finish(isCancelled ? .stopped : outcome)
+                }
+                // Stuck without a picture: look once and ask again at the same step (nothing ran, so no step is used).
+                guard step.status == .stuck, request.vision == nil, screenshots != nil, observation.surface == nil else { break }
+                let picture = await pictureInput(for: observation, step: n)
+                if isCancelled { return await finish(.stopped) }
+                if case .unavailable(let why) = picture { return await finish(.stuck("\(step.intent) (\(why))")) }
+                request.vision = picture
             }
             switch step.status {
             // An `ignore` after earlier steps already acted is the model giving up mid-task, not chatter.
@@ -146,19 +174,41 @@ public enum TaskOutcome: Equatable, Sendable {
             onTrail?(trail)
             // Code-level guard: never close a tab/window or quit an app the goal did not ask to close or quit.
             // A blocked step runs nothing and is recorded as a failed step so the model can react.
+            // On a step that carried a picture, a point is in the picture's pixels: map it to the screen, and run
+            // nothing if it is outside the picture or the photographed window has since moved.
+            var actions = step.actions
+            var pointFailure: String?
+            if case .image(let shot)? = request.vision, ScreenshotGeometry.holdsPoint(actions) {
+                switch ScreenshotGeometry.mapPoints(actions, shot: shot) {
+                case .refused(let why): pointFailure = why
+                case .mapped(let mapped):
+                    let front = observer.frontWindow()
+                    if front.app == shot.app, let frame = front.frame, ScreenshotGeometry.sameFrame(frame, shot.windowFrame) {
+                        actions = mapped
+                    } else {
+                        pointFailure = ActionExecutor.elementChanged
+                    }
+                }
+            }
+            // With vision on, a point is only ever in a picture's pixels: on a step without one (a repeat from history,
+            // or text in an earlier picture) it would be read as a raw screen point and could land in another app.
+            if pointFailure == nil, screenshots != nil, ScreenshotGeometry.holdsPoint(actions), !hasImage(request.vision) {
+                pointFailure = ScreenshotGeometry.needsPictureReason
+            }
             let failure: String?
-            if let blocked = ShortcutGuard.blocked(step.actions, goal: goal)
-                ?? TabGuard.blocked(step.actions, listing: observation.tabs, goal: goal) { failure = blocked }
+            if let pointFailure { failure = pointFailure }
+            else if let blocked = ShortcutGuard.blocked(actions, goal: goal)
+                ?? TabGuard.blocked(actions, listing: observation.tabs, goal: goal) { failure = blocked }
             else {
                 let shown = overlay.state
-                failure = await executeCancellable(step.actions, labels: labels, tabs: observation.tabs)
+                failure = await executeCancellable(actions, labels: labels, tabs: observation.tabs)
                 // Only a step that ran clean left the task's page in front; a failed one may not have navigated.
                 if failure == nil, step.actions.contains(where: Self.navigates) { markTaskTab = true }
                 // Badges or a grid are only valid for the screen they were drawn on: once a step has acted, hide
                 // them so the next observation walks the screen afresh (a `.label` click leaves them up, and the
                 // badge map would otherwise be reused). One this step just drew (e.g. "show numbers") stays, and a step
-                // with no actions changed nothing.
-                if !step.actions.isEmpty && shown != .none && overlay.state == shown { overlay.hide() }
+                // with no actions (or only `look`) changed nothing.
+                if !step.actions.isEmpty && !step.actions.allSatisfy({ $0 == .look }) && shown != .none && overlay.state == shown { overlay.hide() }
             }
             stepsRun = n
             // A step cut short by stop stays running, so the panel shows it as stopped, not failed.
@@ -284,6 +334,56 @@ public enum TaskOutcome: Equatable, Sendable {
         return ((r.observation, r.labels), Int(start.duration(to: now()) / .milliseconds(1)), r.fromHarness)
     }
 
+    /// The picture for this step, or why there is none; announces which on the prompt's row first.
+    private func pictureInput(for observation: ScreenObservation, step n: Int) async -> VisionInput {
+        let input = await vision(for: observation)
+        switch input {
+        case .image: onStatus?(.running("step \(n) · \(Self.looking)"))
+        case .unavailable(let why): onStatus?(.running("step \(n) · \(why)"))
+        }
+        return input
+    }
+
+    private func vision(for observation: ScreenObservation) async -> VisionInput {
+        // A single-window capture would leave the open menu or sheet out; the element list already shows it.
+        if observation.surface != nil { return .unavailable("a menu or sheet is open") }
+        var badges: [Int: UIElementInfo] = [:]
+        if case .labels(let shown) = overlay.state { badges = shown }
+        switch await captureCancellable(badges: badges) {
+        case .image(let shot): return .image(shot)
+        case .notGranted: return .unavailable("screen recording not granted")
+        case .failed: return .unavailable("screen capture failed")
+        }
+    }
+
+    /// Races the capture against the deadline and against `cancel()`. ScreenCaptureKit cannot be cancelled and can
+    /// hang, so the loser is never awaited: whichever finishes first resumes the one continuation, and a later
+    /// finisher finds the wait already ended. A capture that loses counts as `.failed`.
+    private func captureCancellable(badges: [Int: UIElementInfo]) async -> ScreenshotResult {
+        guard let provider = screenshots, !isCancelled else { return .failed }
+        captureWaitID += 1
+        let id = captureWaitID
+        let deadline = captureDeadline
+        let result = await withCheckedContinuation { (wait: CheckedContinuation<ScreenshotResult, Never>) in
+            captureWait = wait
+            Task { @MainActor [weak self] in
+                let shot = await provider.capture(badges: badges)
+                self?.endCaptureWait(id: id, with: shot)
+            }
+            Task { @MainActor [weak self] in
+                try? await Task.sleep(for: deadline)
+                self?.endCaptureWait(id: id, with: .failed)
+            }
+        }
+        return isCancelled ? .failed : result
+    }
+
+    private func endCaptureWait(id: Int? = nil, with result: ScreenshotResult) {
+        guard id == nil || id == captureWaitID, let wait = captureWait else { return }
+        captureWait = nil
+        wait.resume(returning: result)
+    }
+
     private enum Resolved { case step(IntentStep), end(TaskOutcome) }
 
     private func resolveCancellable(_ request: StepRequest) async -> Resolved {
@@ -319,6 +419,8 @@ public enum TaskOutcome: Equatable, Sendable {
         if cancelled { task.cancel() }
         await withTaskCancellationHandler { await task.value } onCancel: { task.cancel() }
     }
+
+    private func hasImage(_ v: VisionInput?) -> Bool { if case .image? = v { return true } else { return false } }
 
     static func stoppedHUD(_ intent: String) -> String { intent.isEmpty ? PipelineText.stopped : "stopped: \(intent)" }
 

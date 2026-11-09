@@ -5,14 +5,27 @@ public struct ClaudeRequestBuilder: Sendable {
     /// `output_config.effort`: how much the model thinks before answering. Default "medium" so garbled
     /// transcripts get reasoned about rather than pattern-matched.
     public let effort: String
-    public init(model: String, effort: String = "medium") { self.model = model; self.effort = effort }
+    /// Offer `look`, take picture clicks and attach the request's picture. Fixed for the app's run so the system
+    /// block and schema (the cache prefix) are stable; off, the body is exactly what it was before vision existed.
+    public let vision: Bool
+    public init(model: String, effort: String = "medium", vision: Bool = false) {
+        self.model = model; self.effort = effort; self.vision = vision
+    }
 
     public func body(transcript: String, context: IntentContext) throws -> Data {
         try body(request: StepRequest(oneShot: transcript, context: context))
     }
 
-    public func body(request: StepRequest) throws -> Data {
-        let userContent: [[String: Any]] = Self.userBlocks(request: request).map { ["type": "text", "text": $0] }
+    public func body(request original: StepRequest) throws -> Data {
+        // A builder with vision off never sends pixels, whatever the request holds.
+        var request = original
+        if !vision { request.vision = nil }
+        var userContent: [[String: Any]] = Self.userBlocks(request: request).map { ["type": "text", "text": $0] }
+        if case .image(let shot)? = request.vision {
+            userContent.append(["type": "image", "source": [
+                "type": "base64", "media_type": "image/jpeg", "data": shot.jpeg.base64EncodedString(),
+            ] as [String: Any]])
+        }
         let obj: [String: Any] = [
             "model": model,
             "max_tokens": 1024,
@@ -21,7 +34,7 @@ public struct ClaudeRequestBuilder: Sendable {
             // user message starts with `Step: n of m`, which changes each step, so nothing in it is reusable.
             "system": [[
                 "type": "text",
-                "text": Self.systemText(for: request.observation.harness),
+                "text": Self.systemText(for: request.observation.harness, vision: vision),
                 "cache_control": ["type": "ephemeral"],
             ] as [String: Any]],
             // The full schema on every request, tab kinds included (the Ollama path trims them per request). Changing
@@ -29,7 +42,8 @@ public struct ClaudeRequestBuilder: Sendable {
             // browser and non-browser screens; the system text's tab-kinds rule limits them to a request with a Tabs list.
             "output_config": [
                 "effort": effort,
-                "format": ["type": "json_schema", "schema": IntentSchema.actionsJSONSchema] as [String: Any],
+                "format": ["type": "json_schema",
+                           "schema": vision ? IntentSchema.visionActionsJSONSchema : IntentSchema.actionsJSONSchema] as [String: Any],
             ] as [String: Any],
             "messages": [["role": "user", "content": userContent]],
         ]
@@ -37,8 +51,9 @@ public struct ClaudeRequestBuilder: Sendable {
     }
 
     /// The cached system block: one stable string per harness.
-    static func systemText(for harness: HarnessKind) -> String {
+    static func systemText(for harness: HarnessKind, vision: Bool = false) -> String {
         IntentSchema.systemPrompt(for: harness) + "\n\n" + IntentSchema.tabKindsRule
+            + (vision ? "\n\n" + IntentSchema.visionRules : "")
     }
 
     public static func userMessage(transcript: String, context: IntentContext) -> String {
@@ -77,6 +92,13 @@ public struct ClaudeRequestBuilder: Sendable {
         if !o.readings.isEmpty {
             s += "Read:\n"
             for r in o.readings { s += "  \(sanitize(r, limit: readingLimit))\n" }
+        }
+        switch r.vision {
+        case .image(let shot)?:
+            s += "Screenshot: attached below, \(Int(shot.imageSize.width))x\(Int(shot.imageSize.height)) pixels, the focused window only.\n"
+        case .unavailable(let reason)?:
+            s += "Screenshot: unavailable (\(sanitize(reason))).\n"
+        case nil: break
         }
         s += "\nRequest: \(r.step == 1 ? goal : "Continue toward the goal.")"
         blocks.append(s)
