@@ -91,6 +91,12 @@ public final class OverlayController {
         renderBoard()
     }
 
+    /// A running task's step trail, kept on the prompt's row.
+    public func report(_ id: Int, trail: TaskTrail) {
+        board.report(id: id, trail: trail, now: .now)
+        renderBoard()
+    }
+
     static let boardWidth: CGFloat = 720
     static let boardRowHeight: CGFloat = 30
     static let boardPadding: CGFloat = 8

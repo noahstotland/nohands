@@ -131,6 +131,9 @@ final class FakeElements: ElementProviding, @unchecked Sendable {
     func hide() { state = .none }
     func showHUD(_ text: String, duration: Duration) { huds.append(text) }
     func report(_ id: Int, text: String, status: PromptStatus) { reports.append((id, text, status)) }
+    /// Every trail report, in order.
+    var trails: [(id: Int, trail: TaskTrail)] = []
+    func report(_ id: Int, trail: TaskTrail) { trails.append((id, trail)) }
     func screenBoundsCG(containing point: CGPoint) -> CGRect { CGRect(x: 0, y: 0, width: 1000, height: 800) }
 }
 

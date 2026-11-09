@@ -96,6 +96,8 @@ extension AXQuery: ElementProviding {
     /// The prompt's row on the board at the top of the screen: its words and how far it has got. Reporting an
     /// unknown id adds the row; reporting a known one updates it.
     func report(_ id: Int, text: String, status: PromptStatus)
+    /// A running task's step trail, for the prompt's row. Ignored for an unknown id or a finished row.
+    func report(_ id: Int, trail: TaskTrail)
     func screenBoundsCG(containing point: CGPoint) -> CGRect
 }
 

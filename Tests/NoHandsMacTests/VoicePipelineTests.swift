@@ -78,6 +78,9 @@ private func trace(age: Duration = .zero) -> LatencyTrace {
     #expect(r.input.calls == ["click:140,115"])
     #expect(r.resolver?.lastContext?.overlay == "none")
     #expect(r.pipeline.lastTaskOutcome == .done(""))
+    let id = r.overlay.reports.first?.id
+    #expect(!r.overlay.trails.isEmpty && r.overlay.trails.allSatisfy { $0.id == id })   // the trail rides on the prompt's row
+    #expect(r.overlay.trails.last?.trail.steps.map(\.state) == [.done])
 }
 
 @MainActor @Test func llmLabelClickWithGridShowingStillHitsElement() async {
