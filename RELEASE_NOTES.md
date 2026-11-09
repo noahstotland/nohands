@@ -1,5 +1,11 @@
 # Release notes
 
+## 2026-11-09 always-on status bar overlay with a menu setting (NH-66) (#68)
+
+Merged 2026-11-09 01:10 UTC.
+
+NoHands now shows a small status bar on screen that always says what it is doing, such as Listening, the step of a running task, Paused, or what permission to fix. Use the menu's Status Bar item to move it to the bottom or turn it off.
+
 ## 2026-11-07 install collective-wisdom f49afcc, reject a negated approval (NH-35) (#64)
 
 Merged 2026-11-07 05:59 UTC.
