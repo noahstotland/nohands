@@ -65,7 +65,7 @@ CODESIGN_IDENTITY="Apple Development: Your Name (TEAMID)" scripts/bundle.sh
 
 **Start at Login:** the menu's Start at Login item registers the app as a login item (System Settings > General > Login Items) and shows a tick while it is on; the state is read from macOS each time the menu opens. If you turned NoHands off in Login Items, the item says `allow in Login Items` and opens that pane. It is disabled when NoHands runs without an app bundle (`swift run`); use `build/NoHands.app`. The login item is tied to the app's path and signature, so a rebuild may need re-ticking or re-approval.
 
-**Logs:** each utterance logs one line, `[asr=…ms total=…ms] <transcript> -> <what it did>`, plus one `claude: step N <ms>ms cache=<read>/<written> in=<n>` line per Claude response (token counts only, no text), warm-up results, warnings and errors, through the unified log:
+**Logs:** each utterance logs one line, `[asr=…ms total=…ms sinceVoice=…ms] <transcript> -> <what it did>` (`sinceVoice` counts from the last moment you were heard, so it includes the silence wait that `total` leaves out), plus one `claude: step N <ms>ms cache=<read>/<written> in=<n>` line per Claude response (token counts only, no text), warm-up results, warnings and errors, through the unified log:
 
 ```bash
 log stream --predicate 'subsystem == "dev.nohands.app"'
