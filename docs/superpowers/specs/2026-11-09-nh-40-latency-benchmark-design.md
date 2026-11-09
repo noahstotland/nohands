@@ -1,7 +1,8 @@
 # NH-40: A repeatable latency benchmark — Design
 
 **Date:** 2026-11-09  **Ticket:** [NH-40](https://github.com/noahstotland/nohands/issues/40)
-**Status:** Draft
+**Status:** Shipped
+**Shipped:** in PR #102, with differences: [as-built](../as-built/2026-11-09-nh-40-latency-benchmark.md)
 
 ## Intent
 

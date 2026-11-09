@@ -1,6 +1,6 @@
 # NH-40: A repeatable latency benchmark — As built
 
-**Shipped:** in PR #TBD, with differences
+**Shipped:** in PR #102
 **Ticket:** [NH-40](https://github.com/noahstotland/nohands/issues/40)
 **Spec:** [design](../specs/2026-11-09-nh-40-latency-benchmark-design.md)
 
