@@ -64,3 +64,24 @@ extension ClaudeIntentResolverTests {
         #expect(req.timeoutInterval == 47)   // deadline + 2 s, so the URL loader never fires before the race does
     }
 }
+
+extension ClaudeIntentResolverTests {
+    @Test func resolversReturnPlansAndTreatNonPlansAsNone() async throws {
+        let planText = #"{"plan":[{"intent":"a","do":"open_site","site":"github.com","expect":{"kind":"url_contains","text":"a"}}]}"#
+        var key = AppConfig(); key.anthropicAPIKey = "sk-test"
+        for (text, count) in [(planText, 1), (#"{"plan":null}"#, 0), ("not json", 0)] {
+            let claude = try JSONSerialization.data(withJSONObject: ["content": [["type": "text", "text": text]]])
+            let ollama = try JSONSerialization.data(withJSONObject: ["message": ["role": "assistant", "content": text]])
+            StubProtocol.reset { _ in (200, claude) }
+            let c = try await ClaudeIntentResolver(config: key, session: makeSession()).plan(goal: "g")
+            StubProtocol.reset { _ in (200, ollama) }
+            let o = try await OllamaIntentResolver(config: AppConfig(), session: makeSession()).plan(goal: "g")
+            #expect(c?.steps.count ?? 0 == count && o?.steps.count ?? 0 == count, "\(text)")
+        }
+        // An HTTP error is thrown (the task loop then runs without a plan); a goal-only body went out.
+        StubProtocol.reset { _ in (500, Data("{}".utf8)) }
+        await #expect(throws: IntentError.self) { _ = try await OllamaIntentResolver(config: AppConfig(), session: makeSession()).plan(goal: "g") }
+        let body = String(decoding: try #require(StubProtocol.bodies.first), as: UTF8.self)
+        #expect(body.contains("Goal: g") && !body.contains("Visible elements"))
+    }
+}
