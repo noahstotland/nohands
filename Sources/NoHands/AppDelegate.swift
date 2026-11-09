@@ -58,9 +58,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     // MARK: - menu
 
+    /// The bundled winking-face glyph as a template image, or the `mic` symbol when the PNGs are missing (an unbundled `swift run`).
+    private func menuBarImage() -> NSImage {
+        guard let image = NSImage(named: "MenuBarIcon") else {
+            return NSImage(systemSymbolName: "mic", accessibilityDescription: "NoHands") ?? NSImage()
+        }
+        image.size = NSSize(width: 18, height: 18)
+        image.isTemplate = true
+        image.accessibilityDescription = "NoHands"
+        return image
+    }
+
     private func buildMenu() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        statusItem.button?.image = NSImage(systemSymbolName: "mic", accessibilityDescription: "NoHands")
+        statusItem.button?.image = menuBarImage()
         statusItem.button?.imagePosition = .imageLeading
 
         let menu = NSMenu()
