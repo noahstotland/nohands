@@ -1,7 +1,7 @@
 import Foundation
 
 /// Turns a spoken or model-written site reference into an `http(s)` URL: a known site name ("youtube"),
-/// a bare domain ("youtube.com/@veritasium"), or a full URL. Anything else, including other schemes, is nil.
+/// a bare domain ("youtube.com/@someone"), or a full URL. Anything else, including other schemes, is nil.
 public enum WebAddress {
     /// Spoken names of sites that have no Mac app of the same name (so "open <name>" never hijacks an app).
     public static let knownSites: [String: String] = [

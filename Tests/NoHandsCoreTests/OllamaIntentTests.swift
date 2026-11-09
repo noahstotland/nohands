@@ -20,7 +20,7 @@ import Foundation
     withTabs.observation.tabs = TabListing(app: "Chrome", windows: [], hiddenWindows: 0)
     #expect(IntentSchema.orderedSchema(for: withTabs).foundationObject as? NSDictionary == IntentSchema.actionsJSONSchema as NSDictionary)
     let msgs = try #require(o["messages"] as? [[String: String]])
-    #expect(msgs.first == ["role": "system", "content": IntentSchema.systemPrompt])
+    #expect(msgs.first == ["role": "system", "content": IntentSchema.systemPrompt + "\n\n" + IntentSchema.localNamedTargetRule])
     #expect(msgs.count == 1 + 2 * IntentExamples.turns.count + 1)
     #expect(msgs.last == ["role": "user", "content": ClaudeRequestBuilder.userMessage(transcript: "go back please", context: ctx)])
 }

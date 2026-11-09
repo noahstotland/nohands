@@ -45,9 +45,9 @@ public struct OllamaRequestBuilder: Sendable {
         return obj.data
     }
 
-    /// System prompt, the few-shot examples, then `user` as the final turn.
+    /// System prompt (with the local-only clicking rule), the few-shot examples, then `user` as the final turn.
     private static func messages(ending user: String, harness: HarnessKind) -> [OrderedJSON] {
-        var messages: [OrderedJSON] = [message("system", IntentSchema.systemPrompt(for: harness))]
+        var messages: [OrderedJSON] = [message("system", IntentSchema.systemPrompt(for: harness) + "\n\n" + IntentSchema.localNamedTargetRule)]
         for t in IntentExamples.turns(for: harness) {
             messages.append(message("user", t.user))
             messages.append(message("assistant", t.assistant))
@@ -69,8 +69,9 @@ public enum IntentExamples {
                                    labeledElements: elements.map { (number: $0.0, title: $0.1) }, overlay: overlay)))
     }
 
-    private static let veritasiumGoal = "open veritasium's latest video"
-    private static let veritasiumTitle = "How Electricity Actually Works"
+    // A made-up channel: a real handle in an example is one a small model types into the live task.
+    private static let channelGoal = "open maple ridge workshop's latest video"
+    private static let channelVideo = "Maple Ridge Workshop: Building a Cedar Workbench"
 
     public static let turns: [(user: String, assistant: String)] = [
         (Self.msg("Finder", request: "open chrome and go to youtube"),
@@ -79,8 +80,8 @@ public enum IntentExamples {
          #"{"intent":"Open youtube.com in the default browser.","status":"done","actions":[{"kind":"open_url","url":"https://www.youtube.com"}]}"#),
         (Self.msg("Safari", request: "minimize google chrome"),
          #"{"intent":"Minimize the Google Chrome window.","status":"done","actions":[{"kind":"open_app","app_name":"Google Chrome"},{"kind":"press_key","key":"m","modifiers":["command"]}]}"#),
-        (Self.msg("Safari", elements: [(1, "Back"), (2, "Forward"), (3, "Reload")], overlay: "labels", request: "click the back button"),
-         #"{"intent":"Click the Back button, which is visible element 1.","status":"done","actions":[{"kind":"click","target_kind":"label","target_number":1}]}"#),
+        (Self.msg("Safari", elements: [(6, "Back"), (11, "Forward"), (17, "Reload")], overlay: "labels", request: "click the back button"),
+         #"{"intent":"Click the Back button, which is visible element 6.","status":"done","actions":[{"kind":"click","target_kind":"label","target_number":6}]}"#),
         (Self.msg("Notes", request: "scroll down a lot"),
          #"{"intent":"Scroll down by a large amount.","status":"done","actions":[{"kind":"scroll","direction":"down","amount":15}]}"#),
         (Self.msg("Mail", request: "write hello there and press enter"),
@@ -94,22 +95,22 @@ public enum IntentExamples {
          #"{"intent":"The user asked a question about the weather; this is not a computer action.","status":"ignore","actions":[{"kind":"ignore"}]}"#),
         // Two-step task: step 1 navigates and continues; step 2 sees the channel page and finishes.
         (ClaudeRequestBuilder.userMessage(request: StepRequest(
-            goal: veritasiumGoal, step: 1, maxSteps: 12, history: [],
+            goal: channelGoal, step: 1, maxSteps: 12, history: [],
             observation: ScreenObservation(app: "Finder", mode: .command))),
-         #"{"intent":"Go to the Veritasium channel's Videos tab, where the newest upload is first.","status":"continue","actions":[{"kind":"open_url","url":"https://www.youtube.com/@veritasium/videos"},{"kind":"wait","ms":1500}]}"#),
+         #"{"intent":"Go to the Maple Ridge Workshop channel's Videos tab, where the newest upload is first.","status":"continue","actions":[{"kind":"open_url","url":"https://www.youtube.com/@mapleridgeworkshop/videos"},{"kind":"wait","ms":1500}]}"#),
         (ClaudeRequestBuilder.userMessage(request: StepRequest(
-            goal: veritasiumGoal, step: 2, maxSteps: 12,
+            goal: channelGoal, step: 2, maxSteps: 12,
             history: [StepRecord(
-                intent: "Go to the Veritasium channel's Videos tab, where the newest upload is first.",
-                actions: [.openURL(URL(string: "https://www.youtube.com/@veritasium/videos")!, app: nil), .wait(ms: 1500)])],
+                intent: "Go to the Maple Ridge Workshop channel's Videos tab, where the newest upload is first.",
+                actions: [.openURL(URL(string: "https://www.youtube.com/@mapleridgeworkshop/videos")!, app: nil), .wait(ms: 1500)])],
             observation: ScreenObservation(
-                app: "Google Chrome", windowTitle: "Veritasium - YouTube", url: "https://www.youtube.com/@veritasium/videos",
+                app: "Google Chrome", windowTitle: "Maple Ridge Workshop - YouTube", url: "https://www.youtube.com/@mapleridgeworkshop/videos",
                 mode: .command,
                 elements: [ObservedElement(number: 1, role: "AXLink", title: "Home"),
                            ObservedElement(number: 2, role: "AXLink", title: "Videos"),
                            ObservedElement(number: 3, role: "AXLink", title: "Shorts"),
-                           ObservedElement(number: 4, role: "AXLink", title: veritasiumTitle)]))),
-         #"{"intent":"The Videos tab is showing; open the first (newest) video.","status":"done","actions":[{"kind":"click","target_kind":"label","target_number":4}]}"#),
+                           ObservedElement(number: 4, role: "AXLink", title: channelVideo)]))),
+         #"{"intent":"The Videos tab is showing; open the first (newest) video.","status":"done","actions":[{"kind":"click","target_kind":"element","target_name":"Maple Ridge Workshop: Building a Cedar Workbench"}]}"#),
         // A site request from a non-browser app with a distracting element list: small models otherwise answer ignore.
         // Kept last (closest to the live request): qwen2.5:7b ignores such requests when this sits earlier.
         (Self.msg("Xcode", elements: [(1, "Run"), (2, "Stop"), (3, "Navigator"), (4, "Inspectors")], request: "go to netflix"),
@@ -124,9 +125,11 @@ public enum IntentExamples {
          #"{"intent":"Run the Save As… command from the File menu.","status":"continue","actions":[{"kind":"menu_item","target_name":"File > Save As…"},{"kind":"wait","wait_for":"window","value":"Save","app_name":"TextEdit","timeout_ms":5000}]}"#),
         (harnessMsg("Safari", windowTitle: "Start Page", elements: [
             ObservedElement(number: 1, role: "button", title: "Back", states: ["disabled"]),
-            ObservedElement(number: 2, role: "textfield", title: "Address and Search", value: ""),
-            ObservedElement(number: 3, role: "button", title: "Search")], request: "search for cats"),
-         #"{"intent":"Put \"cats\" in the search field and run the search.","status":"done","actions":[{"kind":"set_value","target_kind":"label","target_number":2,"value":"cats"},{"kind":"click","target_kind":"label","target_number":3}]}"#),
+            ObservedElement(number: 2, role: "button", title: "Forward", states: ["disabled"]),
+            ObservedElement(number: 3, role: "button", title: "Reload"),
+            ObservedElement(number: 4, role: "textfield", title: "Address and Search", value: ""),
+            ObservedElement(number: 5, role: "button", title: "Search")], request: "search for cats"),
+         #"{"intent":"Put \"cats\" in the search field and run the search.","status":"done","actions":[{"kind":"set_value","target_kind":"label","target_number":4,"value":"cats"},{"kind":"click","target_kind":"element","target_name":"Search"}]}"#),
     ]
 
     /// The few-shot turns for a harness: the native set, plus the harness turns when agent-desktop observes.
