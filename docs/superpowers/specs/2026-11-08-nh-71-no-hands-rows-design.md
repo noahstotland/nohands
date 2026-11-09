@@ -1,8 +1,9 @@
 # NH-71: Add the No Hands rows to project.md
 
 **Date:** 2026-11-08
-**Status:** Draft
+**Status:** Shipped
 **Ticket:** [NH-71](https://github.com/noahstotland/nohands/issues/71)
+**Shipped:** in PR #72, as specified
 
 ## Goal
 
