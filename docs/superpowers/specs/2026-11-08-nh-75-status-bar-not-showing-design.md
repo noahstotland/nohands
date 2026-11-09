@@ -1,7 +1,8 @@
 # NH-75: Fix the always-on status bar not showing on screen — Design
 
 **Date:** 2026-11-08  **Ticket:** [NH-75](https://github.com/noahstotland/nohands/issues/75)
-**Status:** Draft
+**Status:** Shipped
+**Shipped:** in PR #88, as specified
 
 ## Intent
 
