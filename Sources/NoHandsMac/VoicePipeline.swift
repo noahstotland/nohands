@@ -1,7 +1,7 @@
 import Foundation
 import NoHandsCore
 
-/// mic -> VAD -> assembler -> (bounded queue, newest 2) -> ASR -> (serial job stream) -> ModeMachine -> executor / resolver.
+/// mic -> VAD -> assembler -> (bounded queue, newest 4: early and full jobs) -> ASR -> (serial job stream) -> ModeMachine -> executor / resolver.
 ///
 /// Audio, VAD and ASR run off the main actor. Everything that touches the executor, overlay or mode machine
 /// runs in ONE main-actor consumer task, so utterances are executed strictly one after another.
@@ -136,6 +136,70 @@ import NoHandsCore
         }
     }
 
+    /// True when the grammar parses `transcript` (after the attention word) to actions carrying spoken text, or does not
+    /// parse it at all: such a command keeps the full silence window.
+    nonisolated static func carriesSpokenText(_ transcript: String, grammar: CommandGrammar,
+                                              attention: AttentionGate = .off) -> Bool {
+        var phrase = transcript
+        if case .addressed(let rest) = attention.check(transcript) { phrase = rest }
+        return grammar.parse(phrase)?.carriesSpokenText ?? true
+    }
+
+    /// One unit of work for the serial ASR loop. `early` is a pass over the audio so far, started after a short
+    /// silence while the utterance is still open; `full` is the closed utterance.
+    struct ASRJob: Sendable {
+        enum Kind: Sendable { case early, full }
+        var kind: Kind
+        var segment: UtteranceSegment
+        /// When the job was created: the full job's utterance end, or the moment of the short silence.
+        var at: ContinuousClock.Instant
+        /// When the last voiced chunk arrived.
+        var voiceEnd: ContinuousClock.Instant?
+    }
+
+    /// The ASR loop: transcribes jobs one at a time, so an early pass always finishes before the full pass of its
+    /// segment. Internal so tests can drive it with a fake transcriber.
+    nonisolated static func runASR(_ jobs: AsyncStream<ASRJob>, transcriber: any Transcribing, merge: MergeBuffer) async {
+        var ledger = EarlyCloseLedger()
+        for await job in jobs {
+            var trace = LatencyTrace()
+            trace.speechEnd = job.at
+            trace.voiceEnd = job.voiceEnd
+            switch job.kind {
+            case .early:
+                // The utterance is still open: a pass that is skipped, fails or hears nothing changes nothing.
+                guard let audio = ledger.audio(forEarly: job.segment) else { continue }
+                do {
+                    let text = try await transcriber.transcribe(audio)
+                    trace.asrDone = .now
+                    // Record only an accepted early close; a rejected one leaves the whole segment to the full pass.
+                    if !text.isEmpty, await merge.earlyTranscript(text, trace: trace) {
+                        ledger.recordEarlyClose(job.segment)
+                    }
+                } catch {
+                    PipelineLog.error("asr error (early pass skipped)", detail: "\(error)")
+                }
+            case .full:
+                guard let audio = ledger.audio(forFull: job.segment) else {
+                    await merge.speechAbandoned()   // an early close already used all the voiced audio
+                    continue
+                }
+                do {
+                    let text = try await transcriber.transcribe(audio)
+                    trace.asrDone = .now
+                    if text.isEmpty {
+                        await merge.speechAbandoned()
+                    } else {
+                        await merge.transcript(text, trace: trace)
+                    }
+                } catch {
+                    PipelineLog.error("asr error (utterance skipped)", detail: "\(error)")
+                    await merge.speechAbandoned()
+                }
+            }
+        }
+    }
+
     /// Loads VAD, warms up ASR (first call only) and starts the microphone.
     public func start() async throws {
         guard mic == nil, !starting else { return }
@@ -151,7 +215,7 @@ import NoHandsCore
         // stop() always cancels activeTask, so the old task's held-job loop sees Task.isCancelled and ends promptly.
         await activeTask?.value
 
-        if vad == nil { vad = try await VoiceActivity(silenceMs: config.silenceMs) }
+        if vad == nil { vad = try await VoiceActivity(silenceMs: config.silenceMs, earlySilenceMs: config.earlySilenceMs) }
         let vad = self.vad!
         await vad.reset()
         if !warmedUp { warmedUp = await warmUp() }
@@ -159,9 +223,8 @@ import NoHandsCore
         guard requested == stopGeneration else { return }   // stop()/pause() arrived while we were loading
 
         let (chunks, chunkCont) = AsyncStream<[Float]>.makeStream(bufferingPolicy: .unbounded)
-        // At most 2 pending utterances; when full the OLDEST is dropped.
-        let (utterances, uttCont) = AsyncStream<(samples: [Float], at: ContinuousClock.Instant)>
-            .makeStream(bufferingPolicy: .bufferingNewest(2))
+        // At most 4 pending jobs (early passes share the queue with utterances); when full the OLDEST is dropped.
+        let (utterances, uttCont) = AsyncStream<ASRJob>.makeStream(bufferingPolicy: .bufferingNewest(4))
         let (jobs, jobCont) = AsyncStream<Job>.makeStream(bufferingPolicy: .bufferingNewest(2))
 
         let grammar = CommandGrammar(config: config.grammarConfig)
@@ -170,6 +233,7 @@ import NoHandsCore
             merger: UtteranceMerger(windowMs: config.mergeWindowMs, unfinishedWindowMs: config.mergeWindowUnfinishedMs),
             gate: attention,
             isComplete: { Self.isComplete($0, mode: $1, grammar: grammar, attention: attention) },
+            carriesSpokenText: { Self.carriesSpokenText($0, grammar: grammar, attention: attention) },
             onHold: { [weak self] text in
                 Task { @MainActor in self?.listening(text) }
             },
@@ -205,16 +269,22 @@ import NoHandsCore
 
         let vadTask = Task.detached {
             var assembler = UtteranceAssembler()
+            var voiceEnd: ContinuousClock.Instant?
             for await chunk in chunks {
                 do {
-                    let ev = try await vad.process(chunk)
+                    let step = try await vad.analyze(chunk)
+                    let ev = step.event
                     if ev == .speechStart { await merge.speechStarted() }
-                    if let utterance = assembler.push(chunk, event: ev) {
-                        if case .dropped = uttCont.yield((utterance, .now)) {
+                    if step.voiced { voiceEnd = .now }
+                    if let segment = assembler.pushSegment(chunk, event: ev, voiced: step.voiced) {
+                        let job = ASRJob(kind: .full, segment: segment, at: .now, voiceEnd: voiceEnd)
+                        if case .dropped = uttCont.yield(job) {
                             PipelineLog.warning("asr backlog: dropped oldest pending utterance")
                         }
                     } else if ev == .speechEnd {
                         await merge.speechAbandoned()   // too short to transcribe
+                    } else if ev == .earlySilence, await merge.wantsEarlyPass, let segment = assembler.snapshot() {
+                        uttCont.yield(ASRJob(kind: .early, segment: segment, at: .now, voiceEnd: voiceEnd))
                     }
                 } catch {
                     PipelineLog.error("vad error (state reset)", detail: "\(error)")
@@ -225,22 +295,7 @@ import NoHandsCore
             uttCont.finish()
         }
         let asrTask = Task.detached {
-            for await utterance in utterances {
-                var trace = LatencyTrace()
-                trace.speechEnd = utterance.at
-                do {
-                    let text = try await transcriber.transcribe(utterance.samples)
-                    trace.asrDone = .now
-                    if text.isEmpty {
-                        await merge.speechAbandoned()
-                    } else {
-                        await merge.transcript(text, trace: trace)
-                    }
-                } catch {
-                    PipelineLog.error("asr error (utterance skipped)", detail: "\(error)")
-                    await merge.speechAbandoned()
-                }
-            }
+            await Self.runASR(utterances, transcriber: transcriber, merge: merge)
             jobCont.finish()
         }
         // The single serial consumer: each job is fully handled (including awaiting the executor) before the next.
