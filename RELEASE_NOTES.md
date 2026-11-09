@@ -1,5 +1,11 @@
 # Release notes
 
+## 2026-11-09 small-model slip guards for the task loop (NH-90) (#97)
+
+Merged 2026-11-09 04:55 UTC.
+
+Small local models now recover better in multi-step tasks: a typed web address is opened instead of typed, a stray click on the app's menu bar is refused, and a model that repeats a step is told to try something else. Nothing for you to do.
+
 ## 2026-11-09 default the Claude model to Haiku at low effort (NH-95) (#96)
 
 Merged 2026-11-09 04:49 UTC.
