@@ -4,10 +4,25 @@ import Foundation
 
 @Test func configDefaultsAndEnvOverride() throws {
     let c = try AppConfig.load(from: nil, environment: [:])
-    #expect(c.intentModel == "claude-opus-5-5"); #expect(c.silenceMs == 1000); #expect(c.intentEffort == "medium"); #expect(c.mergeWindowMs == 500); #expect(c.anthropicAPIKey == nil)
+    #expect(c.intentModel == "claude-haiku-5-5"); #expect(c.silenceMs == 1000); #expect(c.intentEffort == "low"); #expect(c.mergeWindowMs == 500); #expect(c.anthropicAPIKey == nil)
     let json = #"{"anthropicAPIKey":"file-key","silenceMs":500,"unknownKey":1}"#.data(using: .utf8)
     let d = try AppConfig.load(from: json, environment: ["ANTHROPIC_API_KEY": "env-key"])
     #expect(d.anthropicAPIKey == "env-key"); #expect(d.silenceMs == 500)
+}
+
+@Test func intentModelAndEffortDefaultsAndOverrides() throws {
+    let table: [(String?, String, String)] = [
+        (nil, "claude-haiku-5-5", "low"),
+        ("{}", "claude-haiku-5-5", "low"),
+        (#"{"intentModel":"claude-opus-5-5"}"#, "claude-opus-5-5", "low"),
+        (#"{"intentEffort":"medium"}"#, "claude-haiku-5-5", "medium"),
+        (#"{"intentEffort":"turbo"}"#, "claude-haiku-5-5", "low"),
+    ]
+    #expect(AppConfig().intentModel == "claude-haiku-5-5" && AppConfig().intentEffort == "low")
+    for (json, model, effort) in table {
+        let c = try AppConfig.load(from: json.map { Data($0.utf8) }, environment: [:])
+        #expect(c.intentModel == model && c.intentEffort == effort, "\(json ?? "nil")")
+    }
 }
 
 @Test func configClampsValues() throws {

@@ -10,7 +10,7 @@ import Foundation
     #expect(obj["max_tokens"] as? Int == 1024)
     #expect(obj["fallbacks"] as? String == "default")
     let oc = try #require(obj["output_config"] as? [String: Any])
-    #expect(oc["effort"] as? String == "medium")
+    #expect(oc["effort"] as? String == "low")
     let fmt = try #require(oc["format"] as? [String: Any])
     #expect(fmt["type"] as? String == "json_schema")
     #expect(fmt["schema"] != nil)

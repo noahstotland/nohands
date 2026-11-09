@@ -6,9 +6,9 @@ public enum DesktopHarnessChoice: String, Codable, Sendable, CaseIterable { case
 
 public struct AppConfig: Codable, Equatable, Sendable {
     public var anthropicAPIKey: String?
-    public var intentModel: String = "claude-opus-5-5"
+    public var intentModel: String = "claude-haiku-5-5"
     /// Claude `output_config.effort`: low | medium | high | xhigh | max.
-    public var intentEffort: String = "medium"
+    public var intentEffort: String = "low"
     public var asrModelVersion: String = "v2"
     /// Trailing silence (ms) before the VAD ends an utterance. 1000 ms lets the user pause mid-command.
     public var silenceMs: Int = 1000

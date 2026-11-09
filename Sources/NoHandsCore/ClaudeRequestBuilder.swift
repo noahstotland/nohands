@@ -2,13 +2,13 @@ import Foundation
 
 public struct ClaudeRequestBuilder: Sendable {
     public let model: String
-    /// `output_config.effort`: how much the model thinks before answering. Default "medium" so garbled
-    /// transcripts get reasoned about rather than pattern-matched.
+    /// `output_config.effort`: how much the model thinks before answering. Defaults to `AppConfig`'s
+    /// `intentEffort`, so the two cannot drift apart.
     public let effort: String
     /// Offer `look`, take picture clicks and attach the request's picture. Fixed for the app's run so the system
     /// block and schema (the cache prefix) are stable; off, the body is exactly what it was before vision existed.
     public let vision: Bool
-    public init(model: String, effort: String = "medium", vision: Bool = false) {
+    public init(model: String, effort: String = AppConfig().intentEffort, vision: Bool = false) {
         self.model = model; self.effort = effort; self.vision = vision
     }
 
