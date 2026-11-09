@@ -31,6 +31,9 @@ public enum SiteSearch {
         "apple.com": "https://www.apple.com/us/search/",
     ]
 
+    /// The `templates` keys, sorted: the sites a plan may name. The one list; nothing else spells them out.
+    public static let siteNames: [String] = templates.keys.sorted()
+
     /// The search results page for `query` on the site at `host`; nil for a site with no known search page.
     public static func url(host: String, query: String) -> URL? {
         guard let match = templateKey(forHost: host), let q = encoded(query) else { return nil }

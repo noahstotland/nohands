@@ -821,8 +821,8 @@ private let seesScreen = "step 2 · looking at the screen"
 
 private let planGoal = "play the maple video on clipbox"
 
-private func planStep(_ kind: PlanStepKind, _ check: PlanCheck, url: String? = nil, text: String? = nil) -> PlanStep {
-    PlanStep(intent: "plan \(kind.rawValue)", kind: kind, url: url, text: text, check: check)
+private func planStep(_ kind: PlanStepKind, _ check: PlanCheck, site: String? = nil, text: String? = nil) -> PlanStep {
+    PlanStep(intent: "plan \(kind.rawValue)", kind: kind, site: site, text: text, check: check)
 }
 private let clickMaple = planStep(.click, PlanCheck(kind: .elementPresent, text: "Maple"), text: "Maple")
 private let playing = planStep(.waitForMedia, PlanCheck(kind: .mediaPlaying))
@@ -841,12 +841,12 @@ private let pageHasMaple = [el(1, "Maple"), el(2, "Pause (k)")]
 }
 
 @MainActor @Test func aPlanThatMissesHandsOverToTheModelWithItsStepsAsHistory() async {
-    let blocked = "no browser for clipbox.test"
+    let blocked = "no browser for github.com"
     // (the plan, the executor's browser, the failure the model's History ends with, the History length)
     let table: [([PlanStep], String?, String, Int)] = [
         ([planStep(.click, PlanCheck(kind: .elementPresent, text: "Maple banner"), text: "Maple"), playing], "Safari",
          "plan step 1 did not reach its element_present check", 2),
-        ([planStep(.openURL, PlanCheck(kind: .titleContains, text: "maple"), url: "https://clipbox.test/maple"), playing], nil, blocked, 1),
+        ([planStep(.openSite, PlanCheck(kind: .titleContains, text: "maple"), site: "github.com"), playing], nil, blocked, 1),
     ]
     for (steps, browser, failure, length) in table {
         let resolver = FakeResolver([step("took over", .done)])

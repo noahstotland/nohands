@@ -29,22 +29,50 @@ private func json(_ data: Data) -> [String: Any] { try! JSONSerialization.jsonOb
     }
 }
 
-@Test func planPromptNamesNoSiteAndItsExamplesCannotRun() throws {
-    let banned = WebAddress.knownSites.keys.filter { $0.count > 2 } + ["channel", "handle", "playlist", "subscribe"]
-    func names(_ word: String, in text: String) -> Bool {
-        let spaced = " " + text.lowercased().split(whereSeparator: { !$0.isLetter && !$0.isNumber }).joined(separator: " ") + " "
-        return spaced.contains(" \(word) ")
+/// Every `properties` object in the schema, with its `required` list.
+private func objects(in node: Any) -> [(properties: Set<String>, required: Set<String>)] {
+    var found: [(Set<String>, Set<String>)] = []
+    if let d = node as? [String: Any] {
+        if let props = d["properties"] as? [String: Any] {
+            found.append((Set(props.keys), Set(d["required"] as? [String] ?? [])))
+        }
+        for v in d.values { found += objects(in: v) }
+    } else if let a = node as? [Any] {
+        for v in a { found += objects(in: v) }
     }
-    for word in banned { #expect(!names(word, in: PlanQuestion.systemPrompt), "prompt names \(word)") }
+    return found
+}
+
+@Test func planSchemaOffersOnlyListedSitesAndHasNoOptionalProperties() throws {
+    let schema = PlanQuestion.orderedSchema.foundationObject
+    func site(_ n: Any) -> [String]? {
+        if let d = n as? [String: Any] {
+            if let s = (d["properties"] as? [String: Any])?["site"] as? [String: Any] { return s["enum"] as? [String] }
+            return d.values.lazy.compactMap(site).first
+        }
+        if let a = n as? [Any] { return a.lazy.compactMap(site).first }
+        return nil
+    }
+    // The enum is the site list plus "" (a step with no site): constrained decoding cannot write an address.
+    #expect(site(schema) == [""] + SiteSearch.siteNames)
+    // Claude refuses a schema with many optional properties: all of them are required.
+    let all = objects(in: schema)
+    #expect(all.count == 3)
+    for o in all { #expect(o.properties == o.required) }
+}
+
+@Test func planPromptListsTheSitesAndNamesNoFlow() throws {
+    for site in SiteSearch.siteNames { #expect(PlanQuestion.systemPrompt.contains(site), "\(site)") }
+    // Outside the site list the prompt and its examples name no site flow, and carry no address.
+    let listless = PlanQuestion.systemPrompt.replacingOccurrences(of: SiteSearch.siteNames.joined(separator: ", "), with: "")
+    let banned = ["youtube", "channel", "handle", "playlist", "subscribe", "http", "://"]
+    let text = (listless + PlanQuestion.examples.map { $0.goal + $0.answer }.joined()).lowercased()
+    for word in banned { #expect(!text.contains(word), "names \(word)") }
     var nulls = 0
     for (goal, answer) in PlanQuestion.examples {
-        for word in banned { #expect(!names(word, in: goal + " " + answer), "example names \(word)") }
         guard let plan = TaskPlan.decode(fromPayloadText: answer) else { nulls += 1; continue }
-        // Every example decodes, and copying it verbatim is refused: each address is on the reserved `.example`.
-        let urls = plan.steps.compactMap(\.url)
-        #expect(!urls.isEmpty)
-        for u in urls { #expect(URL(string: u)?.host?.hasSuffix(".example") == true, "\(u)") }
-        #expect(plan.validated(goal: goal) == nil, "\(goal)")
+        // An example is a plan that passes the rules for its own goal, on sites from the list.
+        #expect(plan.validated(goal: goal) != nil, "\(goal)")
     }
     #expect(nulls == 2)
 }

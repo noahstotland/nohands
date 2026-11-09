@@ -65,9 +65,15 @@ public struct PlanEngine: Sendable {
 
     private static func compile(_ step: PlanStep, _ o: ScreenObservation, frames: [Int: CGRect], clickedPlay: inout Bool) -> Compiled {
         switch step.kind {
-        case .openURL:
-            guard let url = step.url.flatMap(URL.init(string:)) else { return .missing(retry: false) }
+        case .openSite:
+            // The address comes from the site table, never from the plan.
+            guard let site = step.site, SiteSearch.siteNames.contains(site), let url = WebAddress.url(for: site) else {
+                return .missing(retry: false)
+            }
             return .actions([.openURL(url, app: nil), .wait(ms: settleMs)])
+        case .search:
+            guard let site = step.site, SiteSearch.siteNames.contains(site), let text = step.text else { return .missing(retry: false) }
+            return .actions([.searchSite(text, site: site), .wait(ms: settleMs)])
         case .click:
             guard let n = PlanTargets.click(text: step.text ?? "", in: o.elements) else { return .missing(retry: true) }
             return .actions([.click(.label(n), button: .left, count: 1)])

@@ -67,7 +67,7 @@ extension ClaudeIntentResolverTests {
 
 extension ClaudeIntentResolverTests {
     @Test func resolversReturnPlansAndTreatNonPlansAsNone() async throws {
-        let planText = #"{"plan":[{"intent":"a","do":"open_url","url":"https://a.test","expect":{"kind":"url_contains","text":"a"}}]}"#
+        let planText = #"{"plan":[{"intent":"a","do":"open_site","site":"github.com","expect":{"kind":"url_contains","text":"a"}}]}"#
         var key = AppConfig(); key.anthropicAPIKey = "sk-test"
         for (text, count) in [(planText, 1), (#"{"plan":null}"#, 0), ("not json", 0)] {
             let claude = try JSONSerialization.data(withJSONObject: ["content": [["type": "text", "text": text]]])
