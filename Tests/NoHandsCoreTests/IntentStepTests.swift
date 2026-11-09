@@ -78,6 +78,25 @@ import Foundation
     #expect(ClaudeRequestBuilder.userMessage(request: req) == expected)
 }
 
+@Test func twoIdenticalStepsInARowGetANudgeOnEitherBackend() {
+    let scroll: [Action] = [.scroll(.down, amount: 3)], back: [Action] = [.click(.label(2), button: .left, count: 1)]
+    func message(_ lists: [[Action]]) -> String {
+        let history = lists.map { StepRecord(intent: "x", actions: $0) }
+        return ClaudeRequestBuilder.userMessage(request: StepRequest(
+            goal: "g", step: lists.count + 1, maxSteps: 12, history: history, observation: ScreenObservation(app: "A", mode: .command)))
+    }
+    let nudge = "  Steps 2 and 3 ran the same actions. Try a different approach now; a third identical step ends the task.\nApp: A"
+    #expect(message([back, scroll, scroll]).contains(nudge))
+    for lists in [[scroll], [scroll, back], [back, scroll, back], [[], []]] {
+        #expect(!message(lists).contains("ran the same actions"), "\(lists)")
+    }
+    // The Ollama body carries the same user message.
+    let body = try? OllamaRequestBuilder(model: "m").body(request: StepRequest(
+        goal: "g", step: 3, maxSteps: 12, history: [StepRecord(intent: "x", actions: scroll), StepRecord(intent: "x", actions: scroll)],
+        observation: ScreenObservation(app: "A", mode: .command)))
+    #expect(body.flatMap { String(data: $0, encoding: .utf8) }?.contains("Steps 1 and 2 ran the same actions") == true)
+}
+
 @Test func stepOneRepeatsGoalAndSanitizesEverything() {
     let long = String(repeating: "a", count: 200)
     let req = StepRequest(goal: "go\nnow", step: 1, maxSteps: 5, history: [],
@@ -102,10 +121,39 @@ import Foundation
     let users = IntentExamples.turns.map(\.user)
     let step2 = try #require(users.first { $0.contains("Step: 2 of") })
     #expect(step2.contains("  1. ") && step2.contains("(ok)"))
-    #expect(step2.contains("URL: https://www.youtube.com/@veritasium/videos"))
+    #expect(step2.contains("URL: https://www.youtube.com/@mapleridgeworkshop/videos"))
     #expect(step2.contains("[link] Videos"))
     #expect(step2.hasSuffix("Request: Continue toward the goal."))
     #expect(IntentExamples.turns.last.map { $0.assistant.contains("\"done\"") } == true)
+}
+
+@Test func examplesDoNotTeachTheSlipsOrCarryARealHandle() throws {
+    let all = IntentExamples.turns(for: .agentDesktop)
+    let text = all.flatMap { [$0.user, $0.assistant] }.joined(separator: "\n") + IntentSchema.systemPrompt
+    // The only channel handle anywhere is the made-up one, and nothing is a copy of the live goal.
+    let handles = Set(text.matches(of: /@[A-Za-z0-9_]+/).map { String($0.output) })
+    #expect(handles == ["@mapleridgeworkshop"])
+    #expect(!text.lowercased().contains("outdoor"))
+    // The step-2 example answers by name and its title is the example's own; no example types a URL.
+    #expect(all.contains { $0.assistant.contains(#""target_kind":"element","target_name":"Maple Ridge Workshop"#) })
+    #expect(!text.contains("type a URL"))
+    // A number in an example is one a small model copies onto a screen: no two examples click the same one.
+    let numbers = all.flatMap { $0.assistant.matches(of: /"target_kind":"label","target_number":(\d+)/).map { String($0.output.1) } }
+    #expect(numbers.count >= 2 && Set(numbers).count == numbers.count, "\(numbers)")
+    #expect(IntentExamples.turns.last?.user.contains("go to netflix") == true)
+}
+
+@Test func localNamedTargetRuleIsOllamaOnlyAndWarmUpStillMatches() throws {
+    let rule = IntentSchema.localNamedTargetRule
+    let r = StepRequest(goal: "g", step: 1, maxSteps: 2, history: [], observation: ScreenObservation(app: "Finder", mode: .command))
+    func system(_ data: Data) throws -> String {
+        let o = try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+        return try #require(((o["messages"] as? [[String: Any]])?.first?["content"]) as? String)
+    }
+    let local = try system(OllamaRequestBuilder(model: "m").body(request: r))
+    let warm = try system(OllamaRequestBuilder(model: "m").warmBody())
+    #expect(local.hasSuffix(rule) && local == warm)
+    #expect(!ClaudeRequestBuilder.systemText(for: .native).contains(rule))
 }
 
 @Test func oneShotAdapterMatchesLegacyWrapper() {
@@ -190,7 +238,7 @@ import Foundation
 }
 
 @Test func claudeBodyCachesSystemPromptAndSplitsUserMessage() throws {
-    let record = { (i: String, f: String?) -> StepRecord in StepRecord(intent: i, actions: [.wait(ms: 100)], failure: f) }
+    let record = { (i: String, f: String?) -> StepRecord in StepRecord(intent: i, actions: [.openApp(i)], failure: f) }
     for harness in [HarnessKind.native, .agentDesktop] {
         var o = ScreenObservation(app: "Chrome", windowTitle: "W", mode: .command,
                                   elements: [ObservedElement(number: 1, role: "AXLink", title: "A")])

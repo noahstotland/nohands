@@ -70,6 +70,21 @@ public enum LabelAssigner {
         return result
     }
 
+    /// A top-level item of the app's menu bar (native role `AXMenuBarItem`). agent-desktop's `menuitem` is not one.
+    public static func isMenuBarItem(_ element: UIElementInfo) -> Bool {
+        var role = element.role.lowercased()
+        if role.hasPrefix("ax") { role.removeFirst(2) }
+        return role == "menubaritem"
+    }
+
+    /// Renumbers from 1 with the page's elements first, in their order, and the menu-bar items after them, so the
+    /// element list's cap cuts the menu bar and a model copying the first numbers it sees lands on the page.
+    public static func menuBarLast(_ labels: [Int: UIElementInfo]) -> [Int: UIElementInfo] {
+        let ordered = labels.keys.sorted().compactMap { labels[$0] }
+        let sorted = ordered.filter { !isMenuBarItem($0) } + ordered.filter(isMenuBarItem)
+        return Dictionary(uniqueKeysWithValues: sorted.enumerated().map { ($0.offset + 1, $0.element) })
+    }
+
     /// Exact (case-insensitive) title match first, then prefix, then contains; nil if none.
     public static func find(named name: String, in elements: [UIElementInfo]) -> UIElementInfo? {
         let q = name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()

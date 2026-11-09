@@ -65,7 +65,7 @@ public struct ClaudeRequestBuilder: Sendable {
     }
 
     /// The user message in pieces, in order: goal and step, one block per history record (the first carries the
-    /// `History:` header), then the observation through the `Request:` line. Joined, they are `userMessage`.
+    /// `History:` header), then, after two identical steps, a note to change approach, then the observation through the `Request:` line. Joined, they are `userMessage`.
     public static func userBlocks(request r: StepRequest) -> [String] {
         let o = r.observation
         let goal = sanitize(r.goal, limit: 300)
@@ -73,6 +73,10 @@ public struct ClaudeRequestBuilder: Sendable {
         for (i, h) in r.history.enumerated() {
             let outcome = h.failure.map { "FAILED: \(sanitize($0))" } ?? "ok"
             blocks.append((i == 0 ? "History:\n" : "") + "  \(i + 1). \(sanitize(h.intent)) -> \(ActionSummary.kinds(h.actions)) (\(outcome))\n")
+        }
+        // Two identical steps in a row: say so while a third (which ends the task) can still be avoided.
+        if let last = r.history.last, r.history.count >= 2, !last.actions.isEmpty, r.history[r.history.count - 2].actions == last.actions {
+            blocks.append("  Steps \(r.history.count - 1) and \(r.history.count) ran the same actions. Try a different approach now; a third identical step ends the task.\n")
         }
         var s = "App: \(sanitize(o.app))   Window: \(sanitize(o.windowTitle).nonEmpty ?? "-")   URL: \(o.url.map { sanitize($0) } ?? "-")\n"
         s += "Mode: \(o.mode.rawValue)   Overlay: \(sanitize(o.overlay))   Harness: \(o.harness.rawValue)\n"

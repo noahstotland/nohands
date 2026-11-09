@@ -33,11 +33,16 @@ public struct ScreenObserver: Sendable {
     }
 
     /// The native walk; `all` is every element it found, before the untitled filter and the cap.
-    private func observeNative(mode: Mode, overlay: OverlayState, screens: [CGRect]?)
+    /// `menuBarLast` (the task loop) numbers the menu bar after the page's elements; badges already showing keep the
+    /// numbers the user can see.
+    private func observeNative(mode: Mode, overlay: OverlayState, screens: [CGRect]?, menuBarLast: Bool = false)
         -> (observation: ScreenObservation, labels: [Int: UIElementInfo], all: [UIElementInfo]) {
-        let all: [Int: UIElementInfo]
+        var all: [Int: UIElementInfo]
         if case .labels(let badges) = overlay { all = badges }
-        else { all = LabelAssigner.assign(screens.map { ax.actionableElements(screens: $0) } ?? ax.actionableElements()) }
+        else {
+            all = LabelAssigner.assign(screens.map { ax.actionableElements(screens: $0) } ?? ax.actionableElements())
+            if menuBarLast { all = LabelAssigner.menuBarLast(all) }
+        }
         var listed: [ObservedElement] = []
         var snapshot: [Int: UIElementInfo] = [:]
         for n in all.keys.sorted() {
@@ -48,9 +53,12 @@ public struct ScreenObserver: Sendable {
             listed.append(ObservedElement(number: n, role: role.lowercased(), title: e.title))
             snapshot[n] = e
         }
-        let observation = ScreenObservation(
+        var observation = ScreenObservation(
             app: ax.frontmostAppName() ?? "", windowTitle: ax.focusedWindowTitle() ?? "",
             url: ax.webURL(), mode: mode, overlay: overlay.kindName, elements: listed)
+        observation.menuBarTitles = all.keys.sorted().compactMap { all[$0] }
+            .filter { LabelAssigner.isMenuBarItem($0) && !$0.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+            .map(\.title)
         return (observation, snapshot, all.keys.sorted().compactMap { all[$0] })
     }
 
@@ -77,11 +85,11 @@ public struct ScreenObserver: Sendable {
                 every = snap.elements
                 fromHarness = true
             } else {
-                let native = observeNative(mode: mode, overlay: overlay, screens: screens)
+                let native = observeNative(mode: mode, overlay: overlay, screens: screens, menuBarLast: true)
                 (result, every) = ((native.observation, native.labels), native.all)
             }
         } else {
-            let native = observeNative(mode: mode, overlay: overlay, screens: screens)
+            let native = observeNative(mode: mode, overlay: overlay, screens: screens, menuBarLast: true)
             (result, every) = ((native.observation, native.labels), native.all)
         }
         // Player controls are looked for among every element found; the audio hint only when there is none.
