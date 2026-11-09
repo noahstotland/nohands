@@ -53,12 +53,8 @@ private struct Seen {
     func fresh() async -> Seen {
         _ = query.actionableElements()   // exposes a Chromium page tree, which appears ~0.5 s later
         try? await Task.sleep(for: .seconds(1))
-        var kind = HarnessKind.native
-        if hasHarness {
-            let readable = await checker.probe()
-            if readable { kind = .agentDesktop }
-        }
-        let r = await checker.observe(mode: .command, overlay: .none, harnessKind: kind)
+        // `observe` falls back to the native walk by itself when agent-desktop cannot read the window.
+        let r = await checker.observe(mode: .command, overlay: .none, harnessKind: hasHarness ? .agentDesktop : .native)
         return Seen(observation: r.observation, labels: r.labels)
     }
 
@@ -95,11 +91,11 @@ private struct Seen {
     do { data = try Data(contentsOf: URL(fileURLWithPath: path)) } catch { fail("cannot read \(path): \(error.localizedDescription)") }
     var scenarios: [TaskScenario]
     do { scenarios = try ScenarioFile.load(data, run: Int(Date().timeIntervalSince1970)) }
-    catch { fail("\(path): \(error.localizedDescription)") }
+    catch { fail("\(path): \(sanitized(error.localizedDescription))") }
     guard !scenarios.isEmpty else { fail("\(path): no scenarios") }
     if let only {
         scenarios = scenarios.filter { $0.name == only }
-        guard !scenarios.isEmpty else { fail("no scenario named \(only) in \(path)") }
+        guard !scenarios.isEmpty else { fail("no scenario named \(sanitized(only)) in \(path)") }
     }
 
     let loaded: (config: AppConfig, resolver: any IntentResolving, model: String)
@@ -141,7 +137,7 @@ private struct Seen {
                 results.append(ScenarioResult(name: sc.name, verdict: .notRun, steps: 0, seconds: 0))
                 continue
             }
-            print("\n[\(index + 1)/\(scenarios.count)] \(sc.name): \(sanitized(sc.goal))")
+            print("\n[\(index + 1)/\(scenarios.count)] \(sanitized(sc.name)): \(sanitized(sc.goal))")
             let started: Bool
             switch sc.start {
             case .app(let name): started = AXQuery().activate(appNamed: name)

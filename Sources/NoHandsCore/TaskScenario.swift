@@ -15,7 +15,10 @@ public enum ScenarioCheck: Equatable, Sendable {
             guard let url = o.url, let re = try? NSRegularExpression(pattern: p, options: .caseInsensitive) else { return false }
             return re.firstMatch(in: url, range: NSRange(url.startIndex..., in: url)) != nil
         case .elementVisible(let t): return has(t)
-        // An empty list is a page that was not read, not a page without the element.
+        // An empty list is a page that was not read, not a page without the element. The list is the observer's
+        // capped one (300 from agent-desktop, 200 from the native walk), so an element past the cap reads as absent;
+        // the command also looks for the Pause control to click in that list.
+
         case .elementAbsent(let t): return !o.elements.isEmpty && !has(t)
         case .mediaPlaying: return o.media == .playing
         }
@@ -45,7 +48,8 @@ public struct TaskScenario: Equatable, Sendable {
         self.name = name; self.goal = goal; self.start = start; self.ready = ready; self.success = success; self.maxSteps = maxSteps
     }
 
-    /// The default start state: the front app is the named one with a window, or the page has the start URL's host
+    /// The default start state: the front app's name contains the given one (a substring, as the app lookup is
+    /// fuzzy too) and has a window, or the page has the start URL's host
     /// and path (a leading `www.` and a trailing `/` ignored).
     public static func startHolds(_ s: ScenarioStart, in o: ScreenObservation) -> Bool {
         switch s {
@@ -119,7 +123,8 @@ public enum ScenarioFile {
                 throw bad("start needs exactly one of app or url")
             }
             let start: ScenarioStart
-            if let app = rawStart.app, !app.isEmpty { start = .app(app) }
+            if rawStart.app?.isEmpty == true { throw bad("start app is empty") }
+            if let app = rawStart.app { start = .app(app) }
             else if let s = rawStart.url, let u = URL(string: s), ["http", "https"].contains(u.scheme?.lowercased()), u.host != nil { start = .url(u) }
             else { throw bad("start url must be http or https") }
             guard let steps = raw.maxSteps, (1...30).contains(steps) else { throw bad("maxSteps must be 1 to 30") }
@@ -174,7 +179,7 @@ public enum ScenarioReport {
                 let c = u.properties.generalCategory
                 return c == .control || c == .lineSeparator || c == .paragraphSeparator ? " " : Character(u)
             })
-            return clean.replacingOccurrences(of: "|", with: "\\|")
+            return clean.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "|", with: "\\|")
         }
         let rows = results.map { "| \(cell($0.name)) | \($0.verdict.rawValue) | \($0.steps) | \(String(format: "%.1f", $0.seconds)) s |" }
         return (["| scenario | verdict | steps | time |", "|---|---|---|---|"] + rows).joined(separator: "\n")
