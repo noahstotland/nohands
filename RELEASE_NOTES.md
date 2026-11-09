@@ -1,5 +1,11 @@
 # Release notes
 
+## 2026-11-09 Apache-2.0 licence, third-party notices and community files (NH-31) (#89)
+
+Merged 2026-11-09 03:59 UTC.
+
+NoHands now has an Apache-2.0 licence, a list of third-party licences, and contributing and security guides. Nothing changes in the app.
+
 ## 2026-11-09 vision fallback for the task loop (NH-41) (#86)
 
 Merged 2026-11-09 03:59 UTC.
