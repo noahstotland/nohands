@@ -1,7 +1,8 @@
 # NH-91: Model-written plans, run and checked in code — Design
 
 **Date:** 2026-11-08  **Ticket:** [NH-91](https://github.com/noahstotland/nohands/issues/91)
-**Status:** Spec
+**Status:** Shipped
+**Shipped:** in PR #106, as specified
 
 ## Intent
 
