@@ -64,12 +64,17 @@ public struct PromptRow: Equatable, Sendable {
     public var text: String
     public var status: PromptStatus
     public var updatedAt: ContinuousClock.Instant
+    /// The steps a task has taken, for the corner panel. Nil for a grammar command or a prompt not yet run.
+    public var trail: TaskTrail?
 
-    public init(id: Int, text: String, status: PromptStatus, updatedAt: ContinuousClock.Instant) {
+    public init(
+        id: Int, text: String, status: PromptStatus, updatedAt: ContinuousClock.Instant, trail: TaskTrail? = nil
+    ) {
         self.id = id
         self.text = text
         self.status = status
         self.updatedAt = updatedAt
+        self.trail = trail
     }
 }
 
@@ -110,6 +115,13 @@ public struct PromptBoard: Equatable, Sendable {
             let victim = rows.firstIndex(where: { $0.status.isFinal }) ?? 0
             rows.remove(at: victim)
         }
+    }
+
+    /// Sets a running task's step trail. Does nothing for an unknown id or a final row.
+    public mutating func report(id: Int, trail: TaskTrail, now: ContinuousClock.Instant) {
+        guard let i = rows.firstIndex(where: { $0.id == id }), !rows[i].status.isFinal else { return }
+        rows[i].trail = trail
+        rows[i].updatedAt = now
     }
 
     public mutating func notice(_ text: String, for duration: Duration, now: ContinuousClock.Instant) {
