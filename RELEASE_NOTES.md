@@ -1,5 +1,17 @@
 # Release notes
 
+## 2026-11-09 turn on No Hands with 10 ticket and $200 caps (NH-71) (#72)
+
+Merged 2026-11-09 02:11 UTC.
+
+No Hands runs can now be started in this repo: after this merges, send `no hands` in the Chief of Staff thread. Each run is capped at 10 tickets and $200.
+
+## 2026-11-09 move to the collective-wisdom v0.2 machine install (#69)
+
+Merged 2026-11-09 01:30 UTC.
+
+The agent team now runs from the machine install of collective-wisdom v0.2. To update it later, check out a newer release in the clone and rerun `./install.sh`.
+
 ## 2026-11-09 always-on status bar overlay with a menu setting (NH-66) (#68)
 
 Merged 2026-11-09 01:10 UTC.
