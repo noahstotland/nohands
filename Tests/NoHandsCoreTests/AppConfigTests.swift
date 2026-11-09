@@ -119,3 +119,11 @@ import Foundation
     }
     #expect(throws: (any Error).self) { try AppConfig.load(from: Data(#"{"attentionWord":5}"#.utf8), environment: [:]) }
 }
+
+@Test func earlySilenceDefaultsAndClamps() throws {
+    let table: [(String?, Int)] = [(nil, 350), (#"{"silenceMs":600}"#, 350), (#"{"earlySilenceMs":0}"#, 0),
+                                   (#"{"earlySilenceMs":-5}"#, 0), (#"{"earlySilenceMs":99999}"#, 3000), (#"{"earlySilenceMs":500}"#, 500)]
+    for (json, expected) in table {
+        #expect(try AppConfig.load(from: json.map { Data($0.utf8) }, environment: [:]).earlySilenceMs == expected, "\(json ?? "nil")")
+    }
+}

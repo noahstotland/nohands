@@ -18,6 +18,8 @@ func usage() -> Never {
       nohands-cli move <x> <y>
       nohands-cli transcribe <wav>
       nohands-cli vad-test <wav>
+      nohands-cli endpoint-test <wav>...  (replays each file through the VAD, early close and ASR; prints how soon the
+                                      early text is ready after the true end of speech)
       nohands-cli elements           (waits 3 s, lists frontmost app's actionable elements)
       nohands-cli click "<name>"     (waits 3 s, clicks the named element's center)
       nohands-cli grid               (10x8 grid 4 s, zoom into cell 35 for 4 s, HUD "done")
@@ -137,6 +139,31 @@ var exitStatus: Int32 = 0
                 }
                 i += 4096
             }
+        case "endpoint-test":
+            // endpoint-test <wav>...  Default config silenceMs and earlySilenceMs. One line per file, then a summary.
+            guard !rest.isEmpty else { usage() }
+            let config = try loadConfig()
+            let asr = try await ParakeetTranscriber(version: config.asrModelVersion)
+            _ = try await asr.transcribe([Float](repeating: 0, count: 16_000))   // warm up
+            print("silenceMs=\(config.silenceMs) earlySilenceMs=\(config.earlySilenceMs)")
+            var fired = 0, accepted = 0, mismatched = 0, extra = 0
+            var readyMs: [Double] = []
+            for path in rest {
+                let samples = try loadSamples16k(path: path)
+                let r = try await EndpointReplay.run(samples: samples, config: config, transcriber: asr)
+                if r.earlyFired > 0 { fired += 1 }
+                if r.earlyAccepted { accepted += 1 }
+                if r.earlyAccepted, r.sameAction == false { mismatched += 1 }
+                if r.emitted.count > 1 { extra += 1 }
+                if let ms = r.earlyReadyMs { readyMs.append(ms) }
+                func q(_ s: String?) -> String { s.map { "\"\($0)\"" } ?? "none" }
+                let same = r.sameAction.map { $0 ? "same" : "DIFFERENT" } ?? "n/a"
+                let early = r.earlyAccepted ? String(format: "%.0fms", r.earlyReadyMs ?? 0) : "fallback"
+                let full = r.fullReadyMs.map { String(format: "%.0fms", $0) } ?? "n/a"
+                print("\((path as NSString).lastPathComponent): early=\(q(r.earlyText)) full=\(q(r.fullText)) fired=\(r.earlyFired) accepted=\(r.earlyAccepted) actions=\(same) trueEnd=\(String(format: "%.2f", r.trueEnd))s ready=\(early) fullReady=\(full) emits=\(r.emitted.count)")
+            }
+            let p50 = readyMs.sorted().isEmpty ? "n/a" : String(format: "%.0fms", readyMs.sorted()[readyMs.count / 2])
+            print("summary: files=\(rest.count) fired=\(fired) accepted=\(accepted) fellBack=\(rest.count - accepted) wrongAction=\(mismatched) multipleEmits=\(extra) p50AcceptedReady=\(p50)")
         case "elements":
             let ax = try await frontElements()
             print("app: \(ax.app)")

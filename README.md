@@ -43,6 +43,8 @@ The first build downloads and compiles [FluidAudio](https://github.com/FluidInfe
 scripts/bundle.sh && open build/NoHands.app
 ```
 
+Build from an up-to-date `main`: `scripts/bundle.sh` prints a warning to stderr when the checkout is behind `origin/main`, because features merged since then would be missing from the app.
+
 `scripts/bundle.sh` builds a release binary, assembles `build/NoHands.app` and code-signs it. NoHands is a menu-bar app (no Dock icon); the menu bar shows `CMD`, `DICT` or `ZZZ` for the current mode.
 
 **Prompt board.** Every prompt you speak gets a row at the top of the screen (below the menu bar, on the screen the pointer is on): your words on the left and how it is being serviced on the right, coloured by state. Blue while it is live (`listening…` while you are still speaking, `heard`, then `step n · <what the model is doing>` for a task, with `✗ <why>` after a step that failed), yellow when `held` behind a running task, green when `done` (with the step count for a task), red when it `failed`, was `dropped` or `skipped (busy)`, grey when `stopped` or ignored. Finished rows leave after six seconds; at most four prompts are shown. Notices such as `NoHands is listening` or `microphone error` appear as a line above the prompts.
@@ -66,7 +68,7 @@ CODESIGN_IDENTITY="Apple Development: Your Name (TEAMID)" scripts/bundle.sh
 
 **Start at Login:** the menu's Start at Login item registers the app as a login item (System Settings > General > Login Items) and shows a tick while it is on; the state is read from macOS each time the menu opens. If you turned NoHands off in Login Items, the item says `allow in Login Items` and opens that pane. It is disabled when NoHands runs without an app bundle (`swift run`); use `build/NoHands.app`. The login item is tied to the app's path and signature, so a rebuild may need re-ticking or re-approval.
 
-**Logs:** each utterance logs one line, `[asr=…ms total=…ms] <transcript> -> <what it did>`, plus one `claude: step N <ms>ms cache=<read>/<written> in=<n>` line per Claude response (token counts only, no text), warm-up results, warnings and errors, through the unified log:
+**Logs:** each utterance logs one line, `[asr=…ms total=…ms sinceVoice=…ms] <transcript> -> <what it did>` (`sinceVoice` counts from the last moment you were heard, so it includes the silence wait that `total` leaves out), plus one `claude: step N <ms>ms cache=<read>/<written> in=<n>` line per Claude response (token counts only, no text), warm-up results, warnings and errors, through the unified log:
 
 ```bash
 log stream --predicate 'subsystem == "dev.nohands.app"'
@@ -139,6 +141,7 @@ In dictation mode, say `period`, `comma`, `question mark`, `new line`, `new para
 | `move <x> <y>` | Moves the pointer |
 | `transcribe <wav>` | Transcribes an audio file and prints timings |
 | `vad-test <wav>` | Prints voice-activity events for an audio file |
+| `endpoint-test <wav>…` | Replays each file through the VAD, the early close and the speech recognizer, and prints the early and full text, whether the early close fired and was accepted, and the milliseconds from the true end of speech to the early text; ends with a summary line |
 | `elements` | Lists the frontmost app's actionable elements |
 | `click "<name>"` | Clicks the named element |
 | `grid` | Shows the 10×8 grid, zooms into cell 35 |
@@ -166,6 +169,7 @@ Optional file at `~/.config/nohands/config.json`. Every key may be omitted. For 
   "ollamaURL": "http://127.0.0.1:11434",
   "asrModelVersion": "v2",
   "silenceMs": 1000,
+  "earlySilenceMs": 350,
   "mergeWindowMs": 500,
   "mergeWindowUnfinishedMs": 1500,
   "gridColumns": 10,
@@ -193,7 +197,7 @@ Optional file at `~/.config/nohands/config.json`. Every key may be omitted. For 
 
 **Vision fallback.** `visionFallback` (false by default) lets a task step send a picture of the focused window to Claude when the accessibility tree has failed the model. It works only with Claude as the intent backend (the local model never gets a picture, whatever this key says) and needs the Screen Recording permission. See [Multi-step tasks](#multi-step-tasks) and [Privacy](#privacy).
 
-**Pausing mid-command.** You do not have to say a command in one breath. `silenceMs` is how long you can go quiet before the recognizer closes an utterance (1 s by default). After that, a transcript the fast grammar does not already understand is held for `mergeWindowMs` (longer, `mergeWindowUnfinishedMs`, when it starts with `spell`, which the grammar understands but holds so a pause mid-spelling stays one string, or when it ends on a word like "the" or "click" that leaves the command hanging); its row on the prompt board shows `listening…`. If you start speaking again inside that window, the next piece is appended and the whole thing is treated as one request, so "click the … uh, the back button" reaches the model as a single sentence. Set both windows to 0 to act on every utterance at once. A stop phrase ("stop", "cancel", "never mind", also "stop stop" or "um, stop") is never held or merged: it goes through at once, and in command mode it also discards the unfinished words before it. In dictation, "stop dictating" and "command mode" likewise go through on their own instead of being typed as part of the text, and so do "scratch that" and "delete word".
+**Pausing mid-command.** You do not have to say a command in one breath. `silenceMs` is how long you can go quiet before the recognizer closes an utterance (1 s by default). A complete command that is not left open for more words (a key command, a mode change, a numbered click, scroll, move) and a stop phrase are the exception: they close after `earlySilenceMs` of quiet (about 350 ms by default, one 256 ms voice-detector chunk), so "new tab" or "stop" acts well before a full second passes. Commands that carry words you may still be saying (`type …`, `open …`, `go to …`, `search for …`, `click <name>`), anything the grammar does not parse, and anything said while words are already held keep `silenceMs`; dictation and sleep always do. Set `earlySilenceMs` to 0 to turn this off; the catch is that a pause of 350 ms or more inside a closed command acts on the first part ("click twenty … three" clicks 20). After the full silence, a transcript the fast grammar does not already understand is held for `mergeWindowMs` (longer, `mergeWindowUnfinishedMs`, when it starts with `spell`, which the grammar understands but holds so a pause mid-spelling stays one string, or when it ends on a word like "the" or "click" that leaves the command hanging); its row on the prompt board shows `listening…`. If you start speaking again inside that window, the next piece is appended and the whole thing is treated as one request, so "click the … uh, the back button" reaches the model as a single sentence. Set both windows to 0 to act on every utterance at once. A stop phrase ("stop", "cancel", "never mind", also "stop stop" or "um, stop") is never held or merged: it goes through at once, and in command mode it also discards the unfinished words before it. In dictation, "stop dictating" and "command mode" likewise go through on their own instead of being typed as part of the text, and so do "scratch that" and "delete word".
 
 **How the model reads a request.** The transcript comes from speech recognition, so the model is told to first write a one-sentence `intent` (what you meant, with recognition errors, filler and self-corrections resolved) and only then the actions that carry it out. `intentEffort` (`low` … `max`) sets how hard Claude thinks before answering; `medium` is the default, `low` is fastest.
 

@@ -7,9 +7,19 @@ public actor VoiceActivity {
     private let manager: VadManager
     private let segmentation: VadSegmentationConfig
     private var state: VadStreamState
+    private var early: EarlySilenceDetector
+    private let speechThreshold: Float
 
-    /// silenceMs: trailing silence before speechEnd fires.
-    public init(silenceMs: Int = 1000, speechThreshold: Float = 0.85, negativeThreshold: Float? = nil) async throws {
+    /// One chunk's verdict: the event, and whether the VAD called the chunk voiced (probability at or above the speech threshold).
+    public struct Step: Sendable, Equatable {
+        public var event: VadEvent
+        public var voiced: Bool
+    }
+
+    /// silenceMs: trailing silence before speechEnd fires. earlySilenceMs: a shorter silence that raises
+    /// `.earlySilence` once per run (0 = never; see `EarlySilenceDetector` for when it turns itself off).
+    public init(silenceMs: Int = 1000, earlySilenceMs: Int = 0, speechThreshold: Float = 0.85,
+                negativeThreshold: Float? = nil) async throws {
         let m = try await VadManager(config: VadConfig(defaultThreshold: speechThreshold))
         manager = m
         var cfg = VadSegmentationConfig.default
@@ -21,22 +31,43 @@ public actor VoiceActivity {
         cfg.minSilenceDuration = Double((chunks - 1) * VadManager.chunkSize) / Double(VadManager.sampleRate)
         cfg.negativeThreshold = negativeThreshold
         segmentation = cfg
+        // FluidAudio derives its speech threshold from a pinned negative one (negative + 0.15); the detector and the
+        // voiced flag must read the same threshold or they drift from the VAD's own events.
+        let effectiveSpeech = negativeThreshold.map { min(1, $0 + 0.15) } ?? speechThreshold
+        self.speechThreshold = effectiveSpeech
+        early = EarlySilenceDetector(earlySilenceMs: earlySilenceMs, silenceMs: silenceMs,
+                                     speechThreshold: effectiveSpeech, negativeThreshold: negativeThreshold)
         state = await m.makeStreamState()
     }
 
-    /// `chunk` must be VadManager.chunkSize (4096) samples at 16 kHz.
-    public func process(_ chunk: [Float]) async throws -> VadEvent {
+    /// `chunk` must be VadManager.chunkSize (4096) samples at 16 kHz. The event is the VAD's own, else
+    /// `.earlySilence` from the detector: a real speechStart or speechEnd always wins.
+    public func analyze(_ chunk: [Float]) async throws -> Step {
         let r = try await manager.processStreamingChunk(
             chunk, state: state, config: segmentation, returnSeconds: false, timeResolution: 2)
         state = r.state
+        let voiced = r.probability >= speechThreshold
+        let own: VadEvent
         switch r.event?.kind {
-        case .speechStart: return .speechStart
-        case .speechEnd: return .speechEnd
-        case nil: return .none
+        case .speechStart: own = .speechStart
+        case .speechEnd: own = .speechEnd
+        case nil: own = .none
         }
+        let wantsEarly = early.feed(probability: r.probability)
+        if own != .none {
+            // Only speechEnd clears the run state: on speechStart this chunk was already fed as voiced, and
+            // resetting here would forget it (a one-chunk "stop" would then never close early).
+            if own == .speechEnd { early.reset() }
+            return Step(event: own, voiced: voiced)
+        }
+        return Step(event: wantsEarly ? .earlySilence : .none, voiced: voiced)
     }
+
+    /// `analyze` for callers that only want the event.
+    public func process(_ chunk: [Float]) async throws -> VadEvent { try await analyze(chunk).event }
 
     public func reset() async {
         state = await manager.makeStreamState()
+        early.reset()
     }
 }
