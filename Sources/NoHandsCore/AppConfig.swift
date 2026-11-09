@@ -2,10 +2,14 @@ import Foundation
 
 public enum IntentBackend: String, Codable, Sendable, CaseIterable { case auto, claude, local, off }
 public enum EffectiveBackend: Equatable, Sendable { case claude, local, off }
+/// Where the Anthropic key in effect came from; only for the menu line, never the key itself.
+public enum KeySource: Sendable, Equatable { case file, environment }
 public enum DesktopHarnessChoice: String, Codable, Sendable, CaseIterable { case auto, agentDesktop, native }
 
 public struct AppConfig: Codable, Equatable, Sendable {
     public var anthropicAPIKey: String?
+    /// Set only by `load`; not part of the file format.
+    public private(set) var anthropicKeySource: KeySource?
     public var intentModel: String = "claude-haiku-5-5"
     /// Claude `output_config.effort`: low | medium | high | xhigh | max.
     public var intentEffort: String = "low"
@@ -142,10 +146,12 @@ public struct AppConfig: Codable, Equatable, Sendable {
         config.localMaxObservedElements = min(max(config.localMaxObservedElements, 10), 300)
         config.agentDesktopTimeoutMs = min(max(config.agentDesktopTimeoutMs, 1000), 60000)
         config.agentDesktopSnapshotMs = min(max(config.agentDesktopSnapshotMs, 500), 10000)
+        config.anthropicKeySource = (config.anthropicAPIKey ?? "").isEmpty ? nil : .file
         config.attentionWord = AttentionGate(configured: config.attentionWord).words.joined(separator: " ")
         if !AppConfig.efforts.contains(config.intentEffort) { config.intentEffort = AppConfig().intentEffort }
         if let key = environment["ANTHROPIC_API_KEY"], !key.isEmpty {
             config.anthropicAPIKey = key
+            config.anthropicKeySource = .environment
         }
         return config
     }
