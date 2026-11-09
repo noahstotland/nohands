@@ -20,6 +20,8 @@ func usage() -> Never {
       nohands-cli vad-test <wav>
       nohands-cli endpoint-test <wav>...  (replays each file through the VAD, early close and ASR; prints how soon the
                                       early text is ready after the true end of speech)
+      nohands-cli bench <dir>        (replays each .wav in the folder through the VAD, early close and ASR, parses the text,
+                                      and prints per-file latency plus p50 and p95 per stage; executes nothing)
       nohands-cli elements           (waits 3 s, lists frontmost app's actionable elements)
       nohands-cli click "<name>"     (waits 3 s, clicks the named element's center)
       nohands-cli grid               (10x8 grid 4 s, zoom into cell 35 for 4 s, HUD "done")
@@ -167,6 +169,76 @@ var exitStatus: Int32 = 0
             }
             let p50 = readyMs.sorted().isEmpty ? "n/a" : String(format: "%.0fms", readyMs.sorted()[readyMs.count / 2])
             print("summary: files=\(rest.count) fired=\(fired) accepted=\(accepted) fellBack=\(rest.count - accepted) wrongAction=\(mismatched) multipleEmits=\(extra) p50AcceptedReady=\(p50)")
+        case "bench":
+            // bench <dir>  Dry run: per-file latency from the true end of speech to the parsed actions. Executes nothing.
+            guard rest.count == 1 else { usage() }
+            let dir = rest[0]
+            let readme = "record the phrases listed in Tests/Fixtures/audio/README.md, or run scripts/make-bench-audio.sh to generate a synthesized set"
+            var isDir: ObjCBool = false
+            guard FileManager.default.fileExists(atPath: dir, isDirectory: &isDir), isDir.boolValue else {
+                fail("bench: \(dir) is not a directory; \(readme)")
+            }
+            let files = (try FileManager.default.contentsOfDirectory(atPath: dir))
+                .filter { $0.lowercased().hasSuffix(".wav") }
+                .sorted()
+            guard !files.isEmpty else { fail("bench: no .wav files in \(dir); \(readme)") }
+
+            var config = try loadConfig()
+            config.attentionWord = ""   // recordings do not start with the attention word
+            let t0 = ContinuousClock.now
+            let asr = try await ParakeetTranscriber(version: config.asrModelVersion)
+            for _ in 0..<2 { _ = try await asr.transcribe([Float](repeating: 0, count: 16_000)) }   // the first two runs are cold
+            let loadMs = Int(t0.duration(to: .now) / .milliseconds(1))
+            print("silenceMs=\(config.silenceMs) earlySilenceMs=\(config.earlySilenceMs) asr=\(config.asrModelVersion) attentionWord=ignored load=\(loadMs)ms")
+
+            let grammar = CommandGrammar(config: config.grammarConfig)
+            let width = files.map(\.count).max() ?? 0
+            var lag: [Double] = [], asrTimes: [Double] = [], parseTimes: [Double] = [], total: [Double] = []
+            var early = 0, full = 0, skipped = 0
+            for file in files {
+                let name = file.padding(toLength: width, withPad: " ", startingAt: 0)
+                do {
+                    let samples = try loadSamples16k(path: (dir as NSString).appendingPathComponent(file))
+                    let r = try await EndpointReplay.run(samples: samples, config: config, transcriber: asr)
+                    guard let closedBy = r.closedBy, let lagMs = r.speechEndLagMs, let asrMs = r.asrMs else {
+                        print("\(name)  skipped: no utterance")
+                        skipped += 1
+                        continue
+                    }
+                    let text = r.actedText ?? ""
+                    guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                        print("\(name)  skipped: empty transcript")
+                        skipped += 1
+                        continue
+                    }
+                    let p0 = ContinuousClock.now
+                    let actions = grammar.parse(text)
+                    let parseMs = Double(p0.duration(to: .now) / .nanoseconds(1)) / 1_000_000
+                    let outcome: String
+                    if config.attentionGate.isStop(text) {
+                        outcome = "stop"   // the pipeline halts on a stop phrase before the grammar sees it
+                    } else if let actions {
+                        outcome = "\(actions)"
+                    } else if let message = grammar.rejection(text) {
+                        outcome = "rejected: \(message)"
+                    } else {
+                        outcome = "no match -> LLM"
+                    }
+                    let e2e = lagMs + asrMs + parseMs
+                    lag.append(lagMs); asrTimes.append(asrMs); parseTimes.append(parseMs); total.append(e2e)
+                    if closedBy == .early { early += 1 } else { full += 1 }
+                    print("\(name)  close=\(closedBy == .early ? "early" : "full") lag=\(LatencyStats.format(lagMs)) asr=\(LatencyStats.format(asrMs)) parse=\(LatencyStats.format(parseMs)) e2e=\(LatencyStats.format(e2e)) utts=\(r.utterances) \"\(text)\" -> \(outcome)")
+                } catch {
+                    print("\(name)  skipped: \(error.localizedDescription)")
+                    skipped += 1
+                }
+            }
+            print("summary: files=\(files.count) measured=\(total.count) skipped=\(skipped) early=\(early) full=\(full)")
+            print(LatencyStats.summaryLine(stage: "lag", values: lag))
+            print(LatencyStats.summaryLine(stage: "asr", values: asrTimes))
+            print(LatencyStats.summaryLine(stage: "parse", values: parseTimes))
+            print(LatencyStats.summaryLine(stage: "end-to-end", values: total))
+            if total.isEmpty { exitStatus = 1 }
         case "elements":
             let ax = try await frontElements()
             print("app: \(ax.app)")
