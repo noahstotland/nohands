@@ -1,5 +1,13 @@
 # Release notes
 
+## 2026-11-09 close short grammar commands at 350 ms of silence (NH-36) (#87)
+
+Merged 2026-11-09 03:33 UTC.
+
+Short commands such as "new tab", "scroll down", "click 12" and "stop" now run about half a second after you stop talking instead of after a full second. Free-text commands and anything unclear still wait as before. If you pause inside a short command and it fires early, set `earlySilenceMs` to 0 in `~/.config/nohands/config.json`.
+
+Context size: pass skipped (not collective-wisdom)
+
 ## 2026-11-09 keep the status bar up and warn on stale builds (NH-75) (#88)
 
 Merged 2026-11-09 03:24 UTC.
