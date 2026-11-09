@@ -7,7 +7,7 @@ public enum PipelineText {
     public static let localNotRunning = "local model not running: start Ollama"
     public static let localNotDownloaded = "local model not downloaded: see the NoHands menu"
     public static let llmDisabled = "LLM off (intentBackend is off)"
-    public static let llmOff = "LLM off: add anthropicAPIKey to ~/.config/nohands/config.json"
+    public static let llmOff = "LLM off: choose Set Claude API key… in the menu"
     public static let stopped = "stopped"
     public static let skippedBusy = "skipped (busy)"
     /// A held utterance discarded by a stop, or one that waited longer than the held-job limit.

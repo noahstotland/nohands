@@ -22,6 +22,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let statusBarItem = NSMenuItem(title: "Status Bar", action: nil, keyEquivalent: "")
     private let statusBarMenu = NSMenu(title: "Status Bar")
     private static let statusBarDefaultsKey = "statusBarPosition"
+    private let claudeKeyItem = NSMenuItem(title: "Set Claude API key…", action: #selector(setClaudeKey), keyEquivalent: "")
     private let openConfigItem = NSMenuItem(title: "Open config.json…", action: #selector(openConfig), keyEquivalent: "")
     /// agent-desktop, when found and permitted (see `HarnessStatus`); re-probed when the menu opens.
     private var harnessStatus: HarnessStatus?
@@ -35,6 +36,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let overlay = OverlayController()
     private var config = AppConfig()
     private var configInvalid = false
+    /// Whether config.json itself holds a key (the environment is ignored): as of launch, plus saves from the menu.
+    private var fileHasKey = false
     private var pipeline: VoicePipeline?
     private var pipelineStarting = false
     private var userPaused = false
@@ -86,7 +89,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         transcriptItem.isEnabled = false
         harnessItem.isEnabled = false
         claudeItem.isEnabled = false
-        for item in [checkClaudeItem, localModelItem, pauseItem, retryItem, accessibilityItem, screenRecordingItem, micItem, loginItem, openConfigItem] { item.target = self }
+        for item in [checkClaudeItem, localModelItem, pauseItem, retryItem, accessibilityItem, screenRecordingItem, micItem, loginItem, claudeKeyItem, openConfigItem] { item.target = self }
         let title = NSMutableAttributedString(string: "● ", attributes: [.foregroundColor: NSColor.systemRed])
         title.append(NSAttributedString(string: "Grant Accessibility…"))
         accessibilityItem.attributedTitle = title
@@ -105,12 +108,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         quit.target = self
 
         for item in [stateItem, configItem, NSMenuItem.separator(), transcriptItem, localModelItem, harnessItem, claudeItem, checkClaudeItem, NSMenuItem.separator(),
-                     pauseItem, retryItem, accessibilityItem, screenRecordingItem, micItem, NSMenuItem.separator(), loginItem, statusBarItem, openConfigItem,
+                     pauseItem, retryItem, accessibilityItem, screenRecordingItem, micItem, NSMenuItem.separator(), loginItem, statusBarItem, claudeKeyItem, openConfigItem,
                      NSMenuItem.separator(), quit] {
             menu.addItem(item)
         }
         statusItem.menu = menu
+        installEditMenu()
         refresh()
+    }
+
+    /// An accessory app shows no main menu, but text fields get Cmd-V, Cmd-C, Cmd-X and Cmd-A only through one.
+    /// This hidden Edit menu lets paste work in the API key field.
+    private func installEditMenu() {
+        let edit = NSMenu(title: "Edit")
+        for (title, selector, key) in [("Cut", #selector(NSText.cut(_:)), "x"), ("Copy", #selector(NSText.copy(_:)), "c"),
+                                       ("Paste", #selector(NSText.paste(_:)), "v"), ("Select All", #selector(NSText.selectAll(_:)), "a")] {
+            edit.addItem(NSMenuItem(title: title, action: selector, keyEquivalent: key))
+        }
+        let editItem = NSMenuItem(title: "Edit", action: nil, keyEquivalent: "")
+        editItem.submenu = edit
+        let mainMenu = NSMenu()
+        mainMenu.addItem(NSMenuItem(title: "NoHands", action: nil, keyEquivalent: ""))
+        mainMenu.addItem(editItem)
+        NSApp.mainMenu = mainMenu
     }
 
     /// Recomputes the status line, title and item visibility from current state.
@@ -134,6 +154,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             localModelItem.isEnabled = LocalModelMenu.actionable(localStatus)
         }
         refreshClaudeItems()
+        claudeKeyItem.title = fileHasKey ? "Change Claude API key…" : "Set Claude API key…"
         refreshLoginItem()
         pauseItem.title = userPaused ? "Resume Listening" : "Pause Listening"
         if let harnessStatus { harnessItem.title = harnessStatus.menuText(inUse: pipelineHarnessKind) }
@@ -225,6 +246,47 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             workspace.open(url)
         }
         overlay.showHUD("restart NoHands to apply config changes", duration: .seconds(4))
+    }
+
+    /// Asks for the key in a masked field and saves it to config.json. The key never reaches the menu, the HUD or the
+    /// log: only fixed text (and the errno name of a failed write) is logged. It applies after a restart.
+    @objc private func setClaudeKey() {
+        NSApp.activate(ignoringOtherApps: true)
+        let alert = NSAlert()
+        alert.messageText = fileHasKey ? "Change Claude API key" : "Set Claude API key"
+        alert.informativeText = "Applies after you restart NoHands. ANTHROPIC_API_KEY, if set, overrides this."
+        alert.addButton(withTitle: "Save")
+        alert.addButton(withTitle: "Cancel")
+        let field = NSSecureTextField(frame: NSRect(x: 0, y: 0, width: 300, height: 24))
+        alert.accessoryView = field
+        alert.window.initialFirstResponder = field
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        defer { field.stringValue = "" }
+        guard let key = ClaudeKeyEntry.normalized(field.stringValue) else { return }
+        do {
+            try ConfigFile.saveAnthropicKey(key, at: ConfigFile.defaultURL)
+            fileHasKey = true
+            PipelineLog.info("Claude key saved to config.json; restart to apply")
+            overlay.showHUD("Claude key saved: restart NoHands to apply", duration: .seconds(4))
+            refresh()
+        } catch let error as ConfigFile.SaveError {
+            let hud: String
+            switch error {
+            case .invalidJSON:
+                PipelineLog.warning("couldn't save Claude key: config.json is not valid JSON")
+                hud = "couldn't save key: fix config.json, then try again"
+            case .symlink:
+                PipelineLog.warning("couldn't save Claude key: config.json or its folder is a symlink")
+                hud = "couldn't save key: replace the config.json link with a file"
+            case .writeFailed(let code):
+                PipelineLog.warning("couldn't save Claude key: write failed (\(code))")
+                hud = "couldn't save key: check ~/.config/nohands"
+            }
+            overlay.showHUD(hud, duration: .seconds(4))
+        } catch {
+            PipelineLog.warning("couldn't save Claude key")
+            overlay.showHUD("couldn't save key: check ~/.config/nohands", duration: .seconds(4))
+        }
     }
 
     // MARK: - desktop harness
@@ -402,6 +464,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let data = try? Data(contentsOf: url)   // missing file -> defaults
         do {
             config = try AppConfig.load(from: data, environment: env)
+            fileHasKey = (try? AppConfig.load(from: data, environment: [:]))?.anthropicAPIKey?.isEmpty == false
             if let data, (try? AppConfig.load(from: data, environment: [:]))?.anthropicAPIKey?.isEmpty == false,
                let perms = (try? FileManager.default.attributesOfItem(atPath: url.path))?[.posixPermissions] as? Int,
                ConfigFileSecurity.isTooOpen(posixPermissions: perms) {
