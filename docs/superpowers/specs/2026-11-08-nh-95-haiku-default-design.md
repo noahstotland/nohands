@@ -1,7 +1,8 @@
 # NH-95: Default the Claude model to Haiku at low effort — Design
 
 **Date:** 2026-11-08  **Ticket:** [NH-95](https://github.com/noahstotland/nohands/issues/95)
-**Status:** Proposed
+**Status:** Shipped
+**Shipped:** in PR #96, as specified
 
 ## Intent
 
