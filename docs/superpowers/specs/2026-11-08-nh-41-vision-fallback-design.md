@@ -2,7 +2,7 @@
 
 **Date:** 2026-11-08  **Ticket:** [NH-41](https://github.com/noahstotland/nohands/issues/41)
 **Status:** Shipped
-**Shipped:** in PR #86, as specified (plus the no-picture point refusal added after the security review)
+**Shipped:** in PR #86, with differences: [as-built](../as-built/2026-11-08-nh-41-vision-fallback.md)
 
 ## Intent
 
