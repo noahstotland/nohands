@@ -85,11 +85,11 @@ These are existing generic signals. A goal that fails the gate runs exactly as t
 
 ```json
 {"plan":[
-  {"intent":"…","do":"open_site","site":"<a supported site>","expect":{"kind":"title_contains","text":"…"}},
-  {"intent":"…","do":"search","site":"<a supported site>","text":"…","expect":{"kind":"url_contains","text":"…"}},
-  {"intent":"…","do":"click","text":"…","expect":{"kind":"element_present","text":"…"}},
-  {"intent":"…","do":"click_first_item","after":"…","expect":{"kind":"url_contains","text":"…"}},
-  {"intent":"…","do":"wait_for_media","expect":{"kind":"media_playing"}}
+  {"intent":"…","site":"<a supported site>","do":"open_site","text":"","after":"","expect":{"kind":"title_contains","text":"…"}},
+  {"intent":"…","site":"<a supported site>","do":"search","text":"…","after":"","expect":{"kind":"url_contains","text":"…"}},
+  {"intent":"…","site":"<a supported site>","do":"click","text":"…","after":"","expect":{"kind":"element_present","text":"…"}},
+  {"intent":"…","site":"<a supported site>","do":"click_first_item","text":"","after":"…","expect":{"kind":"url_contains","text":"…"}},
+  {"intent":"…","site":"<a supported site>","do":"wait_for_media","text":"","after":"","expect":{"kind":"media_playing","text":""}}
 ]}
 ```
 
@@ -97,8 +97,12 @@ These are existing generic signals. A goal that fails the gate runs exactly as t
 
 **The model never writes an address.** Live runs showed the local 7B cannot write real page URLs (it wrote invented
 hosts, or nothing). `site` is one of `SiteSearch.siteNames` (the sorted keys of `SiteSearch.templates`, the one list); code
-builds every address from the site table. The schema makes every property required (an unused field is `""`, which the
-decoder reads as absent), so Claude's structured output sees no optional properties.
+builds every address from the site table. The schema makes every property required (an unused `text` or `after` is `""`,
+which the decoder reads as absent), so Claude's structured output sees no optional properties. `site` is on every step
+and is never empty: it means "the site this step happens on", and code reads it only for `open_site` and `search`. Two
+other shapes were tried and dropped, because they failed on the models that matter: a union with one shape per step kind
+made Haiku and Sonnet answer with a one-step `wait_for_media` plan, and a `site` that could be `""` made Haiku write
+empty sites for searches.
 
 Step types, the whole set:
 
@@ -133,7 +137,9 @@ One compact request: a short system prompt with the step types and check kinds, 
 `ClaudeRequestBuilder.sanitize`. No app, title, URL or elements are sent.
 
 - The prompt lists the supported sites (interpolated from `SiteSearch.siteNames`) and the schema's `site` is an enum of
-  them plus `""`, so constrained decoding cannot write an address. Examples use only listed sites, vary their step count
+  them, so constrained decoding cannot write an address. One rule tells the model to use the site whose main purpose is
+  hosting long videos for a creator's videos, a show or an episode. Without it the 7B chose a short-clip site for the
+  Outdoor Boys goal. The rule names no site. Examples use only listed sites, vary their step count
   and step types, and name no site flow of their own.
   Two examples answer `null`: a goal that needs no plan, and a goal that names a Mac app rather than a website.
 - `IntentResolving` gains `plan(goal:) async throws -> TaskPlan?`, with a default extension returning nil so test fakes
@@ -300,10 +306,11 @@ Both intent fixture files still pass on Claude, unchanged.
 
 ## Calls I made
 
-1. **Open for the user to confirm: whether "finishes on the local model" stays a hard bar.** The user chose this design
-   and has not said. The ticket's acceptance requires the Outdoor Boys task to end playing on the local model, and this
-   design makes that less likely, because the 7B now has to write the plan. This spec sets no bar: the build measures the
-   10 goals and reports. If the bar stays hard and the 7B misses it, the build stops with `BLOCKED:` and the numbers.
+1. **Local-model bar, as decided by the user after the first build.** The user first made "finishes on the local model" a
+   hard bar. The first build missed it (the 7B wrote invented hosts). The user then asked for site-based steps (the model
+   never writes a URL) and for the goal to be allowed to pass on Claude, saying most users will use Claude: so the local
+   bar is no longer the only gate. Both backends are measured and reported. Neither end-to-end result was measured
+   (see Calls I made 12).
 2. **This replaces the ticket's `Route` protocol and `YouTubeLatestVideo` route**, by the user's choice. The channel
    slot, the channel-filtered search path and the title check against a channel are gone. A wrong URL now hands over to
    the loop rather than trying a coded search.
@@ -314,10 +321,10 @@ Both intent fixture files still pass on Claude, unchanged.
 5. **A goal that names a browser, or says `this`, `current` or `here`, skips the plan**, since a plan has no browser field
    and the planner cannot see the screen. A goal that names a Mac app is left to the prompt's `null` example. A 7B that
    gets this wrong would open the website instead of the app.
-6. **At least one check must match a distinctive word of the goal, and a playback goal must end by waiting for
-   playback.** I chose strictness over yield, because a wrong video reported as `done` is worse than falling back to the
-   loop. The cost is a lower valid-plan rate on the 7B, and a model-corrected spelling ("mister beast" to "mrbeast") with
-   no other check loses the plan and takes the loop.
+6. **At least one check or search text must match a distinctive word of the goal, and a playback goal always ends by
+   waiting for playback.** I chose strictness over yield for the first, because a wrong video reported as `done` is worse
+   than falling back to the loop. For the second, code appends the `wait_for_media` step when a model leaves it out
+   (rejecting such a plan made the 7B's Outdoor Boys plan fail for no reason). The `done` path still checks playback.
 7. **The closed set has no typing, key or close steps.** A plan that would need them is rejected or handed over. This
    keeps the new path small, and those actions stay with the loop and its guards.
 8. **Plan steps observe up to 200 elements, and the model never sees them.** On a hand-over the list is cut back first.
@@ -326,3 +333,13 @@ Both intent fixture files still pass on Claude, unchanged.
 10. **`click_first_item` uses a generic content-link rule, not a model pick.** Picking a number from a list is the skill
     the 7B lacks. If the rule fails on real lists, the build stops rather than adding a site-specific rule.
 11. **No new CLI command and no new config key.** `nohands-cli task` and `observe` cover the measuring.
+12. **Live end-to-end runs are not measured.** The Mac's screen was locked during the build (`CGSSessionScreenIsLocked`),
+    so no app could come to the front and the executor's wait for the browser failed on every step. The plan-request
+    results for the 10 goals are real, from both backends. The PR lists the live runs under `Not proven`.
+13. **The plan request uses the configured model and effort as is.** Haiku at low effort plans well on the flat schema
+    (checked on five video goals plus a null), so no override was added. Claude's structured output accepts the plan
+    schema (it has no optional properties). The main step schema still fails on Claude until NH-104 merges, so a task
+    that falls back to the loop fails on Claude for now.
+14. **"Latest" is not guaranteed.** A plan searches a site and opens the first result, so the first result for "outdoor
+    boys latest" is the model's best guess at the newest video. Nothing in the plan sorts by date. A plan that wants a
+    sort can use a `click` step on a sort control the model names, and the check after it decides.
