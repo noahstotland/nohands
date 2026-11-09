@@ -78,6 +78,25 @@ import Foundation
     #expect(ClaudeRequestBuilder.userMessage(request: req) == expected)
 }
 
+@Test func twoIdenticalStepsInARowGetANudgeOnEitherBackend() {
+    let scroll: [Action] = [.scroll(.down, amount: 3)], back: [Action] = [.click(.label(2), button: .left, count: 1)]
+    func message(_ lists: [[Action]]) -> String {
+        let history = lists.map { StepRecord(intent: "x", actions: $0) }
+        return ClaudeRequestBuilder.userMessage(request: StepRequest(
+            goal: "g", step: lists.count + 1, maxSteps: 12, history: history, observation: ScreenObservation(app: "A", mode: .command)))
+    }
+    let nudge = "  Steps 2 and 3 ran the same actions. Try a different approach now; a third identical step ends the task.\nApp: A"
+    #expect(message([back, scroll, scroll]).contains(nudge))
+    for lists in [[scroll], [scroll, back], [back, scroll, back], [[], []]] {
+        #expect(!message(lists).contains("ran the same actions"), "\(lists)")
+    }
+    // The Ollama body carries the same user message.
+    let body = try? OllamaRequestBuilder(model: "m").body(request: StepRequest(
+        goal: "g", step: 3, maxSteps: 12, history: [StepRecord(intent: "x", actions: scroll), StepRecord(intent: "x", actions: scroll)],
+        observation: ScreenObservation(app: "A", mode: .command)))
+    #expect(body.flatMap { String(data: $0, encoding: .utf8) }?.contains("Steps 1 and 2 ran the same actions") == true)
+}
+
 @Test func stepOneRepeatsGoalAndSanitizesEverything() {
     let long = String(repeating: "a", count: 200)
     let req = StepRequest(goal: "go\nnow", step: 1, maxSteps: 5, history: [],
