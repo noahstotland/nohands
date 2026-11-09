@@ -824,29 +824,31 @@ private let planGoal = "play the maple video on clipbox"
 private func planStep(_ kind: PlanStepKind, _ check: PlanCheck, site: String? = nil, text: String? = nil) -> PlanStep {
     PlanStep(intent: "plan \(kind.rawValue)", kind: kind, site: site, text: text, check: check)
 }
+private let openMaple = planStep(.openSite, PlanCheck(kind: .elementPresent, text: "Maple"), site: "github.com")
 private let clickMaple = planStep(.click, PlanCheck(kind: .elementPresent, text: "Maple"), text: "Maple")
 private let playing = planStep(.waitForMedia, PlanCheck(kind: .mediaPlaying))
 private let pageHasMaple = [el(1, "Maple"), el(2, "Pause (k)")]
 
 @MainActor @Test func aValidPlanRunsWithoutAskingTheModelAndEndsDone() async {
     let resolver = FakeResolver([step("never asked", .done)])
-    resolver.planResult = .success(TaskPlan(steps: [clickMaple, playing]))
+    resolver.planResult = .success(TaskPlan(steps: [openMaple, clickMaple, playing]))
     let r = rig(resolver)
+    r.ax.defaultBrowser = "Safari"
     r.ax.elements = pageHasMaple
     #expect(await r.runner.run(goal: planGoal, mode: .command) == .done("plan wait_for_media"))
     #expect(resolver.planGoals == [planGoal])
     #expect(resolver.requests.isEmpty)
     #expect(r.input.calls.filter { $0.hasPrefix("click") }.count == 1)
-    #expect(r.runner.stepsRun == 3)   // two plan steps, then the finish step
+    #expect(r.runner.stepsRun == 4)   // three plan steps, then the finish step
 }
 
 @MainActor @Test func aPlanThatMissesHandsOverToTheModelWithItsStepsAsHistory() async {
     let blocked = "no browser for github.com"
     // (the plan, the executor's browser, the failure the model's History ends with, the History length)
     let table: [([PlanStep], String?, String, Int)] = [
-        ([planStep(.click, PlanCheck(kind: .elementPresent, text: "Maple banner"), text: "Maple"), playing], "Safari",
-         "plan step 1 did not reach its element_present check", 2),
-        ([planStep(.openSite, PlanCheck(kind: .titleContains, text: "maple"), site: "github.com"), playing], nil, blocked, 1),
+        ([openMaple, planStep(.click, PlanCheck(kind: .elementPresent, text: "Maple banner"), text: "Maple"), playing], "Safari",
+         "plan step 2 did not reach its element_present check", 3),
+        ([openMaple, playing], nil, blocked, 1),
     ]
     for (steps, browser, failure, length) in table {
         let resolver = FakeResolver([step("took over", .done)])
@@ -864,8 +866,8 @@ private let pageHasMaple = [el(1, "Maple"), el(2, "Pause (k)")]
 }
 
 @MainActor @Test func aPlanThatCannotBeUsedRunsTheNormalLoop() async {
-    let usable = TaskPlan(steps: [clickMaple, playing])
-    let noTie = TaskPlan(steps: [planStep(.click, PlanCheck(kind: .elementPresent, text: "Sign in"), text: "Sign in"), playing])
+    let usable = TaskPlan(steps: [openMaple, clickMaple, playing])
+    let noTie = TaskPlan(steps: [planStep(.openSite, PlanCheck(kind: .elementPresent, text: "Sign in"), site: "github.com"), playing])
     // (goal, what plan(goal:) answers, whether it is asked at all)
     let table: [(String, Result<TaskPlan?, IntentError>, Bool)] = [
         (planGoal, .success(nil), true),
@@ -889,7 +891,7 @@ private let pageHasMaple = [el(1, "Maple"), el(2, "Pause (k)")]
 
 @MainActor @Test func stopEndsAPlanWhileItIsBeingAskedForAndWhileItRuns() async {
     let resolver = FakeResolver([step("never", .done)])
-    resolver.planResult = .success(TaskPlan(steps: [clickMaple, playing]))
+    resolver.planResult = .success(TaskPlan(steps: [openMaple, clickMaple, playing]))
     let r = rig(resolver)
     r.ax.elements = [el(1, "Maple")]
     let runner = r.runner
@@ -899,8 +901,9 @@ private let pageHasMaple = [el(1, "Maple"), el(2, "Pause (k)")]
 
     // Mid-plan: nothing plays, so the wait step would run 20 s; stop ends it at once and runs no more.
     let waiting = FakeResolver([step("never", .done)])
-    waiting.planResult = .success(TaskPlan(steps: [clickMaple, playing]))
+    waiting.planResult = .success(TaskPlan(steps: [openMaple, clickMaple, playing]))
     let w = rig(waiting)
+    w.ax.defaultBrowser = "Safari"
     w.ax.elements = [el(1, "Maple")]
     let task = Task { await w.runner.run(goal: planGoal, mode: .command) }
     try? await Task.sleep(for: .milliseconds(200))

@@ -79,7 +79,7 @@ public struct PlanEngine: Sendable {
             return .actions([.click(.label(n), button: .left, count: 1)])
         case .clickFirstItem:
             // Without frames the navigation-stack test cannot run, so waiting would not help.
-            guard !frames.isEmpty else { return .missing(retry: false) }
+            guard frames.values.contains(where: { $0.width > 0 }) else { return .missing(retry: false) }
             guard let n = PlanTargets.firstItem(after: step.after, in: o.elements, frames: frames) else { return .missing(retry: true) }
             return .actions([.click(.label(n), button: .left, count: 1)])
         case .waitForMedia:

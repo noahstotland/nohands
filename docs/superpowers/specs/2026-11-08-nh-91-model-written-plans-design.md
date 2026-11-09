@@ -156,7 +156,8 @@ One compact request: a short system prompt with the step types and check kinds, 
 
 The whole plan is rejected, and the loop runs, unless all of these hold (the playback rule below is the exception: code repairs it):
 
-- It has 2 to 8 steps, and every step and check kind is known. An unknown field value rejects the plan rather than
+- It has 2 to 8 steps, the first is `open_site` or `search` (a plan never sees the screen it starts on, so a first click
+  would land in whatever app is in front), and every step and check kind is known. An unknown field value rejects the plan rather than
   dropping the step, so a plan never runs with a hole in it.
 - Every `site` is in `SiteSearch.siteNames`; any other value rejects the plan. A `search` has text a search may type.
 - Each text field is at most 80 characters and each `intent` is sanitized.
@@ -212,6 +213,9 @@ Plan steps share the step cap and step numbers with model steps. A plan step car
 does not touch it.
 
 ## Known costs
+
+- **An outage costs two timeouts.** The plan request's error is dropped and the loop's first call then meets the same
+  outage, so the failure shows after about 24 s on Claude and about 60 s on the local model with the default deadlines.
 
 - **On the local model, a plan answer of `null` or a hand-over costs the cached prefix.** The plan request has its own
   system prompt, so it displaces the ~2,200-token prefix `warmBody` leaves in Ollama's cache, and the next loop step

@@ -124,9 +124,12 @@ public struct TaskPlan: Equatable, Sendable {
     /// The plan with its intents sanitized, or nil when it breaks a rule: 2 to 8 steps; every `site` is one of
     /// `SiteSearch.siteNames`; a `search` has text a search may type; every text field is short; at least one check
     /// or search text names a distinctive word of the goal; a goal that wants something playing ends with
-    /// `wait_for_media`.
+    /// `wait_for_media`; the first step is `open_site` or `search`.
     public func validated(goal: String) -> TaskPlan? {
         guard Self.stepRange.contains(steps.count) else { return nil }
+        // A plan never sees the screen it starts on, so its first step must open a page: a click first would land on
+        // whatever app is in front, which the user did not target.
+        guard let first = steps.first?.kind, first == .openSite || first == .search else { return nil }
         var out: [PlanStep] = []
         for var step in steps {
             for field in [step.text, step.after, step.check.text] {

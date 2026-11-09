@@ -76,6 +76,7 @@ private func plan(_ steps: String...) -> String { #"{"plan":[\#(steps.joined(sep
         ("nine steps", tooMany),
         ("site not in the list", plan(openStep("videos.acme.dev"), clickStep, mediaStep)),
         ("address instead of a site", plan(openStep("https://github.com/x"), clickStep, mediaStep)),
+        ("first step is a click, not a page", plan(clickStep, openStep(), mediaStep)),
         ("search on a site not in the list", plan(searchStep("example.org", "outdoor boys"), mediaStep)),
         ("search text a browser would run", plan(searchStep("github.com", "javascript:alert(1)"), mediaStep)),
         ("long check text", plan(openStep(expect: check("url_contains", long)), clickStep, mediaStep)),
