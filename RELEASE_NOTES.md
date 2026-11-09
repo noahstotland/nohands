@@ -1,5 +1,11 @@
 # Release notes
 
+## 2026-11-09 keep the status bar up and warn on stale builds (NH-75) (#88)
+
+Merged 2026-11-09 03:24 UTC.
+
+The status bar no longer disappears when "show numbers" has nothing to label, and `scripts/bundle.sh` now warns when you build from a checkout that is behind `main`. If the bar is missing, rebuild from an up-to-date `main`.
+
 ## 2026-11-09 corner panel with the phrase, step trail and progress bar (NH-70) (#73)
 
 Merged 2026-11-09 02:22 UTC.
