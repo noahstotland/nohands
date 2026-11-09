@@ -104,3 +104,9 @@ private func obs(app: String = "Safari", title: String = "", url: String? = nil,
     #expect(!ScenarioReport.table(results).unicodeScalars.contains { $0.value < 0x20 && $0 != "\n" })
     #expect(ScenarioReport.summary(results) == "1 of 3 pass; false-done 1, not-run 1")
 }
+
+@Test func shippedScenarioFileLoads() throws {
+    let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+    let loaded = try ScenarioFile.load(Data(contentsOf: root.appendingPathComponent("scripts/task-scenarios.json")), run: 1)
+    #expect(loaded.map(\.name) == ["youtube-latest", "youtube-search-play", "wikipedia-article", "site-search", "textedit-save", "cookie-banner"])
+}
