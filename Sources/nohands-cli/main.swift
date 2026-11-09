@@ -31,6 +31,9 @@ func usage() -> Never {
                                       prints the step's intent, status and actions; executes nothing)
       nohands-cli task "<goal>"      (waits 3 s, then runs the goal as a multi-step task on the frontmost app,
                                       printing each step and the outcome; Ctrl-C stops it)
+      nohands-cli scenarios [file] [--only name]  (waits 3 s, then runs each scripted task goal for real and scores it
+                                      against a fresh screen check; takes over the screen; exits 0 only when all pass;
+                                      default file scripts/task-scenarios.json; Ctrl-C stops the suite)
       nohands-cli eval <file> [--runs N]  (scores the configured backend on a fixture set; executes nothing)
       nohands-cli listen             (mic -> VAD -> ASR; Ctrl-C to quit)
       nohands-cli desktop-status     (agent-desktop binary, version, permissions and the harness in use)
@@ -344,6 +347,8 @@ var exitStatus: Int32 = 0
                 exitStatus = outcome.exitStatus
                 try? await Task.sleep(for: .milliseconds(1800))   // let the outcome HUD show
             }
+        case "scenarios":
+            exitStatus = await runScenarios(rest)
         case "eval":
             guard let file = rest.first else { usage() }
             var runs = 1
@@ -395,19 +400,6 @@ Task { @MainActor in
 }
 app.run()
 
-/// Loads `~/.config/nohands/config.json` (plus environment) and builds the configured backend's resolver.
-func loadResolver() throws -> (config: AppConfig, resolver: any IntentResolving, model: String) {
-    let cfgURL = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".config/nohands/config.json")
-    let config = try AppConfig.load(from: try? Data(contentsOf: cfgURL), environment: ProcessInfo.processInfo.environment)
-    switch config.effectiveBackend {
-    case .claude: return (config, ClaudeIntentResolver(config: config), config.intentModel)
-    case .local: return (config, OllamaIntentResolver(config: config), config.resolvedLocalModel)
-    case .off: fail("error: LLM off")
-    }
-}
-
-func ms(_ d: Duration) -> Int { Int(d / .milliseconds(1)) }
-
 /// Waits 3 s (so the user can focus an app), then labels the frontmost app's elements.
 /// Never prompts: exits non-zero with a message if Accessibility is not granted.
 func frontElements() async throws -> (app: String, labels: [Int: UIElementInfo]) {
@@ -417,15 +409,6 @@ func frontElements() async throws -> (app: String, labels: [Int: UIElementInfo])
     try await Task.sleep(for: .seconds(3))
     let q = AXQuery()
     return (q.frontmostAppName() ?? "", LabelAssigner.assign(q.actionableElements()))
-}
-
-/// Runs `body` on the main actor with an overlay (the app's run loop is already running; see `runCommand`).
-@MainActor func runOverlay(_ body: @MainActor (OverlayController) async -> Void) async {
-    await body(OverlayController())
-}
-
-func sanitized(_ s: String) -> String {
-    String(s.unicodeScalars.map { $0.properties.generalCategory == .control || $0.properties.generalCategory == .lineSeparator || $0.properties.generalCategory == .paragraphSeparator ? " " : Character($0) })
 }
 
 enum Log {
