@@ -43,6 +43,8 @@ The first build downloads and compiles [FluidAudio](https://github.com/FluidInfe
 scripts/bundle.sh && open build/NoHands.app
 ```
 
+Build from an up-to-date `main`: `scripts/bundle.sh` prints a warning to stderr when the checkout is behind `origin/main`, because features merged since then would be missing from the app.
+
 `scripts/bundle.sh` builds a release binary, assembles `build/NoHands.app` and code-signs it. NoHands is a menu-bar app (no Dock icon); the menu bar shows `CMD`, `DICT` or `ZZZ` for the current mode.
 
 **Prompt board.** Every prompt you speak gets a row at the top of the screen (below the menu bar, on the screen the pointer is on): your words on the left and how it is being serviced on the right, coloured by state. Blue while it is live (`listening…` while you are still speaking, `heard`, then `step n · <what the model is doing>` for a task, with `✗ <why>` after a step that failed), yellow when `held` behind a running task, green when `done` (with the step count for a task), red when it `failed`, was `dropped` or `skipped (busy)`, grey when `stopped` or ignored. Finished rows leave after six seconds; at most four prompts are shown. Notices such as `NoHands is listening` or `microphone error` appear as a line above the prompts.
