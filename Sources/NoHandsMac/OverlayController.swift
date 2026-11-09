@@ -143,8 +143,10 @@ public final class OverlayController {
 
     static let statusBarHeight: CGFloat = 28
 
-    /// Hidden while the grid or number badges are up, so it never covers a badge or a grid number.
-    private var statusBarShown: Bool { statusBarPosition != .off && state == .none }
+    /// Hidden only while the grid or at least one badge panel is on screen, so it never covers a badge or a grid number.
+    /// `state` can be `.labels([:])` with nothing drawn, so the bar follows the panels, not `state`.
+    private var overlayDrawn: Bool { gridPanel != nil || !labelsPanels.isEmpty }
+    private var statusBarShown: Bool { statusBarPosition != .off && !overlayDrawn }
 
     /// Draws the bar centred on the screen the pointer is on, 8 pt below the menu bar or above the Dock.
     private func renderStatusBar() {
