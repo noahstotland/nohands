@@ -260,8 +260,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let field = NSSecureTextField(frame: NSRect(x: 0, y: 0, width: 300, height: 24))
         alert.accessoryView = field
         alert.window.initialFirstResponder = field
-        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        // Listening stays off while the alert is open, so dictation can't type into the field and a spoken
+        // "press return" can't press Save. If the user had already paused, it stays paused.
+        let pausedForAlert = pipeline != nil && !userPaused
+        if pausedForAlert { togglePause() }
+        let response = alert.runModal()
+        if pausedForAlert { togglePause() }
         defer { field.stringValue = "" }
+        guard response == .alertFirstButtonReturn else { return }
         guard let key = ClaudeKeyEntry.normalized(field.stringValue) else { return }
         do {
             try ConfigFile.saveAnthropicKey(key, at: ConfigFile.defaultURL)
@@ -465,7 +471,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         do {
             config = try AppConfig.load(from: data, environment: env)
             fileHasKey = (try? AppConfig.load(from: data, environment: [:]))?.anthropicAPIKey?.isEmpty == false
-            if let data, (try? AppConfig.load(from: data, environment: [:]))?.anthropicAPIKey?.isEmpty == false,
+            if fileHasKey,
                let perms = (try? FileManager.default.attributesOfItem(atPath: url.path))?[.posixPermissions] as? Int,
                ConfigFileSecurity.isTooOpen(posixPermissions: perms) {
                 PipelineLog.warning("config.json contains an API key but is readable by other users; run: chmod 600 \(url.path)")
