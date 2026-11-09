@@ -1,5 +1,19 @@
 # Release notes
 
+## 2026-11-09 set approval risk tolerance to permissive (NH-113) (#115)
+
+Merged 2026-11-09 21:15 UTC.
+
+The team now approves Low and Medium risk specs and merges on its own in this repo. High risk ones still wait for your approve. To go back, set the `Approval risk tolerance` row in `docs/agents/project.md` to `balanced` or `strict`.
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+## 2026-11-09 full-colour app icon for NoHands.app (NH-33) (#114)
+
+Merged 2026-11-09 21:05 UTC.
+
+NoHands now has its own app icon, the winking green face, in Finder, Get Info, Launchpad and a Dock tile you pin yourself. It is still a menu-bar app, so it doesn't show a Dock tile or a Cmd-Tab entry while running.
+
 ## 2026-11-09 set the Claude API key from the menu (NH-94) (#107)
 
 Merged 2026-11-09 20:24 UTC.
