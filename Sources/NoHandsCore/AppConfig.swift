@@ -58,6 +58,9 @@ public struct AppConfig: Codable, Equatable, Sendable {
     /// with it; everything else is ignored silently. Empty means off. `load` stores it normalized, or empty when
     /// it cannot be used (more than three words, or a stop phrase).
     public var attentionWord: String = ""
+    /// Task loop, Claude backend only: send a picture of the focused window on steps where the accessibility tree
+    /// failed (see `visionEnabled`). Off by default; needs the Screen Recording permission.
+    public var visionFallback: Bool = false
 
     public static let defaultOllamaURL = "http://127.0.0.1:11434"
     public static let efforts = ["low", "medium", "high", "xhigh", "max"]
@@ -71,7 +74,7 @@ public struct AppConfig: Codable, Equatable, Sendable {
         case maxTaskSteps, maxMediaTaskSteps, llmDeadlineMs, settleMs, maxObservedElements
         case localLlmDeadlineMs, localMaxObservedElements
         case desktopHarness, agentDesktopPath, agentDesktopTimeoutMs, agentDesktopSnapshotMs, agentDesktopHeadedFallback, agentDesktopTrace
-        case echoCancellation, attentionWord
+        case echoCancellation, attentionWord, visionFallback
     }
 
     public init(from decoder: Decoder) throws {
@@ -107,6 +110,7 @@ public struct AppConfig: Codable, Equatable, Sendable {
         d.agentDesktopTrace = try c.decodeIfPresent(Bool.self, forKey: .agentDesktopTrace) ?? d.agentDesktopTrace
         d.echoCancellation = try c.decodeIfPresent(Bool.self, forKey: .echoCancellation) ?? d.echoCancellation
         d.attentionWord = try c.decodeIfPresent(String.self, forKey: .attentionWord) ?? d.attentionWord
+        d.visionFallback = try c.decodeIfPresent(Bool.self, forKey: .visionFallback) ?? d.visionFallback
         self = d
     }
 
@@ -159,6 +163,9 @@ public struct AppConfig: Codable, Equatable, Sendable {
         case .off: return .off
         }
     }
+
+    /// Pictures are sent only with the flag on and Claude as the backend; the local model never gets one.
+    public var visionEnabled: Bool { visionFallback && effectiveBackend == .claude }
 
     /// Element cap for the backend in use (each resolver reads its own deadline key).
     public var observedElementCap: Int { effectiveBackend == .local ? localMaxObservedElements : maxObservedElements }

@@ -91,4 +91,8 @@ public enum Action: Equatable, Codable, Sendable {
     case closeTab(Int)
     case closeWindow(Int)
     case selectTab(Int)
+
+    /// Ask for a picture of the focused window on the next step. Only the task loop gives it meaning; anywhere
+    /// else the executor runs it as a successful no-op.
+    case look
 }

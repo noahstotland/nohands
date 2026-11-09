@@ -137,6 +137,7 @@ public enum IntentDecoder {
             case .value(let ms): return .wait(ms: clamp(ms, 100...5000))
             }
         case "ignore": return .ignore
+        case "look": return .look
 
         // Harness kinds.
         case "set_value":

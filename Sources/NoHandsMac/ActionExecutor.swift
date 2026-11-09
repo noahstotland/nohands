@@ -288,7 +288,7 @@ extension OverlayController: OverlayPresenting {
                 try? await Task.sleep(for: .milliseconds(ms))
             case .checkMedia:
                 addReading("Media", await mediaState().rawValue)
-            case .ignore:
+            case .ignore, .look:
                 break
             case .closeTab(let n):
                 guard let tab = tabSnapshot?.tab(n) else { return "no tab \(n)" }

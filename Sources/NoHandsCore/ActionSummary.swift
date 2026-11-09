@@ -52,6 +52,7 @@ public enum ActionSummary {
         case .closeTab(let n): "closeTab(\(n))"
         case .closeWindow(let n): "closeWindow(\(n))"
         case .selectTab(let n): "selectTab(\(n))"
+        case .look: "look"
         }
     }
 
