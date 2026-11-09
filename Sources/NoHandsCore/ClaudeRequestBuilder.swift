@@ -16,7 +16,14 @@ public struct ClaudeRequestBuilder: Sendable {
         try body(request: StepRequest(oneShot: transcript, context: context))
     }
 
-    public func body(request original: StepRequest) throws -> Data {
+    /// The connection check's request: a real step (same model, effort, system prompt and schema, so it fails when a
+    /// real step fails) for the goal `ping` on an empty screen, asking for one token.
+    public func connectionCheckBody() throws -> Data {
+        let screen = IntentContext(frontmostApp: "", mode: .command, labeledElements: [])
+        return try body(request: StepRequest(oneShot: "ping", context: screen), maxTokens: 1)
+    }
+
+    public func body(request original: StepRequest, maxTokens: Int = 1024) throws -> Data {
         // A builder with vision off never sends pixels, whatever the request holds.
         var request = original
         if !vision { request.vision = nil }
@@ -28,7 +35,7 @@ public struct ClaudeRequestBuilder: Sendable {
         }
         let obj: [String: Any] = [
             "model": model,
-            "max_tokens": 1024,
+            "max_tokens": maxTokens,
             "fallbacks": "default",
             // The only breakpoint: the system prompt is the one prefix that is identical on every request. The
             // user message starts with `Step: n of m`, which changes each step, so nothing in it is reusable.

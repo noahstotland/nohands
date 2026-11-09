@@ -142,3 +142,18 @@ import Foundation
         #expect(try AppConfig.load(from: json.map { Data($0.utf8) }, environment: [:]).earlySilenceMs == expected, "\(json ?? "nil")")
     }
 }
+
+@Test func keySourceFollowsWhereTheKeyCameFrom() throws {
+    let table: [(String?, [String: String], KeySource?)] = [
+        (nil, [:], nil),
+        (#"{"anthropicAPIKey":""}"#, [:], nil),
+        (#"{"anthropicAPIKey":"f"}"#, [:], .file),
+        (#"{"anthropicAPIKey":"f"}"#, ["ANTHROPIC_API_KEY": "e"], .environment),
+        (nil, ["ANTHROPIC_API_KEY": "e"], .environment),
+        (#"{"anthropicAPIKey":"f"}"#, ["ANTHROPIC_API_KEY": ""], .file),
+    ]
+    for (json, env, source) in table {
+        let c = try AppConfig.load(from: json.map { Data($0.utf8) }, environment: env)
+        #expect(c.anthropicKeySource == source, "\(json ?? "nil") \(env)")
+    }
+}
