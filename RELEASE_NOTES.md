@@ -1,5 +1,11 @@
 # Release notes
 
+## 2026-11-09 set the Claude API key from the menu (NH-94) (#107)
+
+Merged 2026-11-09 20:24 UTC.
+
+You can now paste your Claude API key from the menu (Set Claude API key…) instead of editing `config.json` by hand. Restart NoHands to apply it.
+
 ## 2026-11-09 model-written task plans run and checked in code (NH-91) (#106)
 
 Merged 2026-11-09 20:22 UTC.
