@@ -12,6 +12,9 @@ public struct AppConfig: Codable, Equatable, Sendable {
     public var asrModelVersion: String = "v2"
     /// Trailing silence (ms) before the VAD ends an utterance. 1000 ms lets the user pause mid-command.
     public var silenceMs: Int = 1000
+    /// Trailing silence (ms) after which a phrase that is already a complete grammar command or a stop phrase is acted
+    /// on without waiting for `silenceMs`. 0 turns it off. A chunk count underneath (256 ms each), like `silenceMs`.
+    public var earlySilenceMs: Int = 350
     /// After an utterance is transcribed, wait this long (ms) for speech to resume before acting; if it
     /// resumes, the two pieces are merged into one request. Grammar commands (e.g. "go back") skip the wait.
     public var mergeWindowMs: Int = 500
@@ -65,7 +68,7 @@ public struct AppConfig: Codable, Equatable, Sendable {
     public init() {}
 
     private enum CodingKeys: String, CodingKey {
-        case anthropicAPIKey, intentModel, intentEffort, asrModelVersion, silenceMs, mergeWindowMs, mergeWindowUnfinishedMs
+        case anthropicAPIKey, intentModel, intentEffort, asrModelVersion, silenceMs, earlySilenceMs, mergeWindowMs, mergeWindowUnfinishedMs
         case gridColumns, gridRows, moveStepPx, scrollStepLines
         case intentBackend, localModel, ollamaURL
         case maxTaskSteps, maxMediaTaskSteps, llmDeadlineMs, settleMs, maxObservedElements
@@ -82,6 +85,7 @@ public struct AppConfig: Codable, Equatable, Sendable {
         d.asrModelVersion = try c.decodeIfPresent(String.self, forKey: .asrModelVersion) ?? d.asrModelVersion
         d.intentEffort = try c.decodeIfPresent(String.self, forKey: .intentEffort) ?? d.intentEffort
         d.silenceMs = try c.decodeIfPresent(Int.self, forKey: .silenceMs) ?? d.silenceMs
+        d.earlySilenceMs = try c.decodeIfPresent(Int.self, forKey: .earlySilenceMs) ?? d.earlySilenceMs
         d.mergeWindowMs = try c.decodeIfPresent(Int.self, forKey: .mergeWindowMs) ?? d.mergeWindowMs
         d.mergeWindowUnfinishedMs = try c.decodeIfPresent(Int.self, forKey: .mergeWindowUnfinishedMs) ?? d.mergeWindowUnfinishedMs
         d.gridColumns = try c.decodeIfPresent(Int.self, forKey: .gridColumns) ?? d.gridColumns
@@ -122,6 +126,7 @@ public struct AppConfig: Codable, Equatable, Sendable {
         config.moveStepPx = min(max(config.moveStepPx, 1), 2000)
         config.scrollStepLines = min(max(config.scrollStepLines, 1), 50)
         config.silenceMs = min(max(config.silenceMs, 100), 3000)
+        config.earlySilenceMs = min(max(config.earlySilenceMs, 0), 3000)
         config.mergeWindowMs = min(max(config.mergeWindowMs, 0), 5000)
         config.mergeWindowUnfinishedMs = min(max(config.mergeWindowUnfinishedMs, config.mergeWindowMs), 5000)
         config.maxTaskSteps = min(max(config.maxTaskSteps, 1), 30)
