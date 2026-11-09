@@ -15,6 +15,9 @@ Scripts read the first backticked token in each Value cell. Keep the backticks a
 | Issue identifier prefix (`<PREFIX>`) | `NH` |
 | Linear project (Linear only) | none |
 | Approver | Noah Stotland (`noahstotland`). Approves specs and merges only |
+| No Hands (`off` or `on`) | `on`. Whether you may start a No Hands run: the Chief of Staff approves specs and merges itself, at any risk level, until the Backlog is empty or a limit below is hit. Reviews, CI and merge gates still run; changes to the files that decide approvals still wait for you |
+| No Hands ticket cap | `10`. Tickets one No Hands run may start |
+| No Hands cost cap (USD) | `200`. API-equivalent spend of the run's tickets, from `agent_usage.py` |
 
 ### Choosing a tracker
 
