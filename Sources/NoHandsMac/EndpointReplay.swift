@@ -156,7 +156,7 @@ public enum EndpointReplay {
                 count = segment.samples.count
             }
             guard let idx = events.lastIndex(where: { if case .call(let n, _, _) = $0 { return n == count }; return false }),
-                  case .call(_, let text, let ms) = events[idx] else { continue }
+                  case .call(_, let text, let ms) = events[idx], !text.isEmpty else { continue }   // the app abandons an empty pass
             closes.append((.full, chunkEnd, text, ms))
         }
         let measured = closes.max { $0.chunkEnd < $1.chunkEnd }

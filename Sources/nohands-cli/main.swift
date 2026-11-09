@@ -178,7 +178,7 @@ var exitStatus: Int32 = 0
             guard FileManager.default.fileExists(atPath: dir, isDirectory: &isDir), isDir.boolValue else {
                 fail("bench: \(dir) is not a directory; \(readme)")
             }
-            let files = ((try? FileManager.default.contentsOfDirectory(atPath: dir)) ?? [])
+            let files = (try FileManager.default.contentsOfDirectory(atPath: dir))
                 .filter { $0.lowercased().hasSuffix(".wav") }
                 .sorted()
             guard !files.isEmpty else { fail("bench: no .wav files in \(dir); \(readme)") }

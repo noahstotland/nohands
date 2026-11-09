@@ -70,6 +70,6 @@ Reading it:
 
 ## Checks that ran
 
-- `swift build`: clean. `swift test`: 451 tests pass (includes `LatencyStatsTests`), with no audio, models or permissions.
+- `swift build`: clean. `swift test`: 458 tests pass (after merging main) (includes `LatencyStatsTests`), with no audio, models or permissions.
 - `nohands-cli bench /nonexistent`, and `bench` on an empty folder: exit 1 with the message.
 - `bench` on a folder with one silent file: `skipped: no utterance`, all percentiles `n/a`, exit 1.

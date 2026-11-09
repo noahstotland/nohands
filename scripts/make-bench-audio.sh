@@ -48,4 +48,4 @@ with wave.open(a) as wa, wave.open(b) as wb, wave.open(dest, "wb") as wo:
     wo.writeframes(wb.readframes(wb.getnframes()))
 PY
 
-echo "wrote $(ls "$out"/*.wav | wc -l | tr -d ' ') files to $out"
+echo "wrote the phrase set to $out"
