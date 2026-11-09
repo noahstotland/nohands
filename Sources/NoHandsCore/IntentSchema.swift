@@ -163,12 +163,17 @@ public enum IntentSchema {
         ])
     }
 
-    /// The Claude schema plus `look`; sent only by a Claude builder with vision on, so the schema (and the cached
-    /// system block) of a flag-off run is untouched.
-    public static var visionActionsJSONSchema: [String: Any] { claudeSchema(kinds: kinds + ["look"]).foundationObject as! [String: Any] }
+    /// The Claude schema in declaration order, which is semantic: `intent` before `status` before `actions`, and `kind`
+    /// first in every branch, so the model commits to a kind before it fills fields. With `vision` it also offers `look`;
+    /// only a Claude builder with vision on sends that, so the schema (and the cached system block) of a flag-off run is
+    /// untouched. The request body embeds this value directly, never the dictionaries below, whose key order is random.
+    static func claudeOrderedSchema(vision: Bool) -> OrderedJSON { claudeSchema(kinds: vision ? kinds + ["look"] : kinds) }
 
-    /// What Claude receives. `orderedSchema` stays the flat shape, which is what Ollama receives.
-    nonisolated(unsafe) public static let actionsJSONSchema: [String: Any] = claudeSchema(kinds: kinds).foundationObject as! [String: Any]
+    public static var visionActionsJSONSchema: [String: Any] { claudeOrderedSchema(vision: true).foundationObject as! [String: Any] }
+
+    /// What Claude receives, unordered, for callers that read it with `JSONSerialization`. `orderedSchema` stays the
+    /// flat shape, which is what Ollama receives.
+    nonisolated(unsafe) public static let actionsJSONSchema: [String: Any] = claudeOrderedSchema(vision: false).foundationObject as! [String: Any]
 
     public static let systemPrompt: String = """
     You control a Mac hands-free, step by step, for a spoken request. You will see the screen again after your \

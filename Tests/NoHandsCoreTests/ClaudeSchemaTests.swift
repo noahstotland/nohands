@@ -167,14 +167,24 @@ private func sent(_ sample: JSON, in schema: JSON) -> JSON? {
     }
 }
 
-@Test func claudeRequestsShareOneSchemaAndRulesText() throws {
+@Test(arguments: [false, true])
+private func claudeBodyKeepsSchemaOrderAndIsByteStable(vision: Bool) throws {
     let a = IntentContext(frontmostApp: "Finder", mode: .command, labeledElements: [(1, "Back")])
     let b = IntentContext(frontmostApp: "Safari", mode: .dictation, labeledElements: [])
-    func format(_ transcript: String, _ context: IntentContext) throws -> NSDictionary {
-        let o = try #require(JSONSerialization.jsonObject(with: ClaudeRequestBuilder(model: "m").body(transcript: transcript, context: context)) as? JSON)
-        return try #require((o["output_config"] as? JSON)?["format"] as? NSDictionary)
+    let builder = ClaudeRequestBuilder(model: "m", vision: vision)
+    func text(_ transcript: String, _ context: IntentContext) throws -> String {
+        String(decoding: try builder.body(transcript: transcript, context: context), as: UTF8.self)
     }
-    #expect(try format("go back", a) == format("open the downloads folder", b))
+    let first = try text("go back", a)
+    // Order is semantic for a constrained decoder: the restatement before the status before the actions, and the kind
+    // before the fields that depend on it (a dictionary would emit them in a random order).
+    let intent = try #require(first.range(of: #""properties":{"intent""#)), status = try #require(first.range(of: #""status":{"#))
+    let actions = try #require(first.range(of: #""actions":{"#))
+    #expect(intent.lowerBound < status.lowerBound && status.lowerBound < actions.lowerBound)
+    #expect(first.components(separatedBy: #"{"type":"object","properties":{"kind":"#).count - 1 == 13)
+    // Everything before the user message is the cached prefix: it must not change from one request to the next.
+    func prefix(_ body: String) throws -> Substring { body[..<(try #require(body.range(of: #","messages":"#)).lowerBound)] }
+    #expect(try prefix(first) == prefix(text("open the downloads folder", b)))
     #expect(ClaudeRequestBuilder.systemText(for: .native).contains(IntentSchema.claudeFieldsRule))
     #expect(!IntentSchema.systemPrompt.contains(IntentSchema.claudeFieldsRule))
 }
