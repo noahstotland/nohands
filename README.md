@@ -242,3 +242,11 @@ Audio never leaves your machine. Only commands the grammar can't match are sent 
 ## Design
 
 See [the design spec](docs/superpowers/specs/2026-11-04-nohands-design.md) and [the implementation plan](docs/superpowers/plans/2026-11-04-nohands-voice-control.md).
+
+## License
+
+NoHands is under the [Apache License 2.0](LICENSE). Third-party notices are in [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md).
+
+Speech and local models are downloaded at run time and keep their own licences: the Parakeet speech models are CC-BY-4.0, Silero VAD is MIT, and Qwen 2.5 7B is Apache-2.0. The 3B Qwen model, the low-memory default for the local backend, is research-only and not for commercial use; see THIRD_PARTY_LICENSES.md. To change it, set `localModel` in the config file.
+
+To report a security problem, see [SECURITY.md](SECURITY.md). To contribute, see [CONTRIBUTING.md](CONTRIBUTING.md).
