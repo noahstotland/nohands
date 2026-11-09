@@ -85,7 +85,8 @@ These are existing generic signals. A goal that fails the gate runs exactly as t
 
 ```json
 {"plan":[
-  {"intent":"…","do":"open_url","url":"https://…","expect":{"kind":"title_contains","text":"…"}},
+  {"intent":"…","do":"open_site","site":"<a supported site>","expect":{"kind":"title_contains","text":"…"}},
+  {"intent":"…","do":"search","site":"<a supported site>","text":"…","expect":{"kind":"url_contains","text":"…"}},
   {"intent":"…","do":"click","text":"…","expect":{"kind":"element_present","text":"…"}},
   {"intent":"…","do":"click_first_item","after":"…","expect":{"kind":"url_contains","text":"…"}},
   {"intent":"…","do":"wait_for_media","expect":{"kind":"media_playing"}}
@@ -94,11 +95,17 @@ These are existing generic signals. A goal that fails the gate runs exactly as t
 
 `{"plan":null}` or an empty list means no plan.
 
+**The model never writes an address.** Live runs showed the local 7B cannot write real page URLs (it wrote invented
+hosts, or nothing). `site` is one of `SiteSearch.siteNames` (the sorted keys of `SiteSearch.templates`, the one list); code
+builds every address from the site table. The schema makes every property required (an unused field is `""`, which the
+decoder reads as absent), so Claude's structured output sees no optional properties.
+
 Step types, the whole set:
 
 | `do` | Meaning | Compiles to |
 |---|---|---|
-| `open_url` | Open a page in the default browser | `.openURL` + `.wait(1500)` |
+| `open_site` | Open a supported site's home page in the default browser | `.openURL(WebAddress.url(for: site))` + `.wait(1500)` |
+| `search` | Search a supported site for `text` | `.searchSite(text, site:)` + `.wait(1500)` |
 | `click` | Click the first element whose title matches `text`, preferring an exact match | `.click(.label(n))` |
 | `click_first_item` | Click the first content link, after the element titled `after` if given | `.click(.label(n))` |
 | `wait_for_media` | If the screen shows a Play control and it has not been clicked, click it; then wait for playback | `.click(.label(n))`, then `.waitFor(.mediaPlaying, 20 s)` |
@@ -125,7 +132,9 @@ Text matching is the same everywhere: lower-cased, accents folded, letters and d
 One compact request: a short system prompt with the step types and check kinds, a few examples, and the goal through
 `ClaudeRequestBuilder.sanitize`. No app, title, URL or elements are sent.
 
-- Every example uses invented sites on the reserved `.example` domain, varies its step count, and varies its step types.
+- The prompt lists the supported sites (interpolated from `SiteSearch.siteNames`) and the schema's `site` is an enum of
+  them plus `""`, so constrained decoding cannot write an address. Examples use only listed sites, vary their step count
+  and step types, and name no site flow of their own.
   Two examples answer `null`: a goal that needs no plan, and a goal that names a Mac app rather than a website.
 - `IntentResolving` gains `plan(goal:) async throws -> TaskPlan?`, with a default extension returning nil so test fakes
   that do not care need no change.
@@ -142,12 +151,11 @@ The whole plan is rejected, and the loop runs, unless all of these hold:
 
 - It has 2 to 8 steps, and every step and check kind is known. An unknown field value rejects the plan rather than
   dropping the step, so a plan never runs with a hole in it.
-- Each URL passes `WebAddress.url(for:)`, the check `open_url` already goes through, so only `http` and `https` open.
-- No URL host is on `.example`, which catches a plan copied from the prompt's examples.
+- Every `site` is in `SiteSearch.siteNames`; any other value rejects the plan. A `search` has text a search may type.
 - Each text field is at most 80 characters and each `intent` is sanitized.
 - **At least one check is tied to a distinctive word of the goal.** Distinctive words are the goal's words of three or
   more letters, minus `MediaGoal`'s words and a short fixed list of general words (verbs, articles, and recency words such
-  as `latest`, `newest`, `top`, `first`). At least one check's text must contain one under the matching above. On "watch
+  as `latest`, `newest`, `top`, `first`). At least one check's text (or a `search` step's text) must contain one under the matching above. On "watch
   the newest veritasium video", a check on `watch` or `video` does not count and a check on `veritasium` does. A plan for
   a channel or page the model invented cannot be reported as a success.
 - **A goal for which `MediaSignal.wantsPlayback` is true must end with `wait_for_media`.** Otherwise a plan could report
@@ -266,8 +274,7 @@ One table-driven test per rule, per `AGENTS.md` § Testing.
 Core:
 
 - `PlanGate`: passes and rejects, including short goals and a browser name.
-- Plan decoding and `validated`: each rejection above, `null`, an unknown step or check kind, a `file:` URL, an `.example`
-  URL, a check tied only to a general word, a playback goal not ending in `wait_for_media`, too many steps.
+- Plan decoding and `validated`: each rejection above, `null`, an unknown step or check kind, a site not in the list, a check tied only to a general word, a playback goal not ending in `wait_for_media`, too many steps.
 - Text matching: folded match and miss.
 - Element picks: `click` exact over partial, `click_first_item` with and without `after`, on the captured real lists.
 - `PlanEngine`: for each step type, the step produced, the extra look, the hand-over reason, `.finish` after the last
