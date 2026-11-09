@@ -238,6 +238,9 @@ Audio never leaves your machine. Only commands the grammar can't match are sent 
 | `Sources/NoHands` | The menu-bar app |
 | `Sources/nohands-cli` | Command-line tools for testing each piece by hand |
 | `docs/superpowers` | Design spec and implementation plan |
+| `LICENSE`, `THIRD_PARTY_LICENSES.md` | Apache-2.0 licence and third-party notices |
+| `CONTRIBUTING.md`, `SECURITY.md` | How to contribute and how to report a vulnerability |
+| `.github` | Issue and PR templates |
 
 ## Design
 

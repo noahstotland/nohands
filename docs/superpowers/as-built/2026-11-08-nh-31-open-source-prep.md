@@ -10,6 +10,8 @@
 - The spec said the agent-tooling paths in history are 65. On the remote it is 112 paths under `.claude`, `scripts` and `docs/agents`.
 - The spec expected FluidAudio's Sortformer, TTS and G2P notices not to apply. The build found that Swift 6.0 compiles every FluidAudio target, and `scripts/bundle.sh` copies `FluidAudio_LuxTtsG2pResources.bundle` into the app. That data is derived from espeak-ng (GPL-3.0-or-later) and FrequencyWords (CC-BY-SA-4.0). It is recorded as an open item in `THIRD_PARTY_LICENSES.md` and the PR. A built app should not be handed out until a follow-up ticket stops the copy. `bundle.sh` is unchanged.
 - `THIRD_PARTY_LICENSES.md` also reproduces the notices for the NemoTextProcessing, fastcluster, VBx and Japanese G2P code that is compiled in.
+- A second open item was found: the Rust crates behind `rustfst` and `flate2` (`nom`, `miniz_oxide`, `bitflags`, `anyhow`, `lazy_static`) have no copyright line in FluidAudio's notice or upstream. `THIRD_PARTY_LICENSES.md` records it for the owner before any binary is handed out.
+- `README.md` Layout lists the new root files and `.github`.
 - `CODE_OF_CONDUCT.md` is not written. The owner has not given a contact address. Nothing links to it.
 - The scan also covered issue and PR text. Issue #31 holds an absolute home path and the owner's email, listed in the PR for the owner.
 - The PR holds a flagged list but no owner decisions on it yet, so none are applied.
