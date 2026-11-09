@@ -1,7 +1,8 @@
 # NH-103: Claude status in the menu and a "Check Claude connection" test: Design
 
 **Date:** 2026-11-09  **Ticket:** [NH-103](https://github.com/noahstotland/nohands/issues/103)
-**Status:** Proposed
+**Status:** Shipped
+**Shipped:** in PR #105, as specified
 
 ## Intent
 
