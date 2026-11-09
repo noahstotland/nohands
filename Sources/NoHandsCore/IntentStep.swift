@@ -48,6 +48,9 @@ public struct ScreenObservation: Equatable, Sendable {
     public var readings: [String] = []
     /// Whether media plays in the front window; nil when not observed (the one-shot path), which prints no line.
     public var media: MediaState? = nil
+    /// Every menu-bar title found, before the element list's cap cut any off. Not shown to the model; the menu-bar
+    /// guard and name binding read it. Empty under agent-desktop, whose window snapshots hold no menu bar.
+    public var menuBarTitles: [String] = []
     public init(app: String, windowTitle: String = "", url: String? = nil, mode: Mode,
                 overlay: String = "none", elements: [ObservedElement] = []) {
         self.app = app; self.windowTitle = windowTitle; self.url = url

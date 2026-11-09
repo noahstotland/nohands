@@ -70,6 +70,13 @@ public enum LabelAssigner {
         return result
     }
 
+    /// A top-level item of the app's menu bar (native role `AXMenuBarItem`). agent-desktop's `menuitem` is not one.
+    public static func isMenuBarItem(_ element: UIElementInfo) -> Bool {
+        var role = element.role.lowercased()
+        if role.hasPrefix("ax") { role.removeFirst(2) }
+        return role == "menubaritem"
+    }
+
     /// Exact (case-insensitive) title match first, then prefix, then contains; nil if none.
     public static func find(named name: String, in elements: [UIElementInfo]) -> UIElementInfo? {
         let q = name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
