@@ -98,6 +98,26 @@ private func okBody(_ actionsJSON: String) -> Data {
         } catch { Issue.record("wrong error \(error)") }
     }
 
+    @Test func connectionCheckSendsOneTokenRealStepAndMapsOutcomes() async throws {
+        let rejected = try JSONSerialization.data(withJSONObject: ["error": ["type": "invalid_request_error",
+                                                                              "message": "bad schema, key \(secretKey)"]])
+        let table: [((URLRequest) -> (Int, Data)?, ClaudeCheckKind)] = [
+            ({ _ in (400, rejected) }, .requestRejected), ({ _ in (200, Data()) }, .connected), ({ _ in nil }, .timedOut),
+        ]
+        for (handler, kind) in table {
+            StubProtocol.reset(handler)
+            let result = await ClaudeConnectionCheck(config: config(), session: makeSession(), deadline: .milliseconds(300)).run()
+            #expect(result.kind == kind)
+            #expect(!(result.detail ?? "").contains(secretKey))
+            let sent = try JSONSerialization.jsonObject(with: try #require(StubProtocol.bodies.first)) as? [String: Any]
+            #expect(sent?["max_tokens"] as? Int == 1 && sent?["output_config"] != nil)
+            #expect(StubProtocol.requests.count == 1)
+        }
+        StubProtocol.reset { _ in (200, Data()) }
+        #expect(await ClaudeConnectionCheck(config: config(key: nil), session: makeSession()).run().kind == .noKey)
+        #expect(StubProtocol.requests.isEmpty)
+    }
+
     @Test func refusalAndMalformed() async {
         StubProtocol.reset { _ in (200, try! JSONSerialization.data(withJSONObject: ["stop_reason": "refusal", "content": []])) }
         let r = ClaudeIntentResolver(config: config(), session: makeSession())

@@ -44,20 +44,28 @@ public actor ClaudeIntentResolver: IntentResolving {
         self.deadline = deadline ?? .milliseconds(config.llmDeadlineMs)
     }
 
-    public func resolve(_ stepRequest: StepRequest) async throws -> IntentStep {
-        guard let key = config.anthropicAPIKey, !key.isEmpty else { throw IntentError.noAPIKey }
-        let builder = ClaudeRequestBuilder(model: config.intentModel, effort: config.intentEffort,
-                                           vision: config.visionEnabled)
-        var request = URLRequest(url: baseURL)
+    /// The one place a Claude `URLRequest` is set up, shared by real steps and the connection check.
+    static func makeRequest(url: URL, key: String, deadline: Duration, body: Data) -> URLRequest {
+        var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.timeoutInterval = TimeInterval(deadline.components.seconds) + 2
         for (name, value) in ClaudeRequestBuilder.headers(key) { request.setValue(value, forHTTPHeaderField: name) }
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = body
+        return request
+    }
+
+    public func resolve(_ stepRequest: StepRequest) async throws -> IntentStep {
+        guard let key = config.anthropicAPIKey, !key.isEmpty else { throw IntentError.noAPIKey }
+        let builder = ClaudeRequestBuilder(model: config.intentModel, effort: config.intentEffort,
+                                           vision: config.visionEnabled)
+        let body: Data
         do {
-            request.httpBody = try builder.body(request: stepRequest)
+            body = try builder.body(request: stepRequest)
         } catch {
             throw IntentError.decode(.malformed("could not encode request"))
         }
+        let request = Self.makeRequest(url: baseURL, key: key, deadline: deadline, body: body)
 
         let started = ContinuousClock.now
         let (data, http) = try await IntentHTTP.send(request, session: session, deadline: deadline)
