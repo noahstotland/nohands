@@ -1,5 +1,11 @@
 # Release notes
 
+## 2026-11-09 corner panel with the phrase, step trail and progress bar (NH-70) (#73)
+
+Merged 2026-11-09 02:22 UTC.
+
+While a request runs, a panel at the bottom right of the screen now shows what you said, the steps done so far and a "step 3 of 12" progress bar, then keeps the outcome for a few seconds. It has no setting.
+
 ## 2026-11-09 turn on No Hands with 10 ticket and $200 caps (NH-71) (#72)
 
 Merged 2026-11-09 02:11 UTC.
