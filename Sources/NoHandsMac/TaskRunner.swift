@@ -190,6 +190,11 @@ public enum TaskOutcome: Equatable, Sendable {
                     }
                 }
             }
+            // With vision on, a point is only ever in a picture's pixels: on a step without one (a repeat from history,
+            // or text in an earlier picture) it would be read as a raw screen point and could land in another app.
+            if pointFailure == nil, screenshots != nil, ScreenshotGeometry.holdsPoint(actions), !hasImage(request.vision) {
+                pointFailure = ScreenshotGeometry.needsPictureReason
+            }
             let failure: String?
             if let pointFailure { failure = pointFailure }
             else if let blocked = ShortcutGuard.blocked(actions, goal: goal)
@@ -414,6 +419,8 @@ public enum TaskOutcome: Equatable, Sendable {
         if cancelled { task.cancel() }
         await withTaskCancellationHandler { await task.value } onCancel: { task.cancel() }
     }
+
+    private func hasImage(_ v: VisionInput?) -> Bool { if case .image? = v { return true } else { return false } }
 
     static func stoppedHUD(_ intent: String) -> String { intent.isEmpty ? PipelineText.stopped : "stopped: \(intent)" }
 

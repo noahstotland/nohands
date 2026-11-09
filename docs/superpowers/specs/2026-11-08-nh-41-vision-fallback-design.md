@@ -2,7 +2,7 @@
 
 **Date:** 2026-11-08  **Ticket:** [NH-41](https://github.com/noahstotland/nohands/issues/41)
 **Status:** Shipped
-**Shipped:** in PR #86, as specified
+**Shipped:** in PR #86, as specified (plus the no-picture point refusal added after the security review)
 
 ## Intent
 
@@ -207,8 +207,10 @@ The first-action rule is what makes one window check enough. `[open_app, click p
 or two point clicks where the first opens a pop-up would otherwise pass the check and then land in a window nobody
 photographed. Actions after the point, such as `wait`, are fine.
 
-History keeps the actions as the model sent them. A step with no picture leaves points alone: they are screen points,
-as today.
+History keeps the actions as the model sent them. With `visionFallback` on, a `.point` on a step with no
+picture is refused with `point needs a screenshot: say look first`, which is also a picture trigger (added after the
+security review: a point repeated from history would otherwise be a raw screen point). With it off, points are screen
+points as today.
 
 ### Grant and row text
 

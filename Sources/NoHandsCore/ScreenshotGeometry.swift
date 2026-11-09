@@ -18,6 +18,7 @@ public enum PointMapping: Equatable, Sendable { case mapped([Action]), refused(S
 /// Pure maths between a window picture and the screen.
 public enum ScreenshotGeometry {
     public static let outsideReason = "point outside the screenshot"
+    public static let needsPictureReason = "point needs a screenshot: say look first"
     public static let notFirstReason = "point must be the step's first action"
 
     /// How far (points) a window's frame may differ from the one photographed and still be the same window.

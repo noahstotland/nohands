@@ -8,6 +8,7 @@ import Foundation
         ("no element named 'x'", [], true),
         ("element changed, look again", [.click(.label(1), button: .left, count: 1)], true),
         (nil, [.look], true),
+        ("point needs a screenshot: say look first", [], true),
         ("no label 3", [], false),
         (nil, [], false),
         ("point off screen", [], false),

@@ -749,10 +749,17 @@ private let seesScreen = "step 2 · looking at the screen"
         #expect(resolver.requests[2].history[1].failure == failure, "\(name)")
         #expect(resolver.requests[2].history[1].actions == actions, "\(name)")   // history keeps what the model sent
     }
-    // A point on a step with no picture is a screen point, untouched.
-    let r = rig(FakeResolver([step("click", .done, [point(100, 50)])]), vision: FakeScreenshots())
-    _ = await r.runner.run(goal: "click", mode: .command)
-    #expect(r.input.calls.filter { $0.hasPrefix("click:") } == ["click:100,50"])
+    // With vision on, a point on a step with no picture is refused (it would be a raw screen point), and the model gets
+    // a picture next step. With no provider (vision off) it is a screen point, untouched.
+    let resolver = FakeResolver([step("click", .continue, [point(100, 50)]), step("done", .done)])
+    let on = rig(resolver, vision: FakeScreenshots())
+    _ = await on.runner.run(goal: "click", mode: .command)
+    #expect(on.input.calls.filter { $0.hasPrefix("click:") }.isEmpty)
+    #expect(resolver.requests[1].history[0].failure == ScreenshotGeometry.needsPictureReason)
+    #expect(resolver.requests[1].vision == .image(FakeScreenshots.shot))
+    let off = rig(FakeResolver([step("click", .done, [point(100, 50)])]))
+    _ = await off.runner.run(goal: "click", mode: .command)
+    #expect(off.input.calls.filter { $0.hasPrefix("click:") } == ["click:100,50"])
 }
 
 @MainActor @Test func aHungCaptureNeverDelaysStopOrTheStep() async {
