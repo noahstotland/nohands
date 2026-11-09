@@ -1,5 +1,11 @@
 # Release notes
 
+## 2026-11-09 repeatable latency benchmark, nohands-cli bench (NH-40) (#102)
+
+Merged 2026-11-09 05:58 UTC.
+
+none. This is a developer command; users will not notice.
+
 ## 2026-11-09 task scenario suite with pass/fail and step counts (NH-49) (#101)
 
 Merged 2026-11-09 05:39 UTC.
