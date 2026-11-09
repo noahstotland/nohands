@@ -36,7 +36,7 @@ mic (AVAudioEngine with voice processing / echo cancellation unless `echoCancell
   → ActionExecutor
       ├─ InputSynthesizer (CGEvent keys / unicode typing / mouse)
       ├─ AXQuery (element lookup in the frontmost app)
-      └─ OverlayController (grid, numbered labels, prompt board)
+      └─ OverlayController (grid, numbered labels, prompt board, status bar)
 ```
 
 **Single vocabulary.** `Action` is the one enum every stage produces or consumes. The grammar, the LLM decoder, and the executor all speak `Action`; adding a capability means adding a case and handling it in three places.
@@ -55,7 +55,7 @@ mic (AVAudioEngine with voice processing / echo cancellation unless `echoCancell
 
 Mode is shown in the menu bar: `mic` icon + `CMD` / `DICT` / `ZZZ` text.
 
-The menu ends with a group above Quit: **Start at Login** (a checkbox backed by `SMAppService.mainApp`, read from the system each time the menu opens) and **Open config.json…** (creates the file with mode 600 if missing, opens it in the default editor, and says to restart NoHands to apply changes).
+The menu ends with a group above Quit: **Start at Login** (a checkbox backed by `SMAppService.mainApp`, read from the system each time the menu opens), **Status Bar** (a submenu Off / Top / Bottom for the always-on status bar, kept in user defaults) and **Open config.json…** (creates the file with mode 600 if missing, opens it in the default editor, and says to restart NoHands to apply changes).
 
 ## 6. Command grammar (deterministic)
 

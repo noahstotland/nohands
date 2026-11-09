@@ -12,6 +12,16 @@ public final class OverlayController {
     private var boardPanel: NSPanel?
     /// Redraws the board when its next row is due to leave.
     private var boardTask: Task<Void, Never>?
+    /// The always-on status bar (see `StatusBarText`): app state and mode come from `setAppState`, the rest from the board.
+    private var statusPanel: NSPanel?
+    private var statusMenu: MenuState = .loading
+    private var statusMode: Mode = .command
+    private var shownStatus: (line: StatusLine, size: CGSize)?
+
+    /// Where the status bar sits; changing it redraws at once.
+    public var statusBarPosition: StatusBarPosition = .top {
+        didSet { if statusBarPosition != oldValue { renderBoard() } }
+    }
 
     public init() {}
 
@@ -27,6 +37,7 @@ public final class OverlayController {
         panel.contentView = GridView(frame: CGRect(origin: .zero, size: frame.size), grid: grid)
         panel.orderFrontRegardless()
         state = .grid(grid)
+        renderBoard()
     }
 
     public func showLabels(_ labels: [Int: UIElementInfo]) {
@@ -49,12 +60,22 @@ public final class OverlayController {
             labelsPanels.append(panel)
         }
         state = .labels(drawn)
+        renderBoard()
     }
 
     public func hide() {
         removeGridPanel()
         removeLabelsPanels()
         state = .none
+        renderBoard()
+    }
+
+    /// The app state and mode the status bar shows when no prompt is live (called from the menu refresh).
+    public func setAppState(_ menu: MenuState, mode: Mode) {
+        let changed = menu != statusMenu || mode != statusMode
+        statusMenu = menu
+        statusMode = mode
+        if changed { renderBoard() } else { renderStatusBar() }
     }
 
     /// A transient notice line on the board (loading, listening, an error).
@@ -83,6 +104,7 @@ public final class OverlayController {
         board.prune(now: now)
         let rows = board.visibleRows(now: now)
         let notice = board.visibleNotice(now: now)
+        renderStatusBar()
         guard !rows.isEmpty || notice != nil else {
             boardPanel?.orderOut(nil)
             return
@@ -91,7 +113,7 @@ public final class OverlayController {
         let width = min(Self.boardWidth, max(200, screenCG.width - 32))
         let lines = rows.count + (notice == nil ? 0 : 1)
         let size = CGSize(width: width, height: CGFloat(lines) * Self.boardRowHeight + Self.boardPadding * 2)
-        let originCG = CGPoint(x: screenCG.midX - size.width / 2, y: screenCG.minY + 8)
+        let originCG = CGPoint(x: screenCG.midX - size.width / 2, y: screenCG.minY + 8 + (statusBarShown && statusBarPosition == .top ? Self.statusBarHeight + 6 : 0))
         let frame = CoordinateMapper.toAppKit(CGRect(origin: originCG, size: size), primaryScreenHeight: Self.primaryHeight)
         let panel = boardPanel ?? Self.makePanel()
         boardPanel = panel
@@ -105,6 +127,36 @@ public final class OverlayController {
                 self.renderBoard()
             }
         }
+    }
+
+    static let statusBarHeight: CGFloat = 28
+
+    /// Hidden while the grid or number badges are up, so it never covers a badge or a grid number.
+    private var statusBarShown: Bool { statusBarPosition != .off && state == .none }
+
+    /// Draws the bar centred on the screen the pointer is on, 8 pt below the menu bar or above the Dock.
+    private func renderStatusBar() {
+        guard statusBarShown else {
+            statusPanel?.orderOut(nil)
+            shownStatus = nil
+            return
+        }
+        let line = StatusBarText.line(menu: statusMenu, mode: statusMode, rows: board.visibleRows(now: .now))
+        let screenCG = Self.visibleBoundsCG(containing: Self.pointerCG())
+        let textW = StatusBarView.textWidth(line.text)
+        let width = min(max(160, textW + 44), min(520, max(160, screenCG.width - 32)))
+        let size = CGSize(width: width, height: Self.statusBarHeight)
+        let y = statusBarPosition == .bottom ? screenCG.maxY - 8 - size.height : screenCG.minY + 8
+        let originCG = CGPoint(x: screenCG.midX - size.width / 2, y: y)
+        let frame = CoordinateMapper.toAppKit(CGRect(origin: originCG, size: size), primaryScreenHeight: Self.primaryHeight)
+        let panel = statusPanel ?? Self.makePanel()
+        statusPanel = panel
+        if panel.frame != frame { panel.setFrame(frame, display: false) }
+        if shownStatus?.line != line || shownStatus?.size != size {
+            panel.contentView = StatusBarView(frame: CGRect(origin: .zero, size: size), line: line)
+            shownStatus = (line, size)
+        }
+        panel.orderFrontRegardless()
     }
 
     /// CG-space (top-left origin) bounds of the screen containing `point`; primary screen if none does.
@@ -294,5 +346,34 @@ private final class BoardView: NSView {
                         options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine])
             y += rowH
         }
+    }
+}
+
+/// The status bar: a tone dot and one line of text on the board's dark capsule.
+private final class StatusBarView: NSView {
+    let line: StatusLine
+    init(frame: CGRect, line: StatusLine) { self.line = line; super.init(frame: frame) }
+    required init?(coder: NSCoder) { fatalError() }
+    override var isFlipped: Bool { true }
+
+    static let font = NSFont.systemFont(ofSize: 13, weight: .medium)
+
+    static func textWidth(_ text: String) -> CGFloat {
+        ceil(NSAttributedString(string: text, attributes: [.font: font]).size().width)
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        NSColor(white: 0.08, alpha: 0.88).setFill()
+        NSBezierPath(roundedRect: bounds, xRadius: bounds.height / 2, yRadius: bounds.height / 2).fill()
+        BoardView.color(line.tone).setFill()
+        NSBezierPath(ovalIn: CGRect(x: 14, y: bounds.height / 2 - 4, width: 8, height: 8)).fill()
+        let tail = NSMutableParagraphStyle()
+        tail.lineBreakMode = .byTruncatingTail
+        let s = NSAttributedString(string: line.text, attributes: [
+            .font: Self.font, .foregroundColor: NSColor.white, .paragraphStyle: tail,
+        ])
+        let h = s.size().height
+        s.draw(with: CGRect(x: 30, y: (bounds.height - h) / 2, width: bounds.width - 44, height: h),
+               options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine])
     }
 }

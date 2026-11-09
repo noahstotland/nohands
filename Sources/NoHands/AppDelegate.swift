@@ -16,6 +16,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let micItem = NSMenuItem(title: "Microphone denied — open Settings", action: #selector(openMicrophoneSettings), keyEquivalent: "")
     private let harnessItem = NSMenuItem(title: "Harness: checking…", action: nil, keyEquivalent: "")
     private let loginItem = NSMenuItem(title: "Start at Login", action: #selector(loginItemClicked), keyEquivalent: "")
+    private let statusBarItem = NSMenuItem(title: "Status Bar", action: nil, keyEquivalent: "")
+    private let statusBarMenu = NSMenu(title: "Status Bar")
+    private static let statusBarDefaultsKey = "statusBarPosition"
     private let openConfigItem = NSMenuItem(title: "Open config.json…", action: #selector(openConfig), keyEquivalent: "")
     /// agent-desktop, when found and permitted (see `HarnessStatus`); re-probed when the menu opens.
     private var harnessStatus: HarnessStatus?
@@ -43,6 +46,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var warming = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        overlay.statusBarPosition = StatusBarPosition.stored(UserDefaults.standard.string(forKey: Self.statusBarDefaultsKey))
         buildMenu()
         Task { await bootstrap() }
     }
@@ -68,11 +72,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let title = NSMutableAttributedString(string: "● ", attributes: [.foregroundColor: NSColor.systemRed])
         title.append(NSAttributedString(string: "Grant Accessibility…"))
         accessibilityItem.attributedTitle = title
+        for position in StatusBarPosition.allCases {
+            let item = NSMenuItem(title: position.rawValue.capitalized, action: #selector(statusBarChosen(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = position.rawValue
+            statusBarMenu.addItem(item)
+        }
+        statusBarItem.submenu = statusBarMenu
+        refreshStatusBarMenu()
         let quit = NSMenuItem(title: "Quit NoHands", action: #selector(quit), keyEquivalent: "q")
         quit.target = self
 
         for item in [stateItem, configItem, NSMenuItem.separator(), transcriptItem, localModelItem, harnessItem, NSMenuItem.separator(),
-                     pauseItem, retryItem, accessibilityItem, micItem, NSMenuItem.separator(), loginItem, openConfigItem,
+                     pauseItem, retryItem, accessibilityItem, micItem, NSMenuItem.separator(), loginItem, statusBarItem, openConfigItem,
                      NSMenuItem.separator(), quit] {
             menu.addItem(item)
         }
@@ -103,6 +115,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         pauseItem.title = userPaused ? "Resume Listening" : "Pause Listening"
         if let harnessStatus { harnessItem.title = harnessStatus.menuText(inUse: pipelineHarnessKind) }
         statusItem.button?.title = " " + MenuState.title(mode: mode, paused: state == .paused)
+        overlay.setAppState(state, mode: mode)
+    }
+
+    // MARK: - status bar setting
+
+    private func refreshStatusBarMenu() {
+        for item in statusBarMenu.items {
+            item.state = (item.representedObject as? String) == overlay.statusBarPosition.rawValue ? .on : .off
+        }
+    }
+
+    @objc private func statusBarChosen(_ sender: NSMenuItem) {
+        guard let raw = sender.representedObject as? String, let position = StatusBarPosition(rawValue: raw) else { return }
+        UserDefaults.standard.set(position.rawValue, forKey: Self.statusBarDefaultsKey)
+        overlay.statusBarPosition = position
+        refreshStatusBarMenu()
     }
 
     // MARK: - login item and config file
