@@ -1,7 +1,8 @@
 # NH-90: Make the task loop robust to small-model slips — Design
 
 **Date:** 2026-11-08  **Ticket:** [NH-90](https://github.com/noahstotland/nohands/issues/90)
-**Status:** Draft
+**Status:** Shipped
+**Shipped:** in PR #97, as specified
 
 ## Intent
 
