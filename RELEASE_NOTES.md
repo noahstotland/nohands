@@ -1,5 +1,17 @@
 # Release notes
 
+## 2026-11-09 model-written task plans run and checked in code (NH-91) (#106)
+
+Merged 2026-11-09 20:22 UTC.
+
+Some multi-step web goals, like "put on the latest video from a channel", are now planned once up front: the model picks the site and search words, and NoHands runs and checks each step on screen. If a check fails, the usual step-by-step loop takes over.
+
+## 2026-11-09 send Claude a step schema Anthropic accepts (NH-104) (#108)
+
+Merged 2026-11-09 20:21 UTC.
+
+Claude commands work again. Every Claude request was being rejected by Anthropic, so natural-language commands and tasks failed whenever Claude was the backend. Nothing to change on your side.
+
 ## 2026-11-09 Claude status in the menu and Check Claude connection (NH-103) (#105)
 
 Merged 2026-11-09 19:36 UTC.
