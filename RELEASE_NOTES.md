@@ -1,5 +1,15 @@
 # Release notes
 
+## 2026-11-09 Claude status in the menu and Check Claude connection (NH-103) (#105)
+
+Merged 2026-11-09 19:36 UTC.
+
+The menu now shows whether Claude is set up and which key it uses. `Check Claude connection` (or `nohands-cli claude-check`) sends one small request and tells you whether Claude commands will work; it spends about one step's input tokens.
+
+Context size: pass skipped (not collective-wisdom)
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
 ## 2026-11-09 repeatable latency benchmark, nohands-cli bench (NH-40) (#102)
 
 Merged 2026-11-09 05:58 UTC.
