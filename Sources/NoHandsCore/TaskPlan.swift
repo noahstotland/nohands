@@ -147,7 +147,13 @@ public struct TaskPlan: Equatable, Sendable {
             let texts = [s.check.kind != .mediaPlaying ? s.check.text : nil, s.kind == .search ? s.text : nil]
             return texts.contains { t in t.map { text in words.contains { PlanText.matches($0, in: text) } } ?? false }
         }) else { return nil }
-        if MediaSignal.wantsPlayback(goal: goal), out.last?.kind != .waitForMedia { return nil }
+        // A goal to play something ends by waiting for playback. A plan that stops short of it gets that step from
+        // code, so a model that forgets it still gets its plan checked against the screen; the `done` path verifies.
+        if MediaSignal.wantsPlayback(goal: goal), out.last?.kind != .waitForMedia {
+            guard Self.stepRange.contains(out.count + 1) else { return nil }
+            out.append(PlanStep(intent: "Start it and wait for it to play.", kind: .waitForMedia,
+                                check: PlanCheck(kind: .mediaPlaying, text: "")))
+        }
         return TaskPlan(steps: out)
     }
 }

@@ -81,9 +81,10 @@ private func plan(_ steps: String...) -> String { #"{"plan":[\#(steps.joined(sep
         ("long check text", plan(openStep(expect: check("url_contains", long)), clickStep, mediaStep)),
         ("check on general words only", plan(openStep(expect: check("url_contains", "video")),
             #"{"intent":"c","do":"click_first_item","expect":{"kind":"element_present","text":"latest"}}"#, mediaStep)),
-        ("playback goal not ending in wait_for_media", plan(openStep(), clickStep)),
     ]
     for (why, p) in rejected { #expect(valid(p) == nil, "\(why)") }
+    // A playback goal that stops short of the wait gets it appended; a plan already at the step cap does not.
+    #expect(valid(plan(openStep(), clickStep))?.steps.map(\.kind) == [.openSite, .clickFirstItem, .waitForMedia])
     // A goal that wants no playback needs no wait_for_media.
     #expect(valid(plan(openStep(), clickStep), goal: "open the outdoor boys channel page") != nil)
     // The goal's own word, matched with spaces and case folded, ties a check to the goal.
