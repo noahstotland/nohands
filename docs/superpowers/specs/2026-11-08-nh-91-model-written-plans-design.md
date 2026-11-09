@@ -106,10 +106,16 @@ Step types, the whole set:
 Check kinds, the whole set: `title_contains`, `url_contains`, `element_present`, `media_playing`. Every step must have
 one, and every one but `media_playing` must have non-empty text.
 
-A **content link** is a `link` element that is not marked `offscreen`, whose title has at least two words and is not only
-a duration or a number. It is a generic way to tell an item from a navigation link. The build sets the threshold from
-real lists ([Build gate](#build-gate-real-element-lists)). The two backends order elements differently (the native walk
-top to bottom and capped at 200 by `LabelAssigner`, agent-desktop in document order), so the rule must hold on both.
+A **content link** is a `link` element that is not marked `offscreen`, has at least three words in its title, and is not
+part of a **navigation stack**. The build gate showed why the stack test is needed: on a real YouTube Videos tab the
+sidebar's links (`Jef. New content available.`, 204 wide, 40 apart, all at the same left edge) come between the `Videos`
+tab and the first video card in the native order, so "the first multi-word link after `Videos`" clicks a subscription.
+A navigation stack is three or more links with the same left edge and width whose rows are no more than the link's own
+height plus 16 points apart. Video cards, search results and file rows are told apart by their spacing, not by any word.
+The rule reads frames from the numbered `labels` the runner already holds. Where a backend gives no frames (agent-desktop
+without bounds), the stack test cannot run, so the rule is not applied: `click_first_item` hands over, and the build
+reports how often that happens. The pinned rows come from the captured real lists
+([Build gate](#build-gate-real-element-lists)).
 
 Text matching is the same everywhere: lower-cased, accents folded, letters and digits only, spaces removed, substring.
 "outdoorboys" matches "Outdoor Boys - YouTube".
