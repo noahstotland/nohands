@@ -20,6 +20,15 @@ public enum ScreenshotGeometry {
     public static let outsideReason = "point outside the screenshot"
     public static let notFirstReason = "point must be the step's first action"
 
+    /// How far (points) a window's frame may differ from the one photographed and still be the same window.
+    public static let windowTolerance: CGFloat = 2
+
+    /// True when two window frames match within `windowTolerance` on every edge.
+    public static func sameFrame(_ a: CGRect, _ b: CGRect) -> Bool {
+        abs(a.minX - b.minX) <= windowTolerance && abs(a.minY - b.minY) <= windowTolerance
+            && abs(a.width - b.width) <= windowTolerance && abs(a.height - b.height) <= windowTolerance
+    }
+
     /// Longest side at most `maxSide`, never larger than the window's real pixels. Aspect kept, whole pixels, each side at least 1.
     public static func imageSize(window: CGSize, backingScale: CGFloat, maxSide: CGFloat = 1200) -> CGSize {
         let w = window.width * backingScale, h = window.height * backingScale
