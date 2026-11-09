@@ -262,7 +262,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         alert.window.initialFirstResponder = field
         // Listening stays off while the alert is open, so dictation can't type into the field and a spoken
         // "press return" can't press Save. If the user had already paused, it stays paused.
-        let pausedForAlert = pipeline != nil && !userPaused
+        let pausedForAlert = pipeline != nil && !userPaused && !axPaused
         if pausedForAlert { togglePause() }
         let response = alert.runModal()
         if pausedForAlert { togglePause() }
