@@ -143,7 +143,7 @@ The LLM path adds one network round trip (typically 1–3 s). Every utterance lo
 
 - Microphone (`NSMicrophoneUsageDescription`) and Accessibility (`AXIsProcessTrustedWithOptions`) are requested on first launch; the menu shows a red dot and an "Open Accessibility Settings" item until granted.
 - The SwiftPM executable is wrapped into `NoHands.app` by `scripts/bundle.sh` (Info.plist with `LSUIElement = true`, bundle id `dev.nohands.app`), signed with `$CODESIGN_IDENTITY` (default ad-hoc `-`). Accessibility trust is tied to the code signature, so with ad-hoc signing every rebuild needs re-granting; a stable self-signed or Apple Development identity avoids that.
-- `nohands-cli` (same package) exposes each subsystem for manual verification and latency measurement: `listen`, `transcribe <wav>`, `endpoint-test <wav>…`, `parse "<text>"`, `type "<text>"`, `elements`, `click "<name>"`, `grid`, `resolve "<text>"`.
+- `nohands-cli` (same package) exposes each subsystem for manual verification and latency measurement: `listen`, `transcribe <wav>`, `endpoint-test <wav>…`, `bench <dir>`, `parse "<text>"`, `type "<text>"`, `elements`, `click "<name>"`, `grid`, `resolve "<text>"`.
 
 ## 14. Acceptance (manual, end to end)
 

@@ -142,7 +142,7 @@ In dictation mode, say `period`, `comma`, `question mark`, `new line`, `new para
 | `transcribe <wav>` | Transcribes an audio file and prints timings |
 | `vad-test <wav>` | Prints voice-activity events for an audio file |
 | `endpoint-test <wav>…` | Replays each file through the VAD, the early close and the speech recognizer, and prints the early and full text, whether the early close fired and was accepted, and the milliseconds from the true end of speech to the early text; ends with a summary line |
-| `bench <dir>` | Dry-run latency benchmark: replays each `.wav` in the folder through the VAD, early close and speech recognizer, parses the text, and prints per-file lag, recognition and parse times plus p50 and p95 per stage; executes nothing and calls no model backend (the speech models must already be downloaded). Phrase list and a generator script: `Tests/Fixtures/audio/README.md` |
+| `bench <dir>` | Dry-run latency benchmark: replays each `.wav` in the folder through the VAD, early close and speech recognizer, parses the text, and prints per-file lag, recognition and parse times plus p50 and p95 per stage; executes nothing and calls no model backend (the speech models download on first use, so a first run needs the network). Phrase list and a generator script: `Tests/Fixtures/audio/README.md` |
 | `elements` | Lists the frontmost app's actionable elements |
 | `click "<name>"` | Clicks the named element |
 | `grid` | Shows the 10×8 grid, zooms into cell 35 |

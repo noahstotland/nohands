@@ -47,4 +47,4 @@ room, so real numbers may differ.
   committed here if you want them in the repo.
 
 The run uses your `~/.config/nohands/config.json` except that the attention word is ignored, and it loads the speech
-model, so it needs the downloaded Parakeet model but no permissions and no microphone.
+model, which downloads on first use (network needed once). It needs no permissions and no microphone.

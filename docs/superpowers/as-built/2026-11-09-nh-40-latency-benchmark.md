@@ -16,6 +16,8 @@
 - **A file that throws prints `skipped: <error description>`,** a case the spec's list did not name.
 - **File names are padded to the longest name** in the row, and actions print in Swift's debug form (as
   `nohands-cli parse` does).
+- **"No network call" means no Claude or Ollama call.** On a first run the speech models download, as for `transcribe`
+  and `endpoint-test`.
 - **FluidAudio's `[INFO]` log lines appear between the rows,** because the replay builds a fresh VAD for each file. They
   are not part of the table.
 
