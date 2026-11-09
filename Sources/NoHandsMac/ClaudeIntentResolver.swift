@@ -46,7 +46,8 @@ public actor ClaudeIntentResolver: IntentResolving {
 
     public func resolve(_ stepRequest: StepRequest) async throws -> IntentStep {
         guard let key = config.anthropicAPIKey, !key.isEmpty else { throw IntentError.noAPIKey }
-        let builder = ClaudeRequestBuilder(model: config.intentModel, effort: config.intentEffort)
+        let builder = ClaudeRequestBuilder(model: config.intentModel, effort: config.intentEffort,
+                                           vision: config.visionEnabled)
         var request = URLRequest(url: baseURL)
         request.httpMethod = "POST"
         request.timeoutInterval = TimeInterval(deadline.components.seconds) + 2

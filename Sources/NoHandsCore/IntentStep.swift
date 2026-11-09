@@ -70,15 +70,25 @@ public struct StepRecord: Equatable, Sendable {
     }
 }
 
+/// What the step carries about the screen picture: the picture itself, or why there is none (sent to the model so
+/// it stops asking).
+public enum VisionInput: Sendable, Equatable {
+    case image(StepScreenshot)
+    case unavailable(String)
+}
+
 public struct StepRequest: Sendable {
     public var goal: String
     public var step: Int
     public var maxSteps: Int
     public var history: [StepRecord]
     public var observation: ScreenObservation
-    public init(goal: String, step: Int, maxSteps: Int, history: [StepRecord], observation: ScreenObservation) {
+    /// Set by the task loop on a step that gets a picture (or a reason for none); nil everywhere else.
+    public var vision: VisionInput? = nil
+    public init(goal: String, step: Int, maxSteps: Int, history: [StepRecord], observation: ScreenObservation,
+                vision: VisionInput? = nil) {
         self.goal = goal; self.step = step; self.maxSteps = maxSteps
-        self.history = history; self.observation = observation
+        self.history = history; self.observation = observation; self.vision = vision
     }
 
     /// Step 1 of a one-shot request (eval, CLI, legacy callers).

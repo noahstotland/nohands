@@ -83,3 +83,64 @@ private func shot(frame: CGRect, size: CGSize) -> StepScreenshot {
     ]
     for (actions, expected) in rows { #expect(ScreenshotGeometry.mapPoints(actions, shot: s) == expected, "\(actions)") }
 }
+
+private func visionRequest(_ vision: VisionInput?) -> StepRequest {
+    var r = StepRequest(oneShot: "play it", context: IntentContext(frontmostApp: "Safari", mode: .command, labeledElements: [(1, "Play")]))
+    r.vision = vision
+    return r
+}
+
+@Test func claudeRequestWithVisionOff() throws {
+    let shot = StepScreenshot(jpeg: Data([1, 2, 3]), imageSize: CGSize(width: 12, height: 8), windowFrame: .zero, app: "Safari")
+    // JSONSerialization orders dictionary keys differently from one call to the next, so compare the bytes with
+    // the keys sorted: any added field, block or schema kind changes them.
+    func canonical(_ builder: ClaudeRequestBuilder, _ r: StepRequest) throws -> Data {
+        let object = try JSONSerialization.jsonObject(with: builder.body(request: r))
+        return try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
+    }
+    let plain = try canonical(ClaudeRequestBuilder(model: "m"), visionRequest(nil))
+    // The default builder and an explicit `vision: false` one are the same, and a request that carries a picture
+    // or a reason still sends nothing extra: no pixels leave with the flag off.
+    let off = ClaudeRequestBuilder(model: "m", vision: false)
+    #expect(try canonical(off, visionRequest(nil)) == plain)
+    #expect(try canonical(off, visionRequest(.image(shot))) == plain)
+    #expect(try canonical(off, visionRequest(.unavailable("x"))) == plain)
+    let text = String(decoding: plain, as: UTF8.self)
+    #expect(!text.contains("\"look\"") && !text.contains("Screenshot") && !text.contains("image/jpeg"))
+}
+
+@Test func claudeRequestWithVision() throws {
+    let shot = StepScreenshot(jpeg: Data([1, 2, 3, 250]), imageSize: CGSize(width: 12, height: 8), windowFrame: .zero, app: "Safari")
+    func parse(_ r: StepRequest) throws -> [String: Any] {
+        try #require(JSONSerialization.jsonObject(with: ClaudeRequestBuilder(model: "m", vision: true).body(request: r)) as? [String: Any])
+    }
+    func content(_ o: [String: Any]) throws -> [[String: Any]] {
+        try #require(((o["messages"] as? [[String: Any]])?.first?["content"]) as? [[String: Any]])
+    }
+    func kinds(_ o: [String: Any]) throws -> [String] {
+        let format = try #require((o["output_config"] as? [String: Any])?["format"] as? [String: Any])
+        let schema = try #require(format["schema"] as? [String: Any])
+        let items = try #require(((schema["properties"] as? [String: Any])?["actions"] as? [String: Any])?["items"] as? [String: Any])
+        return try #require((((items["properties"] as? [String: Any])?["kind"]) as? [String: Any])?["enum"] as? [String])
+    }
+
+    let withImage = try parse(visionRequest(.image(shot)))
+    let blocks = try content(withImage)
+    let images = blocks.filter { $0["type"] as? String == "image" }
+    #expect(images.count == 1 && blocks.last?["type"] as? String == "image")
+    #expect(images.first?["source"] as? NSDictionary == ["type": "base64", "media_type": "image/jpeg", "data": shot.jpeg.base64EncodedString()] as NSDictionary)
+    let texts = blocks.compactMap { $0["text"] as? String }.joined()
+    #expect(texts.contains("Screenshot: attached below, 12x8 pixels"))
+    #expect(texts.range(of: "Screenshot:")!.lowerBound < texts.range(of: "Request:")!.lowerBound)
+    let system = try #require((withImage["system"] as? [[String: Any]])?.first?["text"] as? String)
+    #expect(system.contains(IntentSchema.visionRules))
+    #expect(try kinds(withImage).contains("look"))
+
+    let unavailable = try parse(visionRequest(.unavailable("screen capture failed")))
+    #expect(try content(unavailable).allSatisfy { $0["type"] as? String == "text" })
+    #expect(try content(unavailable).compactMap { $0["text"] as? String }.joined().contains("Screenshot: unavailable (screen capture failed)."))
+
+    // Offered kinds do not depend on the request, so the cached prefix is stable across steps.
+    #expect(try kinds(parse(visionRequest(nil))).contains("look"))
+    #expect(!IntentSchema.kinds.contains("look"))
+}
