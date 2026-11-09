@@ -13,22 +13,24 @@
 
 ## Measured: `endpoint-test` on synthesized speech
 
+Re-run on the final head (after the review fix that keeps the first voiced chunk at `speechStart`).
+
 20 utterances per phrase with macOS `say`: five voices (Samantha, Daniel, Karen, Moira, Tessa) at 150, 180, 210 and 240 words per minute, converted to 16 kHz mono wav. Default config (`silenceMs` 1000, `earlySilenceMs` 350), Apple M1 Pro, Parakeet v2, model and VAD cached.
 
 | Phrase | Early fired | Accepted early | Fell back to full window | p50, true end to early text (accepted) | Range | Acted-on early text with a different action than the full text |
 |---|---|---|---|---|---|---|
-| new tab | 20 | 14 | 6 | 527 ms | 422 to 685 ms | 0 |
-| scroll down | 20 | 20 | 0 | 606 ms | 448 to 717 ms | 0 |
-| click 12 | 20 | 20 | 0 | 587 ms | 456 to 705 ms | 0 |
-| stop | 20 | 19 | 1 | 610 ms | 452 to 728 ms | 0 |
+| new tab | 20 | 14 | 6 | 521 ms | 413 to 685 ms | 0 |
+| scroll down | 20 | 20 | 0 | 591 ms | 469 to 707 ms | 0 |
+| click 12 | 20 | 20 | 0 | 593 ms | 431 to 712 ms | 0 |
+| stop | 20 | 19 | 1 | 612 ms | 453 to 725 ms | 0 |
 
 p50 is the upper median (the `endpoint-test` summary line). For comparison, the same files on the full path (speech end to full text ready) had a p50 of about 1.3 to 1.4 s for every phrase.
 
-Counting the fall-backs at their full-path time, the p50 per phrase is 570 ms (new tab), 599 ms, 576 ms and 622 ms (stop). No file produced more than one released transcript.
+Counting the fall-backs at their full-path time, the p50 per phrase is 573 ms (new tab), 591 ms, 593 ms and 638 ms (stop).
 
 The fall-backs are recognition errors, not rule rejections: Parakeet heard "new tab" from Daniel and Tessa as "new time", "new type", "new Chad" and "new chat" (the full pass missed all but one of those too), and "stop" from Daniel at 240 wpm as "so". One file heard "new time" early and "new tab" in full: the early text parsed to nothing, so it was rejected and the full pass ran. No rejected or accepted early text parsed to a different action than the full text.
 
-Both gates hold on these numbers, with a narrow latency margin: the four p50s sit between 527 and 610 ms against the 650 ms bar.
+Both gates hold on these numbers, with a narrow latency margin: the four p50s sit between 521 and 612 ms against the 650 ms bar.
 
 ## What the replay did not cover
 
