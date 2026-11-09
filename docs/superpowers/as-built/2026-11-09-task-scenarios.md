@@ -28,7 +28,7 @@ The backend was the **local model, `qwen2.5:7b-instruct`**, not Claude: no Anthr
 - The spec had step 6 print `still playing` when a scenario with a `mediaPlaying` check ended with no Pause control listed. The check observer counts only Pause controls, so no control means not playing, and the line printed on runs where nothing played. It is removed; step 6 only clicks a Pause control when one is listed.
 - `ScenarioFile.load` also rejects empty check text (`elementVisible ""` would pass on any page), and the command rejects a file with no scenarios.
 - `loadResolver`, `ms`, `runOverlay` and `sanitized` moved from `main.swift` to `CLIHelpers.swift`, unchanged: the compiler crashed when another file called functions declared after `main.swift`'s top-level statements.
-- Polling by `freshObservation()` takes about 1 s plus the walk, so an attempt is slightly over a second. The 20 s and 3 s limits are wall-clock deadlines, and the final check always looks at least once.
+- Polling by `fresh()` takes about 1 s plus the walk, so an attempt is slightly over a second. The 20 s and 3 s limits are wall-clock deadlines, and the final check always looks at least once.
 - The exit status is 0 only when every scenario is `pass`, so `start-failed` and `not-run` also exit 2.
 
 ## Checks that didn't run
