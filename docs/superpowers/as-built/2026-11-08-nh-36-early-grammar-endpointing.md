@@ -1,6 +1,6 @@
 # As-built: Act on short grammar commands sooner
 
-**Shipped:** in PR #TBD (the PR was not open when this note was written; fill in the number when it opens)
+**Shipped:** in PR #87
 **Ticket:** NH-36
 **Spec:** [2026-11-08-nh-36-early-grammar-endpointing-design.md](../specs/2026-11-08-nh-36-early-grammar-endpointing-design.md)
 
@@ -10,7 +10,6 @@
 - **The "full text" column is a separate transcription of the whole utterance.** After an accepted early close the app never transcribes the full audio, so the replay transcribes it once more outside the loop as the reference for the action comparison.
 - **Latency is reported two ways.** `ready` is the spec's clock for an accepted early close: audio time of the chunk that raised the early silence, minus the true end (20 ms windows, RMS above 0.005), plus the wall time of the early transcription. A file where early close did not fire, or was rejected, shows `fallback` and its `fullReady` on the same clock.
 - **Batch second pass, as chosen in the spec.** At the short silence the loaded Parakeet batch model transcribes the audio so far. The streaming managers need a different model (Parakeet Unified or the EOU model), which the ticket rules out, so there was nothing in scope to measure against.
-- The spec's `Status` and `Shipped` lines are not updated here: the convention needs the PR number, which does not exist yet.
 
 ## Measured: `endpoint-test` on synthesized speech
 

@@ -1,7 +1,8 @@
 # NH-36: Act on short grammar commands sooner — Design
 
 **Date:** 2026-11-08  **Ticket:** [NH-36](https://github.com/noahstotland/nohands/issues/36)
-**Status:** Draft
+**Status:** Shipped
+**Shipped:** in PR #87, with differences: [as-built](../as-built/2026-11-08-nh-36-early-grammar-endpointing.md)
 
 ## Intent
 
