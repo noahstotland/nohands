@@ -22,12 +22,17 @@ public actor OllamaIntentResolver: IntentResolving {
         } catch {
             throw IntentError.decode(.malformed("could not encode request"))
         }
+        let started = ContinuousClock.now
         let data = try await post(body)
+        let step: IntentStep
         do {
-            return try IntentDecoder.step(fromOllamaResponse: data)
+            step = try IntentDecoder.step(fromOllamaResponse: data)
         } catch let e as IntentDecodeError {
             throw IntentError.decode(e)
         }
+        let ms = Int(started.duration(to: .now) / .milliseconds(1))
+        PipelineLog.info("ollama: step \(stepRequest.step) \(ms)ms")
+        return step
     }
 
     public func plan(goal: String) async throws -> TaskPlan? {

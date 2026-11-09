@@ -34,6 +34,8 @@ private let reloadButton = UIElementInfo(id: 1, frame: CGRect(x: 100, y: 100, wi
     var ax: FakeElements
     var overlay: FakeOverlay
     var resolver: FakeResolver?
+    var executor: ActionExecutor
+    var observer: ScreenObserver
     var typed: [String] { input.calls.filter { $0.hasPrefix("type:") } }
 }
 
@@ -49,7 +51,7 @@ private let reloadButton = UIElementInfo(id: 1, frame: CGRect(x: 100, y: 100, wi
     }
     let p = VoicePipeline(config: config, transcriber: NullTranscriber(), resolver: resolver,
                           executor: executor, overlay: overlay, ax: ax, observer: observer, taskRunner: runner)
-    return Rig(pipeline: p, input: input, ax: ax, overlay: overlay, resolver: resolver)
+    return Rig(pipeline: p, input: input, ax: ax, overlay: overlay, resolver: resolver, executor: executor, observer: observer)
 }
 
 private func trace(age: Duration = .zero) -> LatencyTrace {
@@ -395,4 +397,48 @@ private func step(_ intent: String, _ status: StepStatus, _ actions: [Action] = 
     await r.pipeline.waitForTask()
     #expect(r.input.calls == ["type:a", "click:10,20"])                     // the held command still ran
     #expect(!r.overlay.reports.contains { $0.text == "computer click" && $0.status == .dropped(PipelineText.dropped) })
+}
+
+// MARK: - switching backend live
+
+@MainActor private func newRunner(_ r: Rig, _ resolver: FakeResolver) -> TaskRunner {
+    TaskRunner(config: AppConfig(), resolver: resolver, executor: r.executor, observer: r.observer, overlay: r.overlay, sleep: { _ in })
+}
+
+@MainActor @Test func switchedRunnerTakesTheNextCommandAndNeverTheRunningTask() async throws {
+    let typeA = step("type a", .done, [.typeText("a")]), typeB = step("type b", .done, [.typeText("b")])
+    // Idle, or no runner at launch: the next command goes to the new runner.
+    for withResolver in [true, false] {
+        let r = rig(withResolver: withResolver)
+        let b = FakeResolver()
+        b.scripted = [typeB]
+        r.pipeline.replaceRunner(newRunner(r, b))
+        await r.pipeline.handle(transcript: "make it bigger", trace: trace())
+        await r.pipeline.waitForTask()
+        #expect(r.typed == ["type:b"] && r.resolver?.calls ?? 0 == 0, "idle, had runner: \(withResolver)")
+    }
+    // During a task: it stays on its runner; a spoken stop still cancels that runner; a held command goes to the new one.
+    for stop in [true, false] {
+        let r = rig()
+        let a = try #require(r.resolver), b = FakeResolver()
+        let entered = Gate(), release = Gate()
+        a.scripted = [typeA]
+        b.scripted = [typeB]
+        a.onResolve = { _ in entered.open(); await release.wait() }
+        await r.pipeline.handle(transcript: "find the newest video", trace: trace())
+        await entered.wait()
+        let replacement = newRunner(r, b)
+        r.pipeline.replaceRunner(replacement)
+        await r.pipeline.handle(transcript: stop ? "stop" : "make it bigger", trace: trace())
+        release.open()
+        await r.pipeline.waitForTask()
+        #expect(b.calls == (stop ? 0 : 1) && a.calls == 1, "stop: \(stop)")
+        #expect(!replacement.cancelled, "stop: \(stop): the stop must reach the running runner, not the waiting one")
+        #expect(r.pipeline.lastTaskOutcome == (stop ? .stopped : .done("type b")), "stop: \(stop)")
+        #expect(r.typed == (stop ? [] : ["type:a", "type:b"]), "stop: \(stop)")
+        // The swap still lands once the task is over.
+        await r.pipeline.handle(transcript: "make it smaller", trace: trace())
+        await r.pipeline.waitForTask()
+        #expect(b.calls == (stop ? 1 : 2) && a.calls == 1, "after, stop: \(stop)")
+    }
 }

@@ -36,7 +36,12 @@ import NoHandsCore
     private let attention: AttentionGate
     private let transcriber: any Transcribing
     /// nil when there is no resolver (LLM off): such utterances only show a hint.
-    private let runner: TaskRunner?
+    /// A `var` so the app can change backend live (see `switchBackend`). While a task runs it stays the runner running
+    /// it, so a stop phrase always reaches that runner; a new one waits in `pendingRunner`.
+    private var runner: TaskRunner?
+    /// The runner a switch asked for while a task was running; it takes over when the task loop is between runs.
+    private var pendingRunner: TaskRunner?
+    private let harness: (any DesktopHarness)?
     private let executor: ActionExecutor
     private let overlay: any OverlayPresenting
     private let ax: any ElementProviding
@@ -109,12 +114,33 @@ import NoHandsCore
         self.executor = executor
         self.overlay = overlay
         self.ax = ax
+        self.harness = harness
         self.modeMachine = ModeMachine(grammar: CommandGrammar(config: config.grammarConfig), attention: config.attentionGate)
         executor.onModeChange = { [weak self] mode in
             guard let self else { return }
             self.modeMachine.apply(mode: mode)
             self.publishStatus()
         }
+    }
+
+    /// Moves new tasks to another backend from the next command on, without stopping the microphone. Builds a runner
+    /// like `init` does (screenshots follow `config.visionEnabled`); a task already running finishes on its own
+    /// runner, and a command held behind it goes to the new one. Other settings in `config` are not re-read.
+    public func switchBackend(config: AppConfig, resolver: any IntentResolving, observer: ScreenObserver) {
+        replaceRunner(TaskRunner(config: config, resolver: resolver, executor: executor, observer: observer,
+                                 overlay: overlay, harness: harness,
+                                 screenshots: config.visionEnabled ? WindowScreenshotter(ax: ax) : nil))
+    }
+
+    /// Takes `new` at once when no task is running; otherwise holds it (the newest wins) until the task loop is between runs.
+    func replaceRunner(_ new: TaskRunner) {
+        if activeTask == nil { runner = new; pendingRunner = nil } else { pendingRunner = new }
+    }
+
+    /// Called only where no runner is running: between runs inside the task loop.
+    private func applyPendingRunner() {
+        if let pendingRunner { runner = pendingRunner }
+        pendingRunner = nil
     }
 
     /// Skips the merge window: a complete grammar command in command mode, a stop phrase in any mode, and the
@@ -490,12 +516,15 @@ import NoHandsCore
     /// Runs `first` in `activeTask`, then the held job (if any) inside the same task so it stays serialized; a held
     /// job that routes to the LLM runs as the next task.
     private func startTask(_ first: PendingTask) {
-        guard let runner else { return }
+        guard runner != nil else { return }
         activeTask = Task { [self] in
             var next: PendingTask? = first
             while let pending = next {
                 next = nil
+                applyPendingRunner()
+                guard let runner else { break }
                 await runTask(pending, runner: runner)
+                applyPendingRunner()
                 while next == nil, canExecute, let held = heldJob {
                     heldJob = nil
                     next = await process(held, held: true)   // it waited on purpose: longer limit
@@ -506,6 +535,7 @@ import NoHandsCore
             heldJob = nil
             droppedJobs = []
             if !stopped { for job in lost { reportDropped(job) } }
+            applyPendingRunner()
             activeTask = nil
         }
     }
