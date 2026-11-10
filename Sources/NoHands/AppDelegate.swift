@@ -22,6 +22,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let statusBarItem = NSMenuItem(title: "Status Bar", action: nil, keyEquivalent: "")
     private let statusBarMenu = NSMenu(title: "Status Bar")
     private static let statusBarDefaultsKey = "statusBarPosition"
+    private let backendItem = NSMenuItem(title: "Model", action: nil, keyEquivalent: "")
+    private let backendMenu = NSMenu(title: "Model")
     private let claudeKeyItem = NSMenuItem(title: "Set Claude API key…", action: #selector(setClaudeKey), keyEquivalent: "")
     private let openConfigItem = NSMenuItem(title: "Open config.json…", action: #selector(openConfig), keyEquivalent: "")
     /// agent-desktop, when found and permitted (see `HarnessStatus`); re-probed when the menu opens.
@@ -29,6 +31,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var harnessProbeInFlight = false
     /// The harness the running pipeline was built with (built once at pipeline start); nil before it starts.
     private var pipelineHarnessKind: HarnessKind?
+    /// What the running pipeline was built with, so a model switch can build a new observer and runner on the same AX query and harness.
+    private var taskAX: AXQuery?
+    private var pipelineHarness: (any DesktopHarness)?
     /// The last Claude check (kept in memory only) and whether one is running.
     private var lastClaudeCheck: (result: ClaudeCheckResult, time: String)?
     private var claudeChecking = false
@@ -38,6 +43,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var configInvalid = false
     /// Whether config.json itself holds a key (the environment is ignored): as of launch, plus saves from the menu.
     private var fileHasKey = false
+    /// A key was saved from the menu since launch. It applies after a restart, so the Claude row stays off and says so.
+    private var keySavedThisSession = false
     private var pipeline: VoicePipeline?
     private var pipelineStarting = false
     private var userPaused = false
@@ -96,6 +103,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let recordingTitle = NSMutableAttributedString(string: "● ", attributes: [.foregroundColor: NSColor.systemRed])
         recordingTitle.append(NSAttributedString(string: "Grant Screen Recording…"))
         screenRecordingItem.attributedTitle = recordingTitle
+        for choice in BackendChoice.allCases {
+            let item = NSMenuItem(title: choice.rawValue, action: #selector(backendChosen(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = choice.rawValue
+            backendMenu.addItem(item)
+        }
+        backendItem.submenu = backendMenu
         for position in StatusBarPosition.allCases {
             let item = NSMenuItem(title: position.rawValue.capitalized, action: #selector(statusBarChosen(_:)), keyEquivalent: "")
             item.target = self
@@ -108,7 +122,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         quit.target = self
 
         for item in [stateItem, configItem, NSMenuItem.separator(), transcriptItem, localModelItem, harnessItem, claudeItem, checkClaudeItem, NSMenuItem.separator(),
-                     pauseItem, retryItem, accessibilityItem, screenRecordingItem, micItem, NSMenuItem.separator(), loginItem, statusBarItem, claudeKeyItem, openConfigItem,
+                     pauseItem, retryItem, accessibilityItem, screenRecordingItem, micItem, NSMenuItem.separator(), loginItem, statusBarItem, backendItem, claudeKeyItem, openConfigItem,
                      NSMenuItem.separator(), quit] {
             menu.addItem(item)
         }
@@ -154,6 +168,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             localModelItem.isEnabled = LocalModelMenu.actionable(localStatus)
         }
         refreshClaudeItems()
+        refreshBackendMenu()
         claudeKeyItem.title = fileHasKey ? "Change Claude API key…" : "Set Claude API key…"
         refreshLoginItem()
         pauseItem.title = userPaused ? "Resume Listening" : "Pause Listening"
@@ -184,6 +199,86 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             claudeChecking = false
             refresh()
         }
+    }
+
+    // MARK: - model setting
+
+    /// The title follows the backend in use; each row's checkmark and enabled state come from `BackendMenu`. A disabled
+    /// row has its action removed, since the menu autoenables items that have one.
+    private func refreshBackendMenu() {
+        backendItem.title = BackendMenu.title(config: config)
+        let rows = BackendMenu.rows(config: config, keySavedThisSession: keySavedThisSession)
+        for item in backendMenu.items {
+            guard let raw = item.representedObject as? String, let row = rows.first(where: { $0.choice.rawValue == raw }) else { continue }
+            item.title = row.title
+            item.state = row.checked ? .on : .off
+            item.action = row.enabled ? #selector(backendChosen(_:)) : nil
+        }
+    }
+
+    /// One pick, applied from the next command with no restart. The file is written first; if that fails the app stays
+    /// on the old backend. Only `intentBackend` is applied live: other edits to config.json still wait for a restart.
+    @objc private func backendChosen(_ sender: NSMenuItem) {
+        guard let raw = sender.representedObject as? String, let choice = BackendChoice(rawValue: raw) else { return }
+        let target: EffectiveBackend = choice == .claude ? .claude : .local
+        // The checked row does nothing, so `auto` stays `auto` until a real change.
+        guard config.effectiveBackend != target else { return }
+        guard choice != .claude || ClaudeStatus.hasKey(config) else { return }
+        do {
+            try ConfigFile.saveIntentBackend(choice, at: ConfigFile.defaultURL)
+        } catch {
+            let hud: String
+            switch error as? ConfigFile.SaveError {
+            case .invalidJSON:
+                PipelineLog.warning("couldn't switch model: config.json is not valid JSON")
+                hud = "couldn't switch model: fix config.json, then try again"
+            case .symlink:
+                PipelineLog.warning("couldn't switch model: config.json or its folder is a symlink")
+                hud = "couldn't switch model: replace the config.json link with a file"
+            case .writeFailed(let code):
+                PipelineLog.warning("couldn't switch model: write failed (\(code))")
+                hud = "couldn't switch model: check ~/.config/nohands"
+            case nil:
+                PipelineLog.warning("couldn't switch model")
+                hud = "couldn't switch model: check ~/.config/nohands"
+            }
+            overlay.showHUD(hud, duration: .seconds(4))
+            return
+        }
+        config.intentBackend = choice == .claude ? .claude : .local
+        lastClaudeCheck = nil
+        if target == .local { lastWarm = nil }
+        if let pipeline { switchPipelineBackend(pipeline) }
+        PipelineLog.info("intent backend: \(Self.backendName(config.effectiveBackend))")
+        refresh()
+        refreshLocalModel()
+        overlay.showHUD(target == .claude ? "Using Claude from the next command" : "Using the local model from the next command",
+                        duration: .seconds(3))
+    }
+
+    private static func backendName(_ backend: EffectiveBackend) -> String {
+        switch backend {
+        case .claude: "claude"
+        case .local: "local"
+        case .off: "off"
+        }
+    }
+
+    /// The resolver for the backend in effect; nil when the model is off.
+    private func makeResolver() -> (any IntentResolving)? {
+        switch config.effectiveBackend {
+        case .claude: ClaudeIntentResolver(config: config)
+        case .local: OllamaIntentResolver(config: config)
+        case .off: nil
+        }
+    }
+
+    /// Hands the pipeline a runner for the backend now in `config`: the resolver, the element cap and vision all follow it.
+    private func switchPipelineBackend(_ pipeline: VoicePipeline) {
+        guard let resolver = makeResolver(), let taskAX else { return }
+        let observer = ScreenObserver(ax: taskAX, maxElements: config.observedElementCap, harness: pipelineHarness,
+                                      snapshotTimeoutMs: config.agentDesktopSnapshotMs)
+        pipeline.switchBackend(config: config, resolver: resolver, observer: observer)
     }
 
     // MARK: - status bar setting
@@ -272,6 +367,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         do {
             try ConfigFile.saveAnthropicKey(key, at: ConfigFile.defaultURL)
             fileHasKey = true
+            keySavedThisSession = true
             PipelineLog.info("Claude key saved to config.json; restart to apply")
             overlay.showHUD("Claude key saved: restart NoHands to apply", duration: .seconds(4))
             refresh()
@@ -386,6 +482,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func warmIfDue(model: String) {
+        // A status check that lands after a switch away from the local model must not warm it.
+        guard config.effectiveBackend == .local else { return }
         let listening = pipeline != nil && !userPaused && !axPaused
         let now = ContinuousClock.now
         guard !warming, WarmPolicy.shouldWarm(now: now, last: lastWarm, listening: listening, status: localStatus) else { return }
@@ -539,12 +637,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             defer { pipelineStarting = false; refresh() }
             do {
                 let transcriber = try await ParakeetTranscriber(version: config.asrModelVersion)
-                let resolver: (any IntentResolving)?
-                switch config.effectiveBackend {
-                case .claude: resolver = ClaudeIntentResolver(config: config)
-                case .local: resolver = OllamaIntentResolver(config: config)
-                case .off: resolver = nil
-                }
+                // The menu can switch backend while the speech model loads; remember which one the pipeline starts on.
+                let builtBackend = config.effectiveBackend
+                let resolver = makeResolver()
                 let ax = AXQuery()
                 // agent-desktop, when installed and permitted: the task loop observes and acts through it.
                 let status = await probeHarness()
@@ -554,6 +649,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 // Tasks observe, and the executor looks for a media player, with their own, larger AX budget:
                 // Chrome's toolbar alone exhausts the default one.
                 let taskAX = AXQuery(budget: .milliseconds(1000), maxNodes: 6000)
+                self.taskAX = taskAX
+                pipelineHarness = harness
                 let executor = ActionExecutor(input: CGEventInputSynthesizer(), ax: ax, overlay: overlay, config: config,
                                               harness: harness, mediaAX: taskAX)
                 let observer = ScreenObserver(ax: taskAX,
@@ -566,6 +663,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 p.onError = { [weak self] message in self?.errorText = message; self?.refresh() }
                 try await p.start()
                 pipeline = p
+                PipelineLog.info("intent backend: \(Self.backendName(builtBackend))")
+                if config.effectiveBackend != builtBackend { switchPipelineBackend(p) }
                 schedulePoll(every: 5)
                 overlay.showHUD("NoHands is listening", duration: .seconds(2))
             } catch {

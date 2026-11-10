@@ -60,7 +60,8 @@ public enum TaskOutcome: Equatable, Sendable {
     private var markTaskTab = false
     /// True until the task's first observation has been annotated.
     private var atTaskStart = true
-    private var cancelled = false
+    /// Set by `cancel()`, cleared when a run starts. Readable so tests can tell which runner a stop reached.
+    private(set) var cancelled = false
     /// While a plan runs, the element cap for each observation (the model is not sent those lists); nil otherwise.
     private var planLimit: Int?
     /// Steps whose actions were executed in the current (or last) `run`.

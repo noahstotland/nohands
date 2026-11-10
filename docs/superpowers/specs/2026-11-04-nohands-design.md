@@ -55,7 +55,7 @@ mic (AVAudioEngine with voice processing / echo cancellation unless `echoCancell
 
 Mode is shown in the menu bar: the winking-face glyph (`Resources/MenuBarIcon.png`, with an `@2x`; the `mic` symbol only when they are missing, as in an unbundled `swift run`) + `CMD` / `DICT` / `ZZZ` text.
 
-The menu ends with a group above Quit: **Start at Login** (a checkbox backed by `SMAppService.mainApp`, read from the system each time the menu opens), **Status Bar** (a submenu Off / Top / Bottom for the always-on status bar, kept in user defaults) and **Open config.json…** (creates the file with mode 600 if missing, opens it in the default editor, and says to restart NoHands to apply changes).
+The menu ends with a group above Quit: **Start at Login** (a checkbox backed by `SMAppService.mainApp`, read from the system each time the menu opens), **Status Bar** (a submenu Off / Top / Bottom for the always-on status bar, kept in user defaults), **Model** (a submenu that shows the backend in use as `Model: Claude|Local|Off`, switches between Claude and the local model with no restart, and saves `intentBackend` to config.json) and **Open config.json…** (creates the file with mode 600 if missing, opens it in the default editor, and says to restart NoHands to apply changes).
 
 ## 6. Command grammar (deterministic)
 

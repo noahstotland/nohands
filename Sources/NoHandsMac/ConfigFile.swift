@@ -34,7 +34,7 @@ public enum ConfigFile {
         return true
     }
 
-    /// Why `saveAnthropicKey` stopped. Carries nothing from the file or the key, so it is safe to log and show.
+    /// Why a save stopped. Carries nothing from the file or the key, so it is safe to log and show.
     public enum SaveError: Error, Equatable, Sendable {
         case invalidJSON
         case symlink
@@ -46,6 +46,16 @@ public enum ConfigFile {
     /// and a rename, so the result is mode 600 and a half-written config is never visible. A symlinked folder or
     /// file, a file that is not a regular file, or unparseable JSON is refused with nothing changed.
     public static func saveAnthropicKey(_ key: String, at url: URL) throws {
+        try save(at: url, keepMode: false) { try ClaudeKeyEntry.merged(existing: $0, key: key) }
+    }
+
+    /// Sets `intentBackend` in the file at `url`, keeping every other key (see `BackendMenu.merged`). Same steps and
+    /// refusals as `saveAnthropicKey`, except an existing file keeps its permission bits; a new file is mode 600.
+    public static func saveIntentBackend(_ choice: BackendChoice, at url: URL) throws {
+        try save(at: url, keepMode: true) { try BackendMenu.merged(existing: $0, choice: choice) }
+    }
+
+    private static func save(at url: URL, keepMode: Bool, merge: (Data?) throws -> Data) throws {
         let dir = url.deletingLastPathComponent()
         do {
             try FileManager.default.createDirectory(
@@ -54,8 +64,8 @@ public enum ConfigFile {
         try makePrivateFolder(dir.path)
         let existing = try readRegularFile(url.path)
         let merged: Data
-        do { merged = try ClaudeKeyEntry.merged(existing: existing, key: key) } catch { throw SaveError.invalidJSON }
-        try replaceFile(url.path, in: dir.path, with: merged)
+        do { merged = try merge(existing?.data) } catch { throw SaveError.invalidJSON }
+        try replaceFile(url.path, in: dir.path, with: merged, mode: keepMode ? (existing?.mode ?? 0o600) : 0o600)
     }
 
     private static func errnoCode() -> POSIXErrorCode { POSIXErrorCode(rawValue: errno) ?? .EIO }
@@ -82,8 +92,8 @@ public enum ConfigFile {
         guard fchmod(fd, 0o700) == 0 else { throw SaveError.writeFailed(errnoCode()) }
     }
 
-    /// The file's bytes, or nil when it is missing. A symlink or anything but a regular file is refused.
-    private static func readRegularFile(_ path: String) throws -> Data? {
+    /// The file's bytes and permission bits, or nil when it is missing. A symlink or anything but a regular file is refused.
+    private static func readRegularFile(_ path: String) throws -> (data: Data, mode: mode_t)? {
         // O_NONBLOCK so a FIFO at the path cannot hang the open.
         let fd = open(path, O_RDONLY | O_NOFOLLOW | O_NONBLOCK)
         guard fd >= 0 else {
@@ -102,14 +112,14 @@ public enum ConfigFile {
         while true {
             let n = read(fd, &buffer, buffer.count)
             if n < 0 { throw SaveError.writeFailed(errnoCode()) }
-            if n == 0 { return data }
+            if n == 0 { return (data, st.st_mode & 0o777) }
             data.append(contentsOf: buffer[0..<n])
         }
     }
 
-    /// Writes `data` to a mode 600 temp file next to `path`, syncs it and renames it over `path`.
-    /// The temp file holds the key, so any failure removes it.
-    private static func replaceFile(_ path: String, in dir: String, with data: Data) throws {
+    /// Writes `data` to a private temp file next to `path`, gives it `mode`, syncs it and renames it over `path`.
+    /// The temp file may hold the key, so any failure removes it.
+    private static func replaceFile(_ path: String, in dir: String, with data: Data, mode: mode_t) throws {
         var template = Array((dir + "/.config.json.XXXXXX").utf8CString)
         let fd = mkstemp(&template)
         guard fd >= 0 else { throw SaveError.writeFailed(errnoCode()) }
@@ -117,6 +127,7 @@ public enum ConfigFile {
         var succeeded = false
         defer { if !succeeded { unlink(temp) } }
         var failure: POSIXErrorCode?
+        if fchmod(fd, mode) != 0 { failure = errnoCode() }
         data.withUnsafeBytes { raw in
             var offset = 0
             while offset < raw.count {

@@ -14,16 +14,23 @@ public enum ClaudeKeyEntry {
     /// `existing` (nil means no file, treated as `{}`) with `anthropicAPIKey` set to `key`, sorted and pretty-printed
     /// with a trailing newline. Anything that is not a JSON object, an empty file included, throws `invalidJSON`.
     public static func merged(existing: Data?, key: String) throws -> Data {
+        try ConfigPatch.merged(existing: existing, key: "anthropicAPIKey", value: key)
+    }
+}
+
+/// The shared parse, set one key, serialize step for the menu items that edit `config.json` in place.
+enum ConfigPatch {
+    static func merged(existing: Data?, key: String, value: String) throws -> Data {
         var object: [String: Any] = [:]
         if let existing {
             guard let parsed = try? JSONSerialization.jsonObject(with: existing),
-                  let dictionary = parsed as? [String: Any] else { throw Error.invalidJSON }
+                  let dictionary = parsed as? [String: Any] else { throw ClaudeKeyEntry.Error.invalidJSON }
             object = dictionary
         }
-        object["anthropicAPIKey"] = key
+        object[key] = value
         guard var out = try? JSONSerialization.data(
             withJSONObject: object, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
-        ) else { throw Error.invalidJSON }
+        ) else { throw ClaudeKeyEntry.Error.invalidJSON }
         out.append(0x0A)
         return out
     }

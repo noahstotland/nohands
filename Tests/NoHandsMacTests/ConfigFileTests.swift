@@ -114,3 +114,62 @@ import NoHandsCore
         noTemps(url.deletingLastPathComponent(), name)
     }
 }
+
+@Test func configFileSaveIntentBackend() throws {
+    let fm = FileManager.default
+    let root = fm.temporaryDirectory.appendingPathComponent("nohands-backendsave-\(UUID().uuidString)")
+    defer { try? fm.removeItem(at: root) }
+    func mode(_ url: URL) throws -> Int { try fm.attributesOfItem(atPath: url.path)[.posixPermissions] as! Int }
+    func noTemps(_ dir: URL, _ name: String) {
+        #expect((try? fm.contentsOfDirectory(atPath: dir.path))?.allSatisfy { !$0.hasPrefix(".config.json.") } == true, "\(name)")
+    }
+    func refuse(_ url: URL, _ expected: ConfigFile.SaveError, _ name: String) {
+        do {
+            try ConfigFile.saveIntentBackend(.local, at: url)
+            Issue.record("\(name): expected a refusal")
+        } catch { #expect(error as? ConfigFile.SaveError == expected, "\(name)") }
+    }
+
+    // A new file is 600 in a private folder; existing 600 and 640 files keep their mode and every other key.
+    let fresh = root.appendingPathComponent("fresh/nohands/config.json")
+    try ConfigFile.saveIntentBackend(.claude, at: fresh)
+    #expect(try mode(fresh) == 0o600 && mode(fresh.deletingLastPathComponent()) == 0o700)
+    #expect(try AppConfig.load(from: Data(contentsOf: fresh), environment: [:]).intentBackend == .claude)
+    noTemps(fresh.deletingLastPathComponent(), "fresh")
+    for existingMode in [0o600, 0o640] {
+        let url = root.appendingPathComponent("mode-\(existingMode)/config.json")
+        try fm.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data(#"{"anthropicAPIKey": "sk-keep", "gridRows": 3, "intentBackend": "claude"}"#.utf8).write(to: url)
+        try fm.setAttributes([.posixPermissions: existingMode], ofItemAtPath: url.path)
+        try ConfigFile.saveIntentBackend(.local, at: url)
+        let loaded = try AppConfig.load(from: Data(contentsOf: url), environment: [:])
+        #expect(loaded.intentBackend == .local && loaded.anthropicAPIKey == "sk-keep" && loaded.gridRows == 3, "\(existingMode)")
+        #expect(try mode(url) == existingMode, "\(existingMode): mode kept")
+        noTemps(url.deletingLastPathComponent(), "\(existingMode)")
+    }
+
+    // A symlinked file or folder is refused and the target untouched.
+    let links = root.appendingPathComponent("links")
+    try fm.createDirectory(at: links, withIntermediateDirectories: true)
+    let target = links.appendingPathComponent("target.json")
+    let body = Data(#"{"gridRows": 3}"#.utf8)
+    try body.write(to: target)
+    let link = links.appendingPathComponent("live.json")
+    try fm.createSymbolicLink(atPath: link.path, withDestinationPath: target.path)
+    refuse(link, .symlink, "linked file")
+    #expect(try Data(contentsOf: target) == body)
+    let real = root.appendingPathComponent("real")
+    try fm.createDirectory(at: real, withIntermediateDirectories: true)
+    let linkedDir = root.appendingPathComponent("linked")
+    try fm.createSymbolicLink(atPath: linkedDir.path, withDestinationPath: real.path)
+    refuse(linkedDir.appendingPathComponent("config.json"), .symlink, "linked folder")
+    #expect(try fm.contentsOfDirectory(atPath: real.path).isEmpty)
+
+    // Unparseable JSON is left byte for byte.
+    let bad = root.appendingPathComponent("bad/config.json")
+    try fm.createDirectory(at: bad.deletingLastPathComponent(), withIntermediateDirectories: true)
+    try Data(#"{"intentBackend": "#.utf8).write(to: bad)
+    refuse(bad, .invalidJSON, "invalid json")
+    #expect(try Data(contentsOf: bad) == Data(#"{"intentBackend": "#.utf8))
+    noTemps(bad.deletingLastPathComponent(), "invalid json")
+}
