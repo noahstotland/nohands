@@ -1,5 +1,11 @@
 # Release notes
 
+## 2026-11-10 Model menu toggle between Claude and the local model (NH-116) (#117)
+
+Merged 2026-11-10 00:57 UTC.
+
+The menu now has a **Model** item that shows whether NoHands is using Claude or the local model and switches between them with one choice, no restart. The choice is saved in `config.json`; Claude is greyed out until an API key is in effect (a key saved from the menu applies after a restart).
+
 ## 2026-11-09 set approval risk tolerance to permissive (NH-113) (#115)
 
 Merged 2026-11-09 21:15 UTC.
