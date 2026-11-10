@@ -1,6 +1,8 @@
 # NH-17: number badges and click-by-name reach web page content — Design
 
-**Date:** 2026-11-09  **Status:** Shipped  **Ticket:** [NH-17](https://github.com/noahstotland/nohands/issues/17)
+**Date:** 2026-11-09
+**Status:** Shipped
+**Ticket:** [NH-17](https://github.com/noahstotland/nohands/issues/17)
 **Shipped:** in PR #20, with differences: [as-built](../as-built/2026-11-09-nh-17-browser-page-elements.md)
 
 Written after the build: the ticket and the [plan](../plans/2026-11-04-browser-search-and-page-clicks.md) were the spec.
