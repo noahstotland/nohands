@@ -223,7 +223,9 @@ extension OverlayController: OverlayPresenting {
                 }
                 let usedOverlay: Bool
                 if case .numbered = target { usedOverlay = overlay.state != .none } else { usedOverlay = false }
-                switch resolveClick(target, elements: await namedElements(for: target)) {
+                let named = await namedElements(for: target)
+                if Task.isCancelled { return Self.cancelled }   // a spoken stop during the settle wait must not click
+                switch resolveClick(target, elements: named) {
                 case .failure(let m): return m
                 case .point(let p):
                     try input.click(at: p, button: button, count: count)
@@ -238,7 +240,9 @@ extension OverlayController: OverlayPresenting {
                 try input.mouseUp(b, at: at)
                 pressed.remove(b)
             case .moveCursor(let target):
-                switch resolveMove(target, elements: await namedElements(for: target)) {
+                let named = await namedElements(for: target)
+                if Task.isCancelled { return Self.cancelled }
+                switch resolveMove(target, elements: named) {
                 case .failure(let m): return m
                 case .point(let p): try input.moveMouse(to: p)
                 }
@@ -255,7 +259,9 @@ extension OverlayController: OverlayPresenting {
                 guard let zoomed = g.zoomed(into: n) else { return "no cell \(n)" }
                 overlay.showGrid(zoomed)
             case .showLabels:
-                overlay.showLabels(LabelAssigner.assign(await freshElements()))
+                let fresh = await freshElements()
+                if Task.isCancelled { return Self.cancelled }
+                overlay.showLabels(LabelAssigner.assign(fresh))
             case .hideOverlay:
                 overlay.hide()
             case .setMode(let mode):
@@ -487,7 +493,10 @@ extension OverlayController: OverlayPresenting {
     }
 
     /// One walk; if it just exposed a Chromium page tree, wait for the tree to build and walk once more.
+    /// A flag left by a walk nobody re-walked for (the harness paths) is cleared first, so it costs no wait here.
+    /// The caller checks for cancellation after this returns: a cancelled wait returns the thin first walk.
     private func freshElements() async -> [UIElementInfo] {
+        _ = ax.didJustExpose()
         let first = ax.actionableElements()
         guard ax.didJustExpose() else { return first }
         try? await Task.sleep(for: exposureSettle)

@@ -398,3 +398,16 @@ private let reload = UIElementInfo(id: 1, frame: CGRect(x: 100, y: 100, width: 8
         }
     }
 }
+
+@MainActor @Test func stopDuringTheExposureWaitStopsTheClick() async {
+    let subscribe = UIElementInfo(id: 1, frame: CGRect(x: 100, y: 200, width: 80, height: 30), title: "Subscribe", role: "AXButton")
+    let i = FakeInput(), e = FakeElements(), o = FakeOverlay()
+    e.walkLists = [[subscribe]]   // the thin first walk already holds a match
+    e.exposeOnNextWalk = true
+    let x = ActionExecutor(input: i, ax: e, overlay: o, config: AppConfig(), exposureSettle: .seconds(5))
+    let task = Task { @MainActor in await x.execute([.click(.element(named: "subscribe"), button: .left, count: 1)]) }
+    try? await Task.sleep(for: .milliseconds(50))
+    task.cancel()
+    #expect(await task.value == ActionExecutor.cancelled)
+    #expect(i.calls.isEmpty)
+}
