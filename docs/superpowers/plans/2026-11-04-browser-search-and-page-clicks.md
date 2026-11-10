@@ -3,7 +3,7 @@
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Status:** Shipped
-**Shipped:** NH-3 in PR #23; NH-17 in PR #20, as planned (rebased onto main after NH-3 landed)
+**Shipped:** NH-3 in PR #23; NH-17 in PR #20, with differences: [as-built](../as-built/2026-11-09-nh-17-browser-page-elements.md)
 
 **Goal:** "Search for the Leafs game on YouTube" searches YouTube (not Google) wherever the user is, "search for X" uses the search box of the page or app in front, and voice clicks and number badges reach a web page's links, buttons and fields in a browser.
 
