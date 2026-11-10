@@ -1,5 +1,12 @@
 # Release notes
 
+## 2026-11-10 number badges and click-by-name reach web page content (NH-17) (#20)
+
+Merged 2026-11-10 01:49 UTC.
+
+- Number badges and "click <name>" now cover the links, buttons and fields on a web page in Chrome and other browsers, not just the toolbar.
+- The first number-badge or click-by-name command in a Chromium browser such as Chrome can take about a second longer while the page is prepared (once per launch of the browser).
+
 ## 2026-11-10 Model menu toggle between Claude and the local model (NH-116) (#117)
 
 Merged 2026-11-10 00:57 UTC.
