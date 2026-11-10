@@ -2,6 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+**Status:** Shipped
+**Shipped:** NH-3 in PR #23; NH-17 in PR #20, as planned (rebased onto main after NH-3 landed)
+
 **Goal:** "Search for the Leafs game on YouTube" searches YouTube (not Google) wherever the user is, "search for X" uses the search box of the page or app in front, and voice clicks and number badges reach a web page's links, buttons and fields in a browser.
 
 **Architecture:** Two tickets, two branches, stacked. NH-3 lands the finished `feat/prompt-status-web-search` branch (the `search` action, `SiteSearch`, the prompt board) as a PR against `main`, plus one diagnostic log line. NH-17 stacks on it: the fast-path accessibility walk in `AXQuery` becomes browser-aware (the page's web area first, a larger budget) and `ActionExecutor` re-walks once after a Chromium page tree is first exposed. Nothing new reaches the model; the task loop and the agent-desktop harness are untouched. A DOM bridge is deliberately deferred (NH-18): Chromium's accessibility tree is already the DOM's projection, and the two gaps found were a grammar rule and a walk budget, not a missing API.
