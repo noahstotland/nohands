@@ -2,7 +2,7 @@
 
 **Shipped:** in PR #20
 **Ticket:** NH-17
-**Spec:** [2026-11-04-browser-search-and-page-clicks.md](../plans/2026-11-04-browser-search-and-page-clicks.md) (the plan served as the spec)
+**Spec:** [2026-11-09-nh-17-browser-page-elements-design.md](../specs/2026-11-09-nh-17-browser-page-elements-design.md)
 
 ## Differs from the spec
 
