@@ -1,5 +1,11 @@
 # Release notes
 
+## 2026-11-15 browser tabs by name and number (NH-53) (#133)
+
+Merged 2026-11-15 7:30 pm UTC.
+
+You can now say "tab 3", "last tab", "switch to the YouTube tab", "close the other tabs" and "list tabs" in a browser.
+
 ## 2026-11-15 green checkmark by the Claude status when Claude works (NH-109) (#131)
 
 Merged 2026-11-15 7:12 pm UTC.
