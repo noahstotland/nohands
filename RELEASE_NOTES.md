@@ -1,5 +1,11 @@
 # Release notes
 
+## 2026-11-15 show the model's phase while it works, with a spinner and fades (NH-118) (#123)
+
+Merged 2026-11-15 4:40 pm UTC.
+
+While NoHands works on a command, the corner panel now says what stage it is in (reading the screen, thinking, acting) with a small spinner, and everything fades out smoothly about a second or two after a result (a little longer after a failure). Saying "stop" clears the panel at once.
+
 ## 2026-11-15 site playbooks, fixed routes for common sites in the task request (NH-45) (#122)
 
 Merged 2026-11-15 4:19 pm UTC.
