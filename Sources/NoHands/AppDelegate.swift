@@ -43,7 +43,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private let overlay = OverlayController()
     private let commandLog = CommandLogStore()
-    private lazy var logWindow = LogWindowController(store: commandLog)
+    /// Created on first show, so no command builds it unless the user opens the logs.
+    private var logWindow: LogWindowController?
     private var config = AppConfig()
     private var configInvalid = false
     /// Whether config.json itself holds a key (the environment is ignored): as of launch, plus saves from the menu.
@@ -68,7 +69,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         overlay.statusBarPosition = StatusBarPosition.stored(UserDefaults.standard.string(forKey: Self.statusBarDefaultsKey))
-        commandLog.onChange = { [weak self] in self?.logWindow.reload() }
+        commandLog.onChange = { [weak self] in self?.logWindow?.reload() }
         buildMenu()
         Task { await bootstrap() }
     }
@@ -448,10 +449,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc private func recentCommandChosen(_ sender: NSMenuItem) {
-        logWindow.show(selecting: (sender.representedObject as? String).flatMap(UUID.init(uuidString:)))
+        showLogs(selecting: (sender.representedObject as? String).flatMap(UUID.init(uuidString:)))
     }
 
-    @objc private func viewLogs() { logWindow.show() }
+    @objc private func viewLogs() { showLogs() }
+
+    private func showLogs(selecting id: UUID? = nil) {
+        let window = logWindow ?? LogWindowController(store: commandLog)
+        logWindow = window
+        window.show(selecting: id)
+    }
 
     private static func logResolver(_ backend: EffectiveBackend) -> CommandLogEntry.Resolver {
         switch backend {

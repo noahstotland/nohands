@@ -74,6 +74,7 @@ private func entry(_ n: Int = 0, outcome: CommandLogEntry.Outcome = .done, resol
         #expect(e.steps.map(\.number) == [1, 2, 3])
         #expect(e.steps[1].result == .failed("no element") && e.steps[0].durationMs == 1000)
         #expect(e.steps[2].result == lastStep, "running step takes the ending \(ending)")
+        #expect(e.steps[2].durationMs == 1000, "running step runs to the task's end (t0 + 3 s)")
     }
     let a = ClaudeUsage(inputTokens: 10, cacheReadTokens: 100, cacheWriteTokens: 1)
     let b = ClaudeUsage(inputTokens: 5, cacheReadTokens: 50, cacheWriteTokens: 2)

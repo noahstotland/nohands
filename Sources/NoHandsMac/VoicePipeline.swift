@@ -626,7 +626,8 @@ import NoHandsCore
         case .stopped: ended = .stopped
         }
         commandLog.append(.fromTrail(runner.currentTrail, date: began, phrase: pending.transcript, resolver: kind,
-                                     outcome: ended, durationMs: durationMs, usage: .sum(usage)))
+                                     outcome: ended, durationMs: durationMs, usage: .sum(usage),
+                                     endedAt: Date()))
     }
 
     /// Why an unmatched utterance ran nothing: the LLM-off hint once, then "didn't catch that".

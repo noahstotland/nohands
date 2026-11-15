@@ -58,9 +58,11 @@ public struct CommandLogEntry: Codable, Equatable, Sendable {
     }
 
     /// A model task: one step per trail step, in the order they ran. A step still running when the task ended takes
-    /// the task's ending, the same rule the corner panel uses.
+    /// the task's ending, the same rule the corner panel uses, and runs until `endedAt` (default: `date` plus
+    /// `durationMs`).
     public static func fromTrail(_ trail: TaskTrail, id: UUID = UUID(), date: Date, phrase: String, resolver: Resolver,
-                                 outcome: Outcome, durationMs: Int, usage: Usage?) -> CommandLogEntry {
+                                 outcome: Outcome, durationMs: Int, usage: Usage?, endedAt: Date? = nil) -> CommandLogEntry {
+        let end = endedAt ?? date.addingTimeInterval(Double(durationMs) / 1000)
         let steps = trail.steps.map { step -> Step in
             let result: Outcome
             switch step.state {
@@ -74,8 +76,10 @@ public struct CommandLogEntry: Codable, Equatable, Sendable {
                 case .ignored: result = .failed("ended")
                 }
             }
+            let stepMs = step.duration.map(Self.milliseconds)
+                ?? (step.state == .running ? step.startedAt.map { max(0, Int(end.timeIntervalSince($0) * 1000)) } : nil)
             return Step(number: step.number, action: step.intent, result: result, startedAt: step.startedAt,
-                        durationMs: step.duration.map(Self.milliseconds))
+                        durationMs: stepMs)
         }
         return CommandLogEntry(id: id, date: date, phrase: phrase, resolver: resolver, steps: steps, outcome: outcome,
                                durationMs: durationMs, usage: usage)

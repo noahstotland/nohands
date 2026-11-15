@@ -10,7 +10,8 @@ final class LogWindowController: NSObject, NSWindowDelegate, NSTableViewDataSour
     private let store: CommandLogStore
     private let window: NSWindow
     private let table = NSTableView()
-    private let detail = NSTextView()
+    private let text = NSTextView.scrollableTextView()
+    private var detail: NSTextView { text.documentView as! NSTextView }
     private var selectedID: UUID?
 
     init(store: CommandLogStore) {
@@ -38,12 +39,6 @@ final class LogWindowController: NSObject, NSWindowDelegate, NSTableViewDataSour
         detail.isSelectable = true
         detail.font = .monospacedSystemFont(ofSize: 12, weight: .regular)
         detail.textContainerInset = NSSize(width: 10, height: 10)
-        detail.isVerticallyResizable = true
-        detail.autoresizingMask = [.width]
-        detail.textContainer?.widthTracksTextView = true
-        let text = NSScrollView()
-        text.documentView = detail
-        text.hasVerticalScroller = true
 
         let split = NSSplitView()
         split.isVertical = true
@@ -68,10 +63,12 @@ final class LogWindowController: NSObject, NSWindowDelegate, NSTableViewDataSour
     /// Redraws from the store, keeping the selected command selected as new ones arrive.
     func reload() {
         let entries = store.log.entries
+        let selectedBefore = table.selectedRow
         table.reloadData()
         if let id = selectedID, let row = entries.firstIndex(where: { $0.id == id }) {
+            let changed = selectedBefore != row
             table.selectRowIndexes([row], byExtendingSelection: false)
-            table.scrollRowToVisible(row)
+            if changed { table.scrollRowToVisible(row) }
         } else if let first = entries.first {
             selectedID = first.id
             table.selectRowIndexes([0], byExtendingSelection: false)
