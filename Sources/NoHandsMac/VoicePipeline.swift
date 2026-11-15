@@ -150,16 +150,29 @@ import NoHandsCore
         pendingRunner = nil
     }
 
+    /// What the grammar makes of `phrase`. Whether a text field has focus matters only to the edits that name words in
+    /// the field, so the front app is asked (`textFocused`, an Accessibility read) only when it changes the answer.
+    nonisolated static func parsed(_ phrase: String, grammar: CommandGrammar, frontmost: String?,
+                                   textFocused: @Sendable () -> Bool) -> [Action]? {
+        let plain = grammar.parse(phrase, frontmost: frontmost)
+        let ifFocused = grammar.parse(phrase, frontmost: frontmost, textFocused: true)
+        return plain == ifFocused || !textFocused() ? plain : ifFocused
+    }
+
     /// Skips the merge window: a complete grammar command in command mode, a stop phrase in any mode, and the
-    /// dictation commands (escape phrases, "scratch that", "delete word") in dictation mode. Internal so tests build their MergeBuffer the same way.
+    /// dictation commands (escape phrases, "scratch that", "delete word", text edits) in dictation mode. Internal so tests build their MergeBuffer the same way.
     /// With the attention word on, a command mode grammar command counts only after the word ("computer, go back").
     nonisolated static func isComplete(_ transcript: String, mode: Mode, grammar: CommandGrammar,
-                                       attention: AttentionGate = .off, frontmost: String? = nil) -> Bool {
+                                       attention: AttentionGate = .off, frontmost: String? = nil,
+                                       textFocused: @Sendable () -> Bool = { false }) -> Bool {
         if attention.isStop(transcript) { return true }
         switch mode {
         case .command:
             // "spell" always waits the merge window: a pause mid-spelling must not type half and send the rest to the model.
-            func complete(_ phrase: String) -> Bool { CommandGrammar.normalize(phrase).first != "spell" && grammar.parse(phrase, frontmost: frontmost) != nil }
+            func complete(_ phrase: String) -> Bool {
+                CommandGrammar.normalize(phrase).first != "spell"
+                    && parsed(phrase, grammar: grammar, frontmost: frontmost, textFocused: textFocused) != nil
+            }
             switch attention.check(transcript) {
             case .off: return complete(transcript)
             case .addressed(let rest): return complete(rest)
@@ -173,10 +186,11 @@ import NoHandsCore
     /// True when the grammar parses `transcript` (after the attention word) to actions carrying spoken text, or does not
     /// parse it at all: such a command keeps the full silence window.
     nonisolated static func carriesSpokenText(_ transcript: String, grammar: CommandGrammar,
-                                              attention: AttentionGate = .off, frontmost: String? = nil) -> Bool {
+                                              attention: AttentionGate = .off, frontmost: String? = nil,
+                                              textFocused: @Sendable () -> Bool = { false }) -> Bool {
         var phrase = transcript
         if case .addressed(let rest) = attention.check(transcript) { phrase = rest }
-        return grammar.parse(phrase, frontmost: frontmost)?.carriesSpokenText ?? true
+        return parsed(phrase, grammar: grammar, frontmost: frontmost, textFocused: textFocused)?.carriesSpokenText ?? true
     }
 
     /// One unit of work for the serial ASR loop. `early` is a pass over the audio so far, started after a short
@@ -264,11 +278,14 @@ import NoHandsCore
         let grammar = CommandGrammar(config: config.grammarConfig)
         let attention = self.attention
         let front = FrontmostApp.shared   // a pack phrase closes the merge window early, like a global one
+        let ax = self.ax   // asked only for a text edit that names words in the field
         let merge = MergeBuffer(
             merger: UtteranceMerger(windowMs: config.mergeWindowMs, unfinishedWindowMs: config.mergeWindowUnfinishedMs),
             gate: attention,
-            isComplete: { Self.isComplete($0, mode: $1, grammar: grammar, attention: attention, frontmost: front.bundleID) },
-            carriesSpokenText: { Self.carriesSpokenText($0, grammar: grammar, attention: attention, frontmost: front.bundleID) },
+            isComplete: { Self.isComplete($0, mode: $1, grammar: grammar, attention: attention, frontmost: front.bundleID,
+                                          textFocused: { ax.isTextFocused() }) },
+            carriesSpokenText: { Self.carriesSpokenText($0, grammar: grammar, attention: attention, frontmost: front.bundleID,
+                                                        textFocused: { ax.isTextFocused() }) },
             onHold: { [weak self] text in
                 Task { @MainActor in self?.listening(text) }
             },
@@ -498,9 +515,18 @@ import NoHandsCore
         }
         lastTranscript = text
         let modeBefore = modeMachine.mode
+        // Edits that name words in the field need to know a text field has focus; any other phrase never asks.
+        var textFocused = false
+        if ModeMachine.namesTextEdit(text, attention: attention) {
+            let ax = self.ax
+            textFocused = await Task.detached { ax.isTextFocused() }.value
+        }
+        var routing = modeMachine.route(text, frontmost: NSWorkspace.shared.frontmostApplication?.bundleIdentifier,
+                                        textFocused: textFocused)
         // Words typed in dictation mode are typing, not a command; its own commands ("stop dictating") are commands.
-        let isCommand = modeBefore != .dictation || ModeMachine.isDictationCommand(text, attention: attention)
-        var routing = modeMachine.route(text, frontmost: NSWorkspace.shared.frontmostApplication?.bundleIdentifier)
+        // A phrase edit with no text field is typed as words, so it is typing too.
+        var isCommand = modeBefore != .dictation || ModeMachine.isDictationCommand(text, attention: attention)
+        if modeBefore == .dictation, case .execute(let actions) = routing, case .typeText = actions.first { isCommand = false }
         // A stop phrase with no task running must not start one (held jobs never get here: busy() intercepts them).
         if case .resolveWithLLM(let phrase) = routing, StopWords.isStop(phrase) { routing = .ignore(reason: "stop") }
         var outcome = PipelineText.summary(routing)                    // public: kinds only
@@ -523,6 +549,11 @@ import NoHandsCore
             }
             let began = Date(), clock = ContinuousClock.now
             let failure = await executor.execute(actions)
+            // An edit moved the caret or the text: "scratch that" no longer matches the screen. Dictation that an edit
+            // fell back to typing is the exception, the record is right.
+            if actions.contains(where: { if case .editText = $0 { true } else { false } }), !executor.editTypedOtherwise {
+                modeMachine.forgetDictationRecord()
+            }
             if isCommand {
                 recordCommand(.grammar(date: began, phrase: text, action: PipelineText.describe(actions), failure: failure,
                                        durationMs: CommandLogEntry.milliseconds(clock.duration(to: .now))))

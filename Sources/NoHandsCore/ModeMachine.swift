@@ -55,7 +55,13 @@ public struct ModeMachine: Sendable {
         if isDictationEscape(transcript, attention: attention) { return true }
         let phrase = phrase(transcript, attention: attention)
         if phrase == "scratch that" || phrase == "delete word" || phrase == "delete that" { return true }
-        return CommandGrammar.parseEdit(addressed(transcript, attention: attention), textFocused: true) != nil
+        return namesTextEdit(transcript, attention: attention)
+    }
+
+    /// True when the words are a text edit that works only in a focused text field (so the caller asks the front app
+    /// whether there is one before routing, and not for any other utterance).
+    public static func namesTextEdit(_ transcript: String, attention: AttentionGate = .off) -> Bool {
+        CommandGrammar.parseEdit(addressed(transcript, attention: attention), textFocused: true) != nil
     }
 
     /// Drops the "scratch that" record. The pipeline calls it on pause: what was routed may never have been typed,
