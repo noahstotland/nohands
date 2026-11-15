@@ -330,6 +330,8 @@ extension OverlayController: OverlayPresenting {
                 hideStaleOverlay()
             case .ignore, .look:
                 break
+            case .readPage:
+                return "can't read the page yet"   // placeholder until the Mac task
             case .closeTab(let n):
                 guard let tab = tabSnapshot?.tab(n) else { return "no tab \(n)" }
                 if let failure = try await closeTab(id: tab.id) { return failure }

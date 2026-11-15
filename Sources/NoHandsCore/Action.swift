@@ -85,6 +85,9 @@ public enum Action: Equatable, Codable, Sendable {
     case windowAction(DesktopWindowOp, app: String?, title: String?)
     case clipboardSet(String)
     case readClipboard
+    /// Read the visible text of the focused window's page as a reading (`page: …`), for choosing between controls
+    /// whose titles alone don't say which is the target. Native walk under either harness.
+    case readPage
     case readValue(ElementTarget)
     case readNotifications
     case dismissNotifications(app: String?)

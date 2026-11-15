@@ -19,7 +19,8 @@ public enum SettlePolicy: Int, Comparable, Sendable {
     /// No `default`: a new action kind must choose a level.
     private static func level(_ action: Action) -> SettlePolicy {
         switch action {
-        case .wait, .look, .checkMedia, .ignore, .readClipboard, .readValue, .readNotifications, .clipboardSet:
+        case .wait, .look, .checkMedia, .ignore, .readClipboard, .readValue, .readNotifications, .clipboardSet,
+             .readPage:
             return .none
         case .typeText(let text), .typeInto(_, let text):
             // A newline in typed text is a real Return press (TextSegmenter), so it can submit and load a page.

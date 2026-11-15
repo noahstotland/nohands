@@ -17,8 +17,10 @@ public struct ObservedElement: Equatable, Sendable {
     public var title: String
     public var value: String?
     public var states: [String]
-    public init(number: Int, role: String, title: String, value: String? = nil, states: [String] = []) {
-        self.number = number; self.role = role; self.title = title; self.value = value; self.states = states
+    /// The words just before a generic link or button (`PageText.near`); rendered as `near: "…"`.
+    public var near: String?
+    public init(number: Int, role: String, title: String, value: String? = nil, states: [String] = [], near: String? = nil) {
+        self.number = number; self.role = role; self.title = title; self.value = value; self.states = states; self.near = near
     }
 }
 
