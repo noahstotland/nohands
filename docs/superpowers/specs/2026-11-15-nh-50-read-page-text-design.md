@@ -1,7 +1,8 @@
 # NH-50: Read page text: Design
 
 **Date:** 2026-11-15  **Ticket:** [NH-50](https://github.com/noahstotland/nohands/issues/50)
-**Status:** Draft
+**Status:** Shipped
+**Shipped:** in PR #128, with differences: [as-built](../as-built/2026-11-15-nh-50-read-page-text.md)
 
 ## Intent
 
