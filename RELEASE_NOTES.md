@@ -1,5 +1,11 @@
 # Release notes
 
+## 2026-11-15 a task asks the user a question and takes the answer by voice (NH-47) (#130)
+
+Merged 2026-11-15 6:36 pm UTC.
+
+When a request fits two things on screen, like two games or two drafts, NoHands now asks which one and takes your next words as the answer. Say "stop" to cancel; 30 seconds of silence ends the task.
+
 ## 2026-11-15 read page text for the model (NH-50) (#128)
 
 Merged 2026-11-15 5:38 pm UTC.
