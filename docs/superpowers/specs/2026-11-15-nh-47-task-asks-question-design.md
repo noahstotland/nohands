@@ -1,8 +1,9 @@
 # NH-47: Let a task ask the user a question and take the answer by voice
 
 **Date:** 2026-11-15
-**Status:** Draft
+**Status:** Shipped
 **Ticket:** [NH-47](https://github.com/noahstotland/nohands/issues/47)
+**Shipped:** in PR #130, with differences: [as-built](../as-built/2026-11-15-nh-47-task-asks-question.md)
 
 ## Goal
 
