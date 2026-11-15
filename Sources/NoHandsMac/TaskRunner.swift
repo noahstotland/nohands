@@ -248,7 +248,6 @@ public enum TaskOutcome: Equatable, Sendable {
                 }
                 stepsRun = n
                 trail.end(number: n, failure: nil)
-                trail.phase = .reading
                 onTrail?(trail)
                 history.append(StepRecord(intent: question, actions: [], userAnswer: String(said.prefix(Self.answerLimit))))
                 if n < maxSteps {

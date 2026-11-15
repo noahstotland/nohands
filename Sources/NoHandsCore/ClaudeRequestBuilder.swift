@@ -74,15 +74,16 @@ public struct ClaudeRequestBuilder: Sendable {
         userBlocks(request: r, playbooks: playbooks).joined()
     }
 
+    /// `text` without the "User answered:" marker (any case), which only the builder may write.
+    static func unmarked(_ text: String) -> String {
+        // Every colon after the word goes at once (a single-pass replace of "answered:" turns "answered::" into "answered:").
+        text.replacingOccurrences(of: "answered\\s*[:\u{FF1A}]+", with: "answered", options: [.regularExpression, .caseInsensitive])
+    }
+
     /// The user message in pieces, in order: goal and step, one block per history record (the first carries the
     /// `History:` header), then, after two identical steps, a note to change approach, then, when the goal or page names a
     /// known site, its routes (`SitePlaybooks`; `playbooks: false` leaves them out, for the few-shot examples), then the
     /// observation through the `Request:` line. Joined, they are `userMessage`.
-    /// `text` without the "User answered:" marker (any case), which only the builder may write.
-    static func unmarked(_ text: String) -> String {
-        text.replacingOccurrences(of: "answered:", with: "answered", options: .caseInsensitive)
-    }
-
     public static func userBlocks(request r: StepRequest, playbooks: Bool = true) -> [String] {
         let o = r.observation
         let goal = sanitize(r.goal, limit: 300)
