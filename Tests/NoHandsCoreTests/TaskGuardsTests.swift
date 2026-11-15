@@ -74,3 +74,46 @@ import Foundation
     b = a; b.elements[0].number = 7
     #expect(Settle.same(a, b))
 }
+
+@Test func settlePolicyIsTheHighestLevelAmongTheActions() {
+    let url = URL(string: "https://example.com")!
+    let rows: [([Action], SettlePolicy)] = [
+        ([], .none),
+        ([.wait(ms: 500), .look, .readClipboard], .none),
+        ([.typeText("hi"), .wait(ms: 500)], .oneLook),
+        ([.openURL(url, app: nil), .wait(ms: 500)], .full),
+        ([.scroll(.down, amount: 3), .waitFor(.mediaPlaying, timeoutMs: 1000)], .oneLook),
+        ([.pressKey(KeyChord(.tab))], .oneLook),
+        ([.pressKey(KeyChord(.a, [.shift]))], .oneLook),
+        ([.pressKey(KeyChord(.return))], .full),
+        ([.pressKey(KeyChord(.return, [.shift]))], .full),
+        ([.pressKey(KeyChord(.l, [.command]))], .full),
+        ([.pressKey(KeyChord(.tab, [.control]))], .full),
+        ([.pressKey(KeyChord(.f, [.option]))], .full),
+        ([.click(.element(named: "Play"), button: .left, count: 1)], .full),
+    ]
+    for (actions, expected) in rows { #expect(SettlePolicy.for(actions) == expected, "\(actions)") }
+}
+
+@Test func settleWatchStopsOnMatchOrOnAValueThatKeepsTicking() {
+    func screen(_ values: String..., title: String = "W", url: String = "u", extra: Bool = false) -> ScreenObservation {
+        var els = values.enumerated().map { ObservedElement(number: $0.offset + 1, role: "text", title: "clock", value: $0.element) }
+        if extra { els.append(ObservedElement(number: 9, role: "link", title: "New")) }
+        return ScreenObservation(app: "Safari", windowTitle: title, url: url, mode: .command, elements: els)
+    }
+    // Each row is the readings fed in order and the index of the reading that first reports settled (nil: never).
+    let rows: [(String, [ScreenObservation], Int?)] = [
+        ("two equal", [screen("1"), screen("1")], 1),
+        ("ticking value", [screen("1"), screen("2"), screen("3")], 2),
+        ("value changes once", [screen("1"), screen("1"), screen("2")], 1),
+        ("first change only", [screen("1"), screen("2")], nil),
+        ("value with a new element", [screen("1"), screen("2"), screen("3", extra: true)], nil),
+        ("title changes while ticking", [screen("1"), screen("2"), screen("3", title: "X")], nil),
+        ("url changes while ticking", [screen("1"), screen("2"), screen("3", url: "v")], nil),
+    ]
+    for (name, readings, settledAt) in rows {
+        var watch = SettleWatch()
+        let first = readings.firstIndex { watch.feed($0) }
+        #expect(first == settledAt, "\(name)")
+    }
+}
