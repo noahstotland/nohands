@@ -2,7 +2,7 @@
 
 **Date:** 2026-11-15  **Ticket:** [NH-93](https://github.com/noahstotland/nohands/issues/93)
 **Status:** Shipped
-**Shipped:** in PR #121, as specified
+**Shipped:** in PR #121, with differences: [as-built](../as-built/2026-11-15-nh-93-ordinal-click-target.md)
 
 ## Intent
 
