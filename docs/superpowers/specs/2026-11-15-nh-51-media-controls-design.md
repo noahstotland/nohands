@@ -70,7 +70,7 @@ Anti-goals, which would make this a failure even if it works:
 
 | Spoken | Action |
 |---|---|
-| `play`, `resume`, `play the video`, `play the music` | `.media(.play)` |
+| `play`, `resume`, `play the music` | `.media(.play)` |
 | `pause`, `pause the video`, `pause the music` | `.media(.pause)` |
 | `play pause`, `toggle play` | `.media(.playPause)` |
 | `next track`, `next song`, `next video` | `.media(.next)` |
@@ -161,3 +161,10 @@ volume set, step and mute with built-in speakers and with AirPods.
   (it would fight "skip ad").
 - **Grammar only: the model gets no media or volume action kinds.** Keeps the intent schema and fixtures unchanged.
 - **The play key goes wherever macOS sends it** (its Now Playing app) when the front app is not a YouTube tab.
+
+## Review changes
+
+- `play the video` is not a phrase (it stays with the model, which clicks the page's Play button).
+- `play`, `skip …` and `volume …` phrases wait for the full silence window, so a pause mid-phrase does not split them.
+- Exit full screen on YouTube presses Escape, then the window chord if the window is still full screen. "full screen video" does nothing when the window is already full screen.
+- A speaker with a volume control but no mute property fails mute and unmute with `this speaker can't be muted`.
