@@ -5,7 +5,8 @@ import CoreGraphics
 /// next observation. Pure logic; the accessibility walk that feeds it lives in `NoHandsMac`.
 public enum PageFind {
     /// The most characters of words a find accepts.
-    public static let maxWords = 200
+    /// The accessibility layer keeps 120 characters of a title, so longer words could never match exactly.
+    public static let maxWords = 120
 
     /// Trimmed, lower-cased, without a leading "the" or trailing `.,!?`. Empty when nothing is left.
     public static func normalize(_ words: String) -> String {

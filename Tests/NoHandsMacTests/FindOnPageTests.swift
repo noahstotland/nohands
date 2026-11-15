@@ -24,6 +24,20 @@ private let offscreen = UIElementInfo(id: 1_000_001, frame: CGRect(x: 100, y: 50
     }
 }
 
+@MainActor @Test func aFoundElementIsKeptOnlyWhenTheFindIsTheStepsLastAction() async {
+    let table: [([Action], Bool)] = [
+        ([.findOnPage("Raptors", movePointer: false)], true),
+        ([.findOnPage("Raptors", movePointer: false), .pressKey(KeyChord(.return))], false),
+        ([.pressKey(KeyChord(.return)), .findOnPage("Raptors", movePointer: false)], true),
+    ]
+    for (actions, kept) in table {
+        let (x, _, e, _) = make()
+        e.pageMatch = offscreen
+        #expect(await x.execute(actions) == nil)
+        #expect((x.takeFound() != nil) == kept, "\(actions)")
+    }
+}
+
 @MainActor @Test func findFailuresNameWhatHappened() async {
     let (x, i, e, _) = make()
     // Nothing on the page, and no harness: the message the vision trigger ignores.
@@ -36,7 +50,7 @@ private let offscreen = UIElementInfo(id: 1_000_001, frame: CGRect(x: 100, y: 50
     #expect(i.calls.isEmpty && x.takeFound() == nil)
     // Over the cap, or no words at all: the walk never runs.
     e.findWords = []
-    #expect(await x.execute([.findOnPage(String(repeating: "a", count: 201), movePointer: true)]) == "text too long")
+    #expect(await x.execute([.findOnPage(String(repeating: "a", count: 121), movePointer: true)]) == "text too long")
     #expect(await x.execute([.findOnPage(" the ", movePointer: true)]) == "nothing to find")
     #expect(e.findWords.isEmpty)
 }

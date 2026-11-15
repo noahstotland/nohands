@@ -16,3 +16,7 @@
 - **`pinFirst` keeps the list's own element** when it finds the match, so a harness ref and states survive; it runs after
   the observer builds its list, for both native and harness lists.
 - **A find settles with one short look** (`SettlePolicy.oneLook`), like the other scroll actions.
+- **Words are capped at 120 characters,** not 200: the accessibility layer keeps 120 characters of a title.
+- **The walk never descends into text-entry elements** (text fields, text areas, secure fields, combo and search
+  fields), whose children hold what the user typed, and a match on the page wins over one in the browser's own chrome.
+- **A found element is pinned in the next observation only when the find was the step's last action.**

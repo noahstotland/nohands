@@ -183,6 +183,7 @@ public final class AXQuery: @unchecked Sendable {
     /// `kAXScrollToVisibleAction`, which Swift does not import.
     static let scrollToVisibleAction = "AXScrollToVisible"
     static let findContainerRoles: Set<String> = ["AXLink", "AXButton"]
+    static let textEntryRoles: Set<String> = ["AXTextField", "AXTextArea", "AXSecureTextField", "AXComboBox", "AXSearchField"]
 
     /// Walks the focused window for an element whose title, description (or, for static text and headings, value)
     /// matches `words`, offscreen ones included: the page's web area first, then the rest of the window, menus never.
@@ -236,6 +237,9 @@ public final class AXQuery: @unchecked Sendable {
                 if Self.valueTextRoles.contains(role), let v = Self.string(el, kAXValueAttribute) { texts.append(v) }
             }
             for t in texts where offer(t, role: role, reporting: el, enclosing: enclosing, depth: depth) { return true }
+            // A text-entry element's children hold what the user typed (a contenteditable editor's draft is static
+            // text under an AXTextArea): never walk into one.
+            if Self.textEntryRoles.contains(role) || secure { return false }
             let inner = Self.findContainerRoles.contains(role) ? (el, role, depth) : enclosing
             for c in Self.elements(el, kAXChildrenAttribute) {
                 if visit(c, depth: depth + 1, skippingWebAreas: skippingWebAreas, enclosing: inner) { return true }
@@ -244,7 +248,10 @@ public final class AXQuery: @unchecked Sendable {
         }
         // The page first: a browser's own toolbar holds titles too.
         if let web = Self.firstWebArea(f.window, depth: 1, visited: &visited, limit: Self.findMaxNodes, deadline: deadline) {
-            if visit(web, depth: 1, skippingWebAreas: false, enclosing: nil) { return finishFind(matcher, bestElement) }
+            // A match on the page wins over one in the browser's own chrome (a tab title, a bookmark).
+            if visit(web, depth: 1, skippingWebAreas: false, enclosing: nil) || matcher.best != nil {
+                return finishFind(matcher, bestElement)
+            }
             visited = 0
         }
         _ = visit(f.window, depth: 1, skippingWebAreas: true, enclosing: nil)

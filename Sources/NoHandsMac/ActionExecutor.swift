@@ -206,6 +206,9 @@ extension OverlayController: OverlayPresenting {
                 pressed = []
                 return Self.cancelled
             }
+            // A found element is the next observation's number 1 only when the find was the step's last act: anything
+            // after it may have changed the page.
+            if case .findOnPage = action {} else { found = nil }
             if let message = await run(action, isLast: i == actions.count - 1) {
                 if !pressed.isEmpty { input.releaseAll() }
                 pressed = []
