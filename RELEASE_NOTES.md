@@ -1,5 +1,11 @@
 # Release notes
 
+## 2026-11-15 Terminal voice commands (NH-84) (#138)
+
+Merged 2026-11-15 8:38 pm UTC.
+
+In Terminal you can now say "new window", "clear", "clear scrollback", "scroll to top", "split pane", "bigger font" and "interrupt" (control-C). They work only while Terminal is in front.
+
 ## 2026-11-15 log Claude token usage and show a session total in the menu (NH-112) (#134)
 
 Merged 2026-11-15 7:58 pm UTC.
