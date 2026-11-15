@@ -70,13 +70,15 @@ public struct ClaudeRequestBuilder: Sendable {
         userMessage(request: StepRequest(oneShot: transcript, context: context))
     }
 
-    public static func userMessage(request r: StepRequest) -> String {
-        userBlocks(request: r).joined()
+    public static func userMessage(request r: StepRequest, playbooks: Bool = true) -> String {
+        userBlocks(request: r, playbooks: playbooks).joined()
     }
 
     /// The user message in pieces, in order: goal and step, one block per history record (the first carries the
-    /// `History:` header), then, after two identical steps, a note to change approach, then the observation through the `Request:` line. Joined, they are `userMessage`.
-    public static func userBlocks(request r: StepRequest) -> [String] {
+    /// `History:` header), then, after two identical steps, a note to change approach, then, when the goal or page names a
+    /// known site, its routes (`SitePlaybooks`; `playbooks: false` leaves them out, for the few-shot examples), then the
+    /// observation through the `Request:` line. Joined, they are `userMessage`.
+    public static func userBlocks(request r: StepRequest, playbooks: Bool = true) -> [String] {
         let o = r.observation
         let goal = sanitize(r.goal, limit: 300)
         var blocks = ["Goal: \(goal)\nStep: \(r.step) of \(r.maxSteps)\n"]
@@ -88,6 +90,7 @@ public struct ClaudeRequestBuilder: Sendable {
         if let last = r.history.last, r.history.count >= 2, !last.actions.isEmpty, r.history[r.history.count - 2].actions == last.actions {
             blocks.append("  Steps \(r.history.count - 1) and \(r.history.count) ran the same actions. Try a different approach now; a third identical step ends the task.\n")
         }
+        if playbooks, let routes = SitePlaybooks.block(goal: r.goal, url: o.url) { blocks.append(routes) }
         var s = "App: \(sanitize(o.app))   Window: \(sanitize(o.windowTitle).nonEmpty ?? "-")   URL: \(o.url.map { sanitize($0) } ?? "-")\n"
         s += "Mode: \(o.mode.rawValue)   Overlay: \(sanitize(o.overlay))   Harness: \(o.harness.rawValue)\n"
         if let media = o.media { s += "Media: \(media.rawValue)\n" }

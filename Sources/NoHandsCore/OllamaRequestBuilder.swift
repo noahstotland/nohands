@@ -66,7 +66,7 @@ public enum IntentExamples {
         ClaudeRequestBuilder.userMessage(request: StepRequest(
             oneShot: request,
             context: IntentContext(frontmostApp: app, mode: .command,
-                                   labeledElements: elements.map { (number: $0.0, title: $0.1) }, overlay: overlay)))
+                                   labeledElements: elements.map { (number: $0.0, title: $0.1) }, overlay: overlay)), playbooks: false)
     }
 
     // A made-up channel: a real handle in an example is one a small model types into the live task.
@@ -96,7 +96,7 @@ public enum IntentExamples {
         // Two-step task: step 1 navigates and continues; step 2 sees the channel page and finishes.
         (ClaudeRequestBuilder.userMessage(request: StepRequest(
             goal: channelGoal, step: 1, maxSteps: 12, history: [],
-            observation: ScreenObservation(app: "Finder", mode: .command))),
+            observation: ScreenObservation(app: "Finder", mode: .command)), playbooks: false),
          #"{"intent":"Go to the Maple Ridge Workshop channel's Videos tab, where the newest upload is first.","status":"continue","actions":[{"kind":"open_url","url":"https://www.youtube.com/@mapleridgeworkshop/videos"},{"kind":"wait","ms":1500}]}"#),
         (ClaudeRequestBuilder.userMessage(request: StepRequest(
             goal: channelGoal, step: 2, maxSteps: 12,
@@ -109,7 +109,7 @@ public enum IntentExamples {
                 elements: [ObservedElement(number: 1, role: "AXLink", title: "Home"),
                            ObservedElement(number: 2, role: "AXLink", title: "Videos"),
                            ObservedElement(number: 3, role: "AXLink", title: "Shorts"),
-                           ObservedElement(number: 4, role: "AXLink", title: channelVideo)]))),
+                           ObservedElement(number: 4, role: "AXLink", title: channelVideo)])), playbooks: false),
          #"{"intent":"The Videos tab is showing; open the first (newest) video.","status":"done","actions":[{"kind":"click","target_kind":"element","target_name":"Maple Ridge Workshop: Building a Cedar Workbench"}]}"#),
         // A site request from a non-browser app with a distracting element list: small models otherwise answer ignore.
         // Kept last (closest to the live request): qwen2.5:7b ignores such requests when this sits earlier.
@@ -140,6 +140,6 @@ public enum IntentExamples {
     private static func harnessMsg(_ app: String, windowTitle: String, elements: [ObservedElement], request: String) -> String {
         var o = ScreenObservation(app: app, windowTitle: windowTitle, mode: .command, elements: elements)
         o.harness = .agentDesktop
-        return ClaudeRequestBuilder.userMessage(request: StepRequest(goal: request, step: 1, maxSteps: 12, history: [], observation: o))
+        return ClaudeRequestBuilder.userMessage(request: StepRequest(goal: request, step: 1, maxSteps: 12, history: [], observation: o), playbooks: false)
     }
 }
