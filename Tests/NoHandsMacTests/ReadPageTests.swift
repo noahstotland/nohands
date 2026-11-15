@@ -12,13 +12,17 @@ import NoHandsCore
     #expect(long == ["page: Header | " + String(repeating: "t", count: 2000) + " | Watch"])
     #expect(x.takeReadings().isEmpty && i.calls.isEmpty)
     // A reading from anywhere else keeps the 300-character cap, whatever its text says.
-    x.addReading("clipboard", "page: " + String(repeating: "c", count: 2000))
-    #expect(x.takeReadings().first?.count == ActionExecutor.readingLimit)
+    // Nor can an element title spelling the page label (read_value uses the title as the label).
+    for label in ["clipboard", "page", "Page", "page: x"] {
+        x.addReading(label, "page: " + String(repeating: "c", count: 2000))
+        let r = x.takeReadings().first ?? ""
+        #expect(r.count == ActionExecutor.readingLimit && !r.hasPrefix("page: "))
+    }
     // A page too long for one reading is cut at the page limit.
     e.pageRuns = (0..<400).map { "run number \($0) of the schedule" }
     #expect(await x.execute([.readPage]) == nil)
     let cut = x.takeReadings().first ?? ""
-    #expect(cut.hasPrefix("page: run number 0") && cut.hasSuffix(" …") && cut.count <= PageText.limit + "page: ".count)
+    #expect(cut.hasPrefix("page: run number 0") && cut.hasSuffix(" …") && cut.count <= PageText.limit)
 }
 
 @MainActor @Test func readPageFailsOnAnEmptyPageAndOnAStop() async {

@@ -11,3 +11,5 @@
 - `read_page` also re-walks once after a Chromium page tree was just exposed, as `find` does.
 - The harness executor file is unchanged: `.readPage` is handled in the native `run` switch before the harness is consulted.
 - The `near:` source keeps the latest static text with no on-screen check (to save AX calls).
+- Known limit: an editor that exposes its text as an `AXGroup` with `AXEditable` (rather than a text area) is read as page text, because only the text-entry roles are skipped.
+- Only the page reading, added by code, gets the 4,000-character limit; any other reading's label has its colons removed and a bare "page" renamed, so page content can't claim the long limit. The page text is joined to leave room for its label, so the cut mark is kept.

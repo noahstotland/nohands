@@ -20,7 +20,7 @@ public enum PageText {
 
     /// The runs trimmed and whitespace-collapsed, empties and a run equal to the one before it dropped, joined with
     /// ` | `. Over `limit` it keeps whole runs and ends with ` …`; a first run that alone is too long is cut mid-run.
-    public static func join(_ runs: [String]) -> String {
+    public static func join(_ runs: [String], limit: Int = PageText.limit) -> String {
         var kept: [String] = []
         for run in runs {
             let r = collapse(run)

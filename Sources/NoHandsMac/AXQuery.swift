@@ -595,7 +595,7 @@ public final class AXQuery: @unchecked Sendable {
             return true
         }
 
-        mutating func visit(_ el: AXUIElement, depth: Int, descend: Bool, stopAtMenuBarItems: Bool = false) {
+        mutating func visit(_ el: AXUIElement, depth: Int, descend: Bool, stopAtMenuBarItems: Bool = false, inField: Bool = false) {
             guard depth <= AXQuery.maxDepth, !exhausted, firstVisit(el) else { return }
             visited += 1
             AXUIElementSetMessagingTimeout(el, 0.05)
@@ -616,16 +616,18 @@ public final class AXQuery: @unchecked Sendable {
                 let near = tracksText && AXQuery.findContainerRoles.contains(role) && PageText.isGeneric(finalTitle)
                     ? lastText.flatMap(PageText.near) : nil
                 found.append(Found(element: el, frame: f, title: finalTitle, role: role, near: near))
-            } else if tracksText, AXQuery.pageTextRoles.contains(role),
+            } else if tracksText, !inField, AXQuery.pageTextRoles.contains(role),
                       let t = AXQuery.string(el, kAXValueAttribute, limit: 400) ?? AXQuery.string(el, kAXTitleAttribute, limit: 400) {
                 lastText = t
             }
             // Menu bar items open menus whose contents are not on screen; do not descend into them.
             if stopAtMenuBarItems && role == "AXMenuBarItem" { return }
             if role == "AXMenuItem" { return }
+            // Under a field its children are the user's own text (a contenteditable draft): never a `near:` source.
+            let nowInField = inField || AXQuery.textEntryRoles.contains(role)
             for c in AXQuery.elements(el, kAXChildrenAttribute) {
                 if exhausted { return }
-                visit(c, depth: depth + 1, descend: true, stopAtMenuBarItems: stopAtMenuBarItems)
+                visit(c, depth: depth + 1, descend: true, stopAtMenuBarItems: stopAtMenuBarItems, inField: nowInField)
             }
         }
 

@@ -192,8 +192,16 @@ extension OverlayController: OverlayPresenting {
     }
 
     func addReading(_ label: String, _ text: String) {
-        // Only the page reading, labelled by code, is long; a clipboard or a field value stays short.
-        readings.append(String("\(label): \(text)".prefix(label == PageText.readingLabel ? PageText.limit : Self.readingLimit)))
+        // A label can come from the page (an element's title), so it can never spell the page reading's `page: `
+        // prefix: colons go, and a bare "page" is renamed.
+        var safe = label.replacingOccurrences(of: ":", with: " ").trimmingCharacters(in: .whitespaces)
+        if safe.lowercased() == PageText.readingLabel { safe = "\(safe) value" }
+        readings.append(String("\(safe): \(text)".prefix(Self.readingLimit)))
+    }
+
+    /// The page reading, the only long one. Only code calls this, so page content can't choose the long limit.
+    func addPageReading(_ text: String) {
+        readings.append(String("\(PageText.readingLabel): \(text)".prefix(PageText.limit)))
     }
 
     /// Executes in order; stops at the first failure. Returns the failure message if any (the caller shows it on
@@ -593,10 +601,11 @@ extension OverlayController: OverlayPresenting {
             if !Task.isCancelled { runs = ax.pageText() }
         }
         if Task.isCancelled { return Self.cancelled }
-        let text = PageText.join(runs)
+        // Room for the label, so the cut mark is never trimmed off the end.
+        let text = PageText.join(runs, limit: PageText.limit - PageText.readingLabel.count - 2)
         guard !text.isEmpty else { return Self.noPageText }
         PipelineLog.info("read_page: \(text.count) characters", detail: text)
-        addReading(PageText.readingLabel, text)
+        addPageReading(text)
         return nil
     }
 
