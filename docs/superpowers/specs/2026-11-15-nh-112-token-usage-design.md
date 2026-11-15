@@ -1,7 +1,8 @@
 # NH-112: Claude token usage per call and a session total: Design
 
 **Date:** 2026-11-15  **Ticket:** [NH-112](https://github.com/noahstotland/nohands/issues/112)
-**Status:** Draft
+**Status:** Shipped
+**Shipped:** in PR #134, as specified
 
 ## Intent
 
