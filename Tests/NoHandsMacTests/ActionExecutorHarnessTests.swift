@@ -105,6 +105,10 @@ private let labels: [Int: UIElementInfo] = [
     #expect(await x.execute([.menuItem("Paste")]) == "menu item Paste is disabled")
     h!.findResult = nil
     #expect(await x.execute([.menuItem("Nothing")]) == "no menu item called Nothing")
+    // agent-desktop's contains fallback may not widen a model step: "trash" must not click "Empty Trash…".
+    h!.findResult = DesktopFindMatch(ref: "@s1:e9", role: "menuitem", name: "Empty Trash…", path: [], disabled: false)
+    #expect(await x.execute([.menuItem("trash")], labels: [:]) == "no menu item called trash")
+    #expect(h!.calls.last == "find:menubar:Notes:trash")
     let (native, _, _, _, _, _) = makeHarnessed(harness: nil)
     #expect(await native.execute([.menuItem("Paste")]) == "no menu item called Paste")
 }

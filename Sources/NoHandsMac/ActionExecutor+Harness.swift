@@ -134,7 +134,8 @@ extension ActionExecutor {
             return outcome(await harness.act(.click(ref: m.ref, button: .left, count: 1)))
         case .menuItem(let name):
             let last = name.split(separator: ">").last.map { $0.trimmingCharacters(in: .whitespaces) } ?? name
-            // A model step (the task loop passes labels) presses only the exact title; the user's own "menu <words>" may be closest.
+            // A model step (the task loop passes labels) presses only the exact title, natively or through agent-desktop; the
+            // user's own "menu <words>" may be closest.
             switch pressMenuItem(name, exactOnly: labelSnapshot != nil) {
             case .pressed: return nil
             case .disabled(let title): return "menu item \(title) is disabled"
@@ -146,6 +147,8 @@ extension ActionExecutor {
             guard let m = await harness.find(app: ax.frontmostAppName(), surface: .menubar, name: last) else {
                 return "no menu item called \(last)"
             }
+            // agent-desktop falls back to a contains match; a model step may press only the title it named.
+            if labelSnapshot != nil, MenuMatch.fold(m.name) != MenuMatch.fold(last) { return "no menu item called \(last)" }
             if m.disabled { return "menu item \(last) is disabled" }
             return outcome(await harness.act(.click(ref: m.ref, button: .left, count: 1)))
         case .closeApp(let app):

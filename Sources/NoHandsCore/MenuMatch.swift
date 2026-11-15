@@ -20,7 +20,7 @@ public struct MenuEntry: Equatable, Sendable {
 /// Picks the menu item a spoken phrase names. Never a guess: an exact title, else the closest by words, else nothing.
 public enum MenuMatch {
     /// Lowercase, "…" and "..." removed, apostrophes dropped, other punctuation turned into a space, whitespace collapsed.
-    static func fold(_ text: String) -> [String] {
+    public static func fold(_ text: String) -> [String] {
         var kept = text.lowercased()
             .replacingOccurrences(of: "...", with: "")
             .replacingOccurrences(of: "…", with: "")
