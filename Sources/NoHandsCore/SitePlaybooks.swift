@@ -60,6 +60,9 @@ public enum SitePlaybooks {
             ]),
     ]
 
+    /// The YouTube page hosts, for the media commands to tell a YouTube page from any other.
+    static let youTubeHosts: Set<String> = table.first { $0.name == "YouTube" }?.hosts ?? []
+
     /// The playbooks whose site the goal names or the page is on, in table order, each once.
     static func matching(goal: String, url: String?) -> [Playbook] {
         let words = CommandGrammar.normalize(goal).map { w -> String in
