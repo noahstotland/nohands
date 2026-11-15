@@ -96,8 +96,10 @@ each `Action` case to one of these; it lives next to `ActionSummary`.
 is the phase line (tone active), replacing the fixed `thinking` string and the "nil while a step runs" rule. The
 current step's line keeps its text and gets a plain mark (see below). Final rows keep today's footers.
 
-A stopped row is never chosen for the panel: `TaskPanelText.content` skips rows whose status is `.stopped`. The panel
-then hides *at once*, with no fade (see [Fades](#fades)).
+A stopped row is never chosen for the panel: `TaskPanelText.content` skips rows whose status is `.stopped`. Every row a
+spoken stop leaves is reported `.stopped` (the task, the stop phrase's own row "stopping the task", and a held job the
+stop discards, which reads "dropped" in grey), so none outlives another and brings the panel back. The panel then hides
+*at once*, with no fade (see [Fades](#fades)).
 
 ### Indicator (NoHandsMac)
 
@@ -132,7 +134,7 @@ The status bar doesn't hide when a task ends (its text changes), so in practice 
 | done | 1.5 s |
 | failed, dropped | 3 s |
 | ignored | 1.5 s |
-| stopped | 1.5 s (the board row; the panel already skipped it) |
+| stopped | 1.5 s (the board row; the panel already skipped it; includes the stop phrase's row and a held job a stop discards) |
 
 With the 0.35 s fade, a done task's panel is gone about 1.9 s after the result.
 
