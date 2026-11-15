@@ -59,7 +59,9 @@ final class FakeElements: ElementProviding, @unchecked Sendable {
     var selectedTabs: [String] = []
     /// The app the windows were read from (nil: the front app's name).
     var browserApp: String?
-    func browserWindows() -> (app: String, windows: [BrowserWindow])? { browser.map { (browserApp ?? front ?? "Browser", $0) } }
+    /// Runs inside the strip read (a test stalls it here, then stops the task).
+    var onBrowserRead: (@Sendable () -> Void)?
+    func browserWindows() -> (app: String, windows: [BrowserWindow])? { onBrowserRead?(); return browser.map { (browserApp ?? front ?? "Browser", $0) } }
     /// Whether a tab is in the front app's focused window.
     var tabInFrontWindow = true
     func browserTabIsInFrontWindow(id: String) -> Bool { tabInFrontWindow }

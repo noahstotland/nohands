@@ -411,3 +411,41 @@ private let reload = UIElementInfo(id: 1, frame: CGRect(x: 100, y: 100, width: 8
     #expect(await task.value == ActionExecutor.cancelled)
     #expect(i.calls.isEmpty)
 }
+
+@MainActor @Test func tabCommandsActOnlyInABrowserAndReadTheStripOnlyWhenTheyMust() async {
+    let strip = [BrowserTab(id: "t1", title: "Inbox"), BrowserTab(id: "t2", title: "YouTube", active: true), BrowserTab(id: "t3", title: "GitHub")]
+    // (action, in a browser, tabs, failure, tab ids pressed, keys pressed)
+    let table: [(Action, Bool, [BrowserTab], String?, [String], [String])] = [
+        (.goToTab(.named("github")), true, strip, nil, ["t3"], []),
+        (.goToTab(.named("gmail")), true, strip, "no tab called gmail", [], []),
+        (.goToTab(.number(3)), true, strip, nil, [], ["press"]),          // command-3: no tab read
+        (.goToTab(.last), true, [], nil, [], ["press"]),                  // command-9 works where the strip is hidden
+        (.goToTab(.number(12)), true, strip, "only 3 tabs", [], []),
+        (.goToTab(.number(12)), true, [], "can't read the tabs in Chrome", [], []),
+        (.goToTab(.number(3)), false, strip, "no browser in front", [], []),   // Finder's command-3 stays unpressed
+        (.goToTab(.named("github")), false, strip, "no browser in front", [], []),
+        (.closeOtherTabs, false, strip, "no browser in front", [], []),
+        (.listTabs, false, strip, "no browser in front", [], []),
+    ]
+    for (action, inBrowser, tabs, want, selected, keys) in table {
+        let (ex, input, ax, _) = make()
+        ax.isBrowser = inBrowser; ax.front = "Chrome"
+        ax.browser = [BrowserWindow(id: "w1", title: "YouTube", front: true, tabs: tabs)]
+        #expect(await ex.execute([action]) == want, "\(action)")
+        #expect(ax.selectedTabs == selected && input.calls == keys, "\(action)")
+    }
+    let (ex, _, ax, overlay) = make()
+    ax.isBrowser = true; ax.front = "Chrome"; ax.browser = [BrowserWindow(id: "w1", title: "", front: true, tabs: strip)]
+    #expect(await ex.execute([.listTabs]) == nil && overlay.huds == ["1 Inbox \u{00B7} 2* YouTube \u{00B7} 3 GitHub"])
+}
+
+@MainActor @Test func aSpokenStopDuringTheTabReadKeepsTheTabUnpressed() async {
+    let (ex, _, ax, _) = make()
+    ax.isBrowser = true; ax.front = "Chrome"
+    ax.browser = [BrowserWindow(id: "w1", title: "", front: true, tabs: [BrowserTab(id: "t1", title: "YouTube")])]
+    ax.onBrowserRead = { Thread.sleep(forTimeInterval: 0.2) }
+    let task = Task { @MainActor in await ex.execute([.goToTab(.named("youtube"))]) }
+    try? await Task.sleep(for: .milliseconds(50))
+    task.cancel()
+    #expect(await task.value == ActionExecutor.cancelled && ax.selectedTabs.isEmpty)
+}
