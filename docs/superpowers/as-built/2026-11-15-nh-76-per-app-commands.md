@@ -10,7 +10,7 @@
 - If an app ignores `AXPress`, the executor falls back to agent-desktop when present, else fails with `couldn't press menu item <title>`.
 - Matching folds apostrophes away and turns other punctuation into a space ("Back/Forward" stays two words).
 - `parse` also skips packs for any stop phrase in code, on top of the test over `AppPacks.all`.
-- `nohands-cli`'s existing menu-item failure texts changed to "menu item <title> is disabled" and "no menu item called <words>".
+- The executor's existing `menuItem` failure texts (`ActionExecutor+Harness.swift`) changed to "menu item <title> is disabled" and "no menu item called <words>".
 - `EndpointReplay` still parses with no bundle ID.
 - Steps the model chose (the task loop) press only an item whose title equals the name sent, never a closest match, so the irreversible guard's check of the sent name holds ("trash" cannot press "Empty Trash…"). Only the user's own `menu <words>` uses the closest tiers.
 - Items that only open a submenu are never matched (`menu find` runs `Find…`, not the `Find` submenu).
