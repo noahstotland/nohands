@@ -32,6 +32,10 @@ public enum WaitCondition: Equatable, Codable, Sendable {
     case mediaPlaying
 }
 
+/// Which tab "tab 3", "last tab" and "switch to the YouTube tab" mean: a position in the strip, the last tab, or words
+/// of its title. Grammar only; positions here are the speaker's, not the model's `Tabs:` listing numbers.
+public enum TabTarget: Equatable, Codable, Sendable { case number(Int), last, named(String) }
+
 public enum Action: Equatable, Codable, Sendable {
     case typeText(String)
     case pressKey(KeyChord)
@@ -97,6 +101,12 @@ public enum Action: Equatable, Codable, Sendable {
     case closeTab(Int)
     case closeWindow(Int)
     case selectTab(Int)
+
+    // Voice commands on the front browser's tabs. Grammar only ("tab 3", "close the other tabs", "list tabs"); the
+    // model has no kind for them.
+    case goToTab(TabTarget)
+    case closeOtherTabs
+    case listTabs
 
     /// Ask for a picture of the focused window on the next step. Only the task loop gives it meaning; anywhere
     /// else the executor runs it as a successful no-op.

@@ -170,3 +170,36 @@ private func flags(_ l: TabListing) -> String {
     #expect(try AppConfig.load(from: Data(#"{"maxMediaTaskSteps":99}"#.utf8), environment: [:]).maxMediaTaskSteps == 30)
     #expect(try AppConfig.load(from: Data(#"{"maxMediaTaskSteps":18}"#.utf8), environment: [:]).maxMediaTaskSteps == 18)
 }
+
+@Test func spokenTabNamesPickTheRightTab() {
+    let strip = [("Inbox (3)", false), ("YouTube", false), ("YouTube - Cats", true), ("GitHub - Pull requests", false),
+                 ("Google Docs", false), ("Docs", false)].enumerated().map { BrowserTab(id: "t\($0.offset)", title: $0.element.0, active: $0.element.1) }
+    // (spoken words, expected index; nil: no tab)
+    let cases: [(String, Int?)] = [
+        ("youtube", 1),                 // equal beats the active "YouTube - Cats", and a tab that is not active wins
+        ("YOUTUBE!", 1),                // case and punctuation
+        ("github", 3),                  // starts with
+        ("pull requests", 3),           // holds every word, as whole words
+        ("google", 4),
+        ("docs", 5), ("doc", 5),        // equal beats "Google Docs"; the singular finds the plural
+        ("cats", 2),                    // the only tab with the word, even though it is the active one
+        ("gmail", nil), ("", nil), ("you", nil),   // no fuzzy guess, no partial words
+    ]
+    for (words, want) in cases { #expect(TabMatch.best(words, in: strip) == want, "\(words)") }
+    // Two equal titles: the one that is not active, else the leftmost.
+    #expect(TabMatch.best("a", in: [BrowserTab(id: "1", title: "A", active: true), BrowserTab(id: "2", title: "A"), BrowserTab(id: "3", title: "A")]) == 1)
+    #expect(TabMatch.best("a", in: [BrowserTab(id: "1", title: "A"), BrowserTab(id: "2", title: "A")]) == 0)
+}
+
+@Test func tabNumbersMapToChordsAndTheListFitsTheBoard() {
+    for n in 1...8 { #expect(TabMatch.chord(for: .number(n)) == KeyChord([.one, .two, .three, .four, .five, .six, .seven, .eight][n - 1], [.command])) }
+    #expect(TabMatch.chord(for: .last) == KeyChord(.nine, [.command]))
+    #expect(TabMatch.chord(for: .number(9)) == nil && TabMatch.chord(for: .named("x")) == nil)
+
+    let few = [BrowserTab(id: "a", title: "YouTube"), BrowserTab(id: "b", title: "Inbox", active: true), BrowserTab(id: "c", title: "One two three four five six seven")]
+    #expect(TabMatch.listLine(few) == "1 YouTube \u{00B7} 2* Inbox \u{00B7} 3 One two three")
+    let many = (1...30).map { BrowserTab(id: "\($0)", title: "Page number \($0)") }
+    let line = TabMatch.listLine(many)
+    #expect(line.count <= 80 && line.hasSuffix(" more") && line.hasPrefix("1 Page number 1 \u{00B7} 2 Page"))
+    #expect(TabMatch.listLine([BrowserTab(id: "a", title: "x\nline \"quoted\"")]) == "1 x line 'quoted'")
+}

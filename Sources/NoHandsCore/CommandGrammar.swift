@@ -156,8 +156,49 @@ public struct CommandGrammar: Sendable {
             let words = Self.rawWords(transcript, matching: tokens) ?? tokens
             return [.menuItem(words.dropFirst().joined(separator: " "))]
         }
+        if let hit = Self.parseTab(tokens, transcript: transcript) { return hit }
         if let hit = parsePattern(tokens, transcript: transcript) { return hit }
         return Self.strippedExactMatch(tokens)
+    }
+
+    private static let closeOtherTabsPhrases: Set<String> = ["close the other tabs", "close other tabs", "close all other tabs"]
+    private static let listTabsPhrases: Set<String> = ["list tabs", "list the tabs", "list my tabs"]
+    /// Tab names that are other tab phrases: "go to the next tab" and "open the new tab" are not tabs called that.
+    private static let reservedTabWords: Set<String> = ["new", "next", "previous", "first", "last", "other"]
+    /// Words that, inside a name, mean the speaker chained another command ("open chrome and go to the youtube tab").
+    private static let chainedTabWords: Set<String> = ["then", "open", "go", "switch", "search", "click", "type", "press"]
+
+    /// Tab commands: "tab 3", "last tab", "switch to the youtube tab", "close the other tabs", "list tabs". A lead
+    /// ("switch to", "go to", "open") and an article are optional except that a name needs a lead. nil for anything
+    /// else, so every other phrase keeps its rule ("open the new tab", "go to the next tab", "tab 0").
+    private static func parseTab(_ tokens: [String], transcript: String) -> [Action]? {
+        let phrase = tokens.joined(separator: " ")
+        if closeOtherTabsPhrases.contains(phrase) { return [.closeOtherTabs] }
+        if listTabsPhrases.contains(phrase) { return [.listTabs] }
+        var rest = tokens[...]
+        let hasLead: Bool
+        if rest.starts(with: ["switch", "to"]) || rest.starts(with: ["go", "to"]) { rest = rest.dropFirst(2); hasLead = true }
+        else if rest.first == "open" { rest = rest.dropFirst(); hasLead = true }
+        else { hasLead = false }
+        var article = false
+        if let a = rest.first, ["the", "a", "an"].contains(a) { rest = rest.dropFirst(); article = true }
+        guard rest.count >= 2 else { return nil }
+        if rest.first == "tab", !article {
+            var number = Array(rest.dropFirst())
+            if number.first == "number" { number.removeFirst() }
+            guard let n = NumberWords.parse(number), (1...99).contains(n) else { return nil }
+            return [.goToTab(.number(n))]
+        }
+        guard rest.last == "tab" else { return nil }
+        let name = Array(rest.dropLast())
+        if name == ["first"] { return [.goToTab(.number(1))] }
+        if name == ["last"] { return [.goToTab(.last)] }
+        guard hasLead, name.count <= 8, !reservedTabWords.contains(name[0]),
+              chainedTabWords.isDisjoint(with: name.dropFirst()),
+              let raw = rawWords(transcript, matching: tokens) else { return nil }
+        // `rest` is a suffix of `tokens`; the raw words line up with it.
+        let words = raw[(tokens.count - rest.count)...].dropLast().joined(separator: " ")
+        return [.goToTab(.named(words))]
     }
 
     private func pack(for bundleID: String) -> AppPack? { packs.first { $0.bundleIDs.contains(bundleID) } }

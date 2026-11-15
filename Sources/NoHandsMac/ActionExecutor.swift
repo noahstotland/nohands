@@ -361,6 +361,12 @@ extension OverlayController: OverlayPresenting {
                 guard let tab = tabSnapshot?.tab(n) else { return "no tab \(n)" }
                 if let failure = Self.failure(ax.selectBrowserTab(id: tab.id), gone: "tab already closed",
                                               noControl: "can't select that tab") { return failure }
+            case .goToTab(let target):
+                if let failure = try await goToTab(target) { return failure }
+            case .closeOtherTabs:
+                if let failure = closeOtherTabs() { return failure }
+            case .listTabs:
+                if let failure = await listTabs() { return failure }
             case .setValue, .typeInto, .clearField, .selectOption, .setChecked, .setExpanded, .focusElement, .scrollTo,
                  .scrollIn, .drag, .clickIn, .menuItem, .closeApp, .windowAction, .clipboardSet, .readClipboard,
                  .readValue, .readNotifications, .dismissNotifications, .waitFor:
@@ -375,6 +381,72 @@ extension OverlayController: OverlayPresenting {
         } catch {
             return "couldn't post input event"
         }
+    }
+
+    static let noBrowser = "no browser in front"
+
+    /// The front window of the front browser and its tabs in strip order, read off the main actor (the read can take its
+    /// whole budget). nil when the front app is not a browser. Tab titles are page text: callers show them on the
+    /// board only, never in a log.
+    private func readFrontTabs() async -> (app: String, window: BrowserWindow?)? {
+        let ax = self.ax
+        guard let read = await Task.detached(operation: { ax.browserWindows() }).value else { return nil }
+        return (read.app, read.windows.first(where: \.front) ?? read.windows.first)
+    }
+
+    /// "tab 3", "last tab", "switch to the YouTube tab": a number from 1 to 8 and "last" press command-1 to command-9
+    /// (no read, works in Firefox); the rest read the strip and press the tab. Only in a browser, so "tab 3" never
+    /// presses command-3 in Finder or Xcode.
+    private func goToTab(_ target: TabTarget) async throws -> String? {
+        guard ax.frontmostIsBrowser() else { return Self.noBrowser }
+        if let chord = TabMatch.chord(for: target) {
+            try input.press(chord)
+            hideStaleOverlay()
+            return nil
+        }
+        guard let (app, window) = await readFrontTabs() else { return Self.noBrowser }
+        // A spoken stop during the read must not let the press go out.
+        if Task.isCancelled { return Self.cancelled }
+        guard let window, !window.tabs.isEmpty else { return "can't read the tabs in \(app)" }
+        let tabs = window.tabs
+        let index: Int
+        switch target {
+        case .number(let n):
+            guard n <= tabs.count else { return window.complete ? "only \(tabs.count) tab\(tabs.count == 1 ? "" : "s")" : "can't read that far in \(app)" }
+            index = n - 1
+        case .named(let words):
+            guard let match = TabMatch.best(words, in: tabs) else { return "no tab called \(words)" }
+            index = match
+        case .last:
+            index = tabs.count - 1
+        }
+        if let failure = Self.failure(ax.selectBrowserTab(id: tabs[index].id), gone: "tab already closed",
+                                      noControl: "can't select that tab") { return failure }
+        hideStaleOverlay()
+        return nil
+    }
+
+    /// "close the other tabs": the browser's own Close Other Tabs menu item, exact title only. A browser with no such
+    /// item (Chrome keeps it in the tab's context menu) fails instead of closing tabs one by one.
+    private func closeOtherTabs() -> String? {
+        guard ax.frontmostIsBrowser() else { return Self.noBrowser }
+        let title = "Close Other Tabs"
+        switch pressMenuItem(title, exactOnly: true) {
+        case .pressed: hideStaleOverlay(); return nil
+        case .disabled: return "menu item \(title) is disabled"
+        case .refused: return "couldn't press menu item \(title)"
+        case .noMatch: return "no \(title) menu item in \(ax.frontmostAppName() ?? "this browser")"
+        }
+    }
+
+    /// "list tabs": the front window's tabs as one line on the board.
+    private func listTabs() async -> String? {
+        guard ax.frontmostIsBrowser() else { return Self.noBrowser }
+        guard let (app, window) = await readFrontTabs() else { return Self.noBrowser }
+        if Task.isCancelled { return Self.cancelled }
+        guard let window, !window.tabs.isEmpty else { return "can't read the tabs in \(app)" }
+        overlay.showHUD(TabMatch.listLine(window.tabs), duration: .seconds(6))
+        return nil
     }
 
     private static func failure(_ r: BrowserActionResult, gone: String, noControl: String) -> String? {
