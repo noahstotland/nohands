@@ -41,6 +41,10 @@ private func el(_ id: Int, _ title: String, role: String = "AXButton", states: [
         // the executor matches a partial name ("order" finds "Place order"), so the element it will press is checked
         ([.click(.element(named: "order"), button: .left, count: 1)], labels, "reply to Anna", "place order"),
         ([.click(.element(named: "Sen"), button: .left, count: 1)], labels, "reply to Anna", "send"),
+        // only the tier the executor would use: an exact "Subscribe" is not held for an "Unsubscribe" link beside it
+        ([.click(.element(named: "Subscribe"), button: .left, count: 1)],
+         [1: el(1, "Subscribe"), 2: el(2, "Unsubscribe")], "reply to Anna", nil),
+        ([.click(.element(named: "subscribe"), button: .left, count: 1)], [2: el(2, "Unsubscribe")], "reply to Anna", "unsubscribe"),
         // moving the cursor or focus onto the button is the first half of pressing it
         ([.moveCursor(.label(1))], labels, "reply to Anna", "send"),
         ([.focusElement(.named("Send"))], labels, "reply to Anna", "send"),

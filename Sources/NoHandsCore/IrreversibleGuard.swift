@@ -56,7 +56,7 @@ public enum IrreversibleGuard {
     /// it" do not allow Send). A comma, full stop, "but" or "then" ends the clause.
     private static func goalVerbs(_ goal: String) -> Set<String> {
         let negations: Set<String> = ["not", "never", "dont", "doesnt", "didnt", "wont", "cant", "shouldnt", "wouldnt",
-                                      "isnt", "no", "nor", "without"]
+                                      "isnt", "cannot", "no", "nor", "without"]
         let breaks: Set<String> = ["but", "then"]
         let plain = goal.replacingOccurrences(of: "\u{2019}", with: "").replacingOccurrences(of: "'", with: "")
         var out = Set<String>()
@@ -76,14 +76,11 @@ public enum IrreversibleGuard {
         var asked: [String] = []
         for action in actions {
             guard let name = targetName(of: action, labels: labels) else { continue }
-            // The executor finds a named target by a partial match ("order" finds "Place order") in a live walk that
-            // may differ from `labels`, so every label the name could match is checked too, not only its own words.
+            // The executor finds a named target by exact title, else prefix, else substring ("order" finds "Place order")
+            // in a live walk that may differ from `labels`, so every label in the tier it would use is checked too.
             var candidates = [words(name)]
             if isNamed(action) {
-                let q = name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-                if !q.isEmpty {
-                    candidates += labels.values.filter { $0.title.lowercased().contains(q) }.map { words($0.title) }
-                }
+                candidates += tier(of: name, in: Array(labels.values)).map { words($0.title) }
             }
             for nameWords in candidates {
                 for verb in verbs where contains(nameWords, words(verb.name)) && !asked.contains(verb.name) {
@@ -92,6 +89,18 @@ public enum IrreversibleGuard {
             }
         }
         return asked.isEmpty ? nil : asked.joined(separator: " and ")
+    }
+
+    /// Every element in the first non-empty tier of `LabelAssigner.find`'s order: exact title, else prefix, else contains.
+    private static func tier(of name: String, in elements: [UIElementInfo]) -> [UIElementInfo] {
+        let q = name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !q.isEmpty else { return [] }
+        let titled = elements.map { ($0, $0.title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()) }
+        for match in [{ (t: String) in t == q }, { $0.hasPrefix(q) }, { $0.contains(q) }] {
+            let hits = titled.filter { match($0.1) }.map(\.0)
+            if !hits.isEmpty { return hits }
+        }
+        return []
     }
 
     private static func isNamed(_ action: Action) -> Bool {
