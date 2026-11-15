@@ -11,11 +11,13 @@ private final class FakeResolver: IntentResolving, @unchecked Sendable {
     var result: Result<[Action], IntentError> = .success([])
     var scripted: [IntentStep] = []
     var calls = 0
+    var requests: [StepRequest] = []
     var lastContext: IntentContext?
     /// Called with the 1-based call number before the step is returned.
     var onResolve: (@Sendable (Int) async -> Void)?
     func resolve(_ request: StepRequest) async throws -> IntentStep {
         calls += 1
+        requests.append(request)
         let n = calls
         lastContext = IntentContext(frontmostApp: request.observation.app, mode: request.observation.mode,
                                     labeledElements: request.observation.elements.map { ($0.number, $0.title) },
@@ -36,10 +38,12 @@ private let reloadButton = UIElementInfo(id: 1, frame: CGRect(x: 100, y: 100, wi
     var resolver: FakeResolver?
     var executor: ActionExecutor
     var observer: ScreenObserver
+    var runner: TaskRunner?
     var typed: [String] { input.calls.filter { $0.hasPrefix("type:") } }
 }
 
-@MainActor private func rig(withResolver: Bool = true, attentionWord: String = "") -> Rig {
+@MainActor private func rig(withResolver: Bool = true, attentionWord: String = "",
+                            sleep: @escaping @Sendable (Duration) async -> Void = { _ in }) -> Rig {
     let input = FakeInput(), ax = FakeElements(), overlay = FakeOverlay()
     let executor = ActionExecutor(input: input, ax: ax, overlay: overlay, config: AppConfig(), frontTimeout: .milliseconds(100))
     let resolver = withResolver ? FakeResolver() : nil
@@ -47,11 +51,11 @@ private let reloadButton = UIElementInfo(id: 1, frame: CGRect(x: 100, y: 100, wi
     config.attentionWord = attentionWord
     let observer = ScreenObserver(ax: ax, maxElements: config.maxObservedElements)
     let runner = resolver.map {
-        TaskRunner(config: config, resolver: $0, executor: executor, observer: observer, overlay: overlay, sleep: { _ in })
+        TaskRunner(config: config, resolver: $0, executor: executor, observer: observer, overlay: overlay, sleep: sleep)
     }
     let p = VoicePipeline(config: config, transcriber: NullTranscriber(), resolver: resolver,
                           executor: executor, overlay: overlay, ax: ax, observer: observer, taskRunner: runner)
-    return Rig(pipeline: p, input: input, ax: ax, overlay: overlay, resolver: resolver, executor: executor, observer: observer)
+    return Rig(pipeline: p, input: input, ax: ax, overlay: overlay, resolver: resolver, executor: executor, observer: observer, runner: runner)
 }
 
 private func trace(age: Duration = .zero) -> LatencyTrace {
@@ -223,6 +227,31 @@ private func step(_ intent: String, _ status: StepStatus, _ actions: [Action] = 
     #expect(r.pipeline.lastTaskOutcome == .done("type a"))
     #expect(r.input.calls == ["type:a", "click:10,20"])    // the task first, then only the newest held job
     #expect(r.resolver?.calls == 1)
+}
+
+@MainActor @Test func answerToAQuestionGoesToTheTask() async {
+    // (attention word, what the user says while the question waits, the answer the task gets)
+    let table: [(String, [String], String)] = [
+        ("", ["the knicks one"], "the knicks one"),
+        ("computer", ["the knicks one", "computer, the knicks one"], "the knicks one"),   // stray speech is dropped
+    ]
+    for (word, said, answer) in table {
+        let r = rig(attentionWord: word, sleep: { d in
+            if d == TaskRunner.answerTimeout { try? await Task.sleep(for: .seconds(30)) }
+        })
+        r.resolver?.scripted = [step("Which game?", .ask), step("type a", .done, [.typeText("a")])]
+        await r.pipeline.handle(transcript: (word.isEmpty ? "" : "computer, ") + "find the newest video", trace: trace())
+        for _ in 0..<400 where r.runner?.awaitedAnswer != .question { try? await Task.sleep(for: .milliseconds(5)) }
+        #expect(r.runner?.awaitedAnswer == .question, "the question never waited")
+        for words in said {
+            await r.pipeline.handle(transcript: words, trace: trace())
+            if words != said.last { #expect(r.runner?.awaitedAnswer == .question, "\(words) ended the question") }
+        }
+        await r.pipeline.waitForTask()
+        #expect(r.overlay.reports.allSatisfy { $0.status != .held }, "the answer was held")
+        #expect(r.resolver?.requests.dropFirst().first?.history.first?.intent == "Asked: Which game? User answered: \(answer)")
+        #expect(r.pipeline.lastTaskOutcome == .done("type a"))
+    }
 }
 
 @MainActor @Test func grammarCommandsUnaffected() async {
