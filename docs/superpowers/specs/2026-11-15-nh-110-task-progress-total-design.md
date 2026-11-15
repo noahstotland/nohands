@@ -1,7 +1,8 @@
 # NH-110: Stop showing the step limit as the total in the task panel progress: Design
 
 **Date:** 2026-11-15  **Ticket:** [NH-110](https://github.com/noahstotland/nohands/issues/110)
-**Status:** Draft
+**Status:** Shipped
+**Shipped:** in PR #125, as specified
 
 ## Intent
 
