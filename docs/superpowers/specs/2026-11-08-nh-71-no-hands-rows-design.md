@@ -13,7 +13,7 @@ The setting is read from `project.md` on `origin/main`, so the rows take effect 
 
 ## What `on` allows
 
-`on` only makes a run possible. A run needs the user's own `no hands` message. During it the Chief of Staff approves specs and merges itself at every risk level until the Backlog is empty or a cap is hit. Reviews, CI and merge gates still run. The user still decides specs and merges that touch the hands path, rename a file, have 100 or more files, or have a migration or `flag:` path.
+`on` only makes a run possible. A run needs the user's own `no hands` message. During it the Chief of Staff approves specs and merges itself at every risk level until the Backlog is empty or a cap is hit. Reviews, CI and merge gates still run. The user still decides specs and merges that touch the hands path, rename a file, have 100 or more files, or have a migration or `flag:` path, or carry an unreviewed conflict-resolution note. This applies to tickets the run started.
 
 ## Design
 

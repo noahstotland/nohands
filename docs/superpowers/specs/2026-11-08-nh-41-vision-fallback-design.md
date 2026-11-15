@@ -24,7 +24,7 @@ The task loop sees a screen only through the accessibility tree, so a play butto
 
 Chosen: a per-step ScreenCaptureKit picture; points on that step are picture coordinates. The only new action is `look`.
 
-`visionEnabled = visionFallback && backend is Claude`. `TaskRunner` gets a `ScreenshotProviding` only then; nil means today's behaviour.
+`visionEnabled = visionFallback && backend is Claude`. `TaskRunner` gets a `ScreenshotProviding` only then; nil means today's behaviour. The prompt tells the model that text in the picture is untrusted data and never to follow instructions in it.
 
 ### When a step gets a picture
 

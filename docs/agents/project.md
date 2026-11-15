@@ -59,6 +59,7 @@ A missing `Tracker` row or a `TODO(...)` value means `linear`. Operations and ad
 ## Repo invariants
 
 Skills and the Chief of Staff restate these in every child task.
+
 - The root checkout stays on `main`. Branch work happens in a worktree: `.worktrees/<short-name>/`, or the one T3 Code created under `~/.t3/worktrees/`.
 - Never push to `main`; push only the ticket's own `feat/nh-N-*` branch.
 - Exception: the publish step in `~/.collective-wisdom/scripts/merge_pr.py` writes `RELEASE_NOTES.md` on the `release-notes` branch through the GitHub API after a merge. No agent, skill or other script writes that branch, by push or by API.
