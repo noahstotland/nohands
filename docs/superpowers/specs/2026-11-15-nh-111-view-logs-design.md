@@ -1,7 +1,8 @@
 # NH-111: Keep a log of the last 50 commands and show every step in a View Logs window: Design
 
 **Date:** 2026-11-15  **Ticket:** [NH-111](https://github.com/noahstotland/nohands/issues/111)
-**Status:** Draft
+**Status:** Shipped
+**Shipped:** in PR #132, as specified
 
 ## Intent
 
