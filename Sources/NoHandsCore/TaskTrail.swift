@@ -88,10 +88,9 @@ public enum TaskPanelText {
         func newest(_ matching: (PromptStatus) -> Bool) -> PromptRow? {
             rows.filter { matching($0.status) }.max(by: older)
         }
-        // A spoken stop clears the panel at once: while a stopped row is on the board, only live rows show. The
-        // stop phrase's own row and the dropped jobs it leaves behind must not stand in for the stopped task.
-        let stopping = rows.contains { isStopped($0.status) }
-        let outcome = stopping ? nil : newest {
+        // A spoken stop clears the panel at once, and stays clear however long each row lingers: the stopped task, the
+        // stop phrase's own row and the held job a stop discards (both `.stopped`) never get a panel.
+        let outcome = newest {
             switch $0 {
             case .done, .failed: true
             default: false
@@ -103,7 +102,7 @@ public enum TaskPanelText {
         if let r = newest({ $0 == .listening }) { return r }
         if let r = newest({ $0 == .held }) { return r }
         if let r = outcome { return r }
-        return stopping ? nil : newest { $0.isFinal }
+        return newest { $0.isFinal && !isStopped($0) }
     }
 
     private static func isStopped(_ s: PromptStatus) -> Bool {

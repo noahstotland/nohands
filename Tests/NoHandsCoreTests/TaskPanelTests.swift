@@ -117,15 +117,16 @@ private func trail(_ steps: [(String, String)], max: Int = 12, ending: TaskTrail
     // a listening row beats a grammar command's outcome; held comes after listening
     #expect(pick([grammarDone, row(5, "listen", .listening)]) == 5)
     #expect(pick([grammarDone, row(4, "held", .held)]) == 4)
-    // a spoken stop clears the panel: the stopped task, the stop phrase's own row and a dropped held job show nothing
+    // a spoken stop gives no panel, whichever of its rows are still on the board (they leave at different times)
     let stopped = row(7, "stop", .stopped(""), task, at: 3)
-    let stopPhrase = row(9, "stop it", .done("stopping the task"), at: 3)
-    let dropped = row(8, "drop", .dropped(""), at: 4)
-    #expect(pick([stopped]) == nil)
-    #expect(pick([stopped, stopPhrase, dropped]) == nil)
-    #expect(pick([stopped, done]) == nil)
-    // ...but a prompt spoken after the stop still shows
+    let stopPhrase = row(9, "stop it", .stopped("stopping the task"), at: 3)
+    let dropped = row(8, "drop", .stopped("dropped"), at: 4)
+    for rows in [[stopped], [stopPhrase], [dropped], [stopped, stopPhrase], [stopPhrase, dropped], [stopped, stopPhrase, dropped]] {
+        #expect(pick(rows) == nil)
+    }
+    // ...but a prompt spoken after the stop, or an outcome beside it, still shows
     #expect(pick([stopped, stopPhrase, row(5, "listen", .listening, at: 5)]) == 5)
+    #expect(pick([stopped, stopPhrase, done]) == 2)
     // with nothing live, the newest outcome wins over an older task's
     #expect(pick([done, grammarDone]) == 3)
     #expect(pick([]) == nil)
