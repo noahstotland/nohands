@@ -30,7 +30,38 @@ The menu bar shows `CMD` / `DICT` / `ZZZ`. The menu has Start at Login, Status B
 
 ## 5. Command grammar and dictation
 
-Input is lowercased and stripped of `.,!?`. In a number slot "to"/"too" mean 2 and "for" means 4. Phrases are in the README.
+Input is lowercased and stripped of `.,!?`. In a number slot "to"/"too" mean 2 and "for" means 4.
+
+| Phrase | Action |
+|---|---|
+| `type <words>` | `.typeText(formatted words)` (through DictationFormatter) |
+| `spell <tokens>` | `.typeText(string)`: letters, letter-name homophones, NATO words, digits, `space`/`dash`/`dot`/`underscore`/`at sign`; `capital` uppercases the next letter. One unknown token or a dangling `capital` types nothing |
+| `press <modifiers…> <key>` e.g. "press command shift s" | `.pressKey(KeyChord)` |
+| `enter`, `tab`, `escape`, `space`, `delete` / `backspace`, `forward delete`, `up`/`down`/`left`/`right` | `.pressKey` of that key |
+| `undo`, `redo`, `copy`, `paste`, `cut`, `select all`, `save`, `find`, `new tab`, `close tab`, `close window`, `quit app`, `switch app`, `spotlight`, `delete word`, `delete line` | the standard ⌘ shortcut (`redo` = ⇧⌘Z, `switch app` = ⌘⇥, `spotlight` = ⌘␣, `delete word` = ⌥⌫, `delete line` = ⌘⌫) |
+| `find <words>`, `scroll to <words>` | `.findOnPage(words, movePointer: true)`; bare `find` stays ⌘F, and `scroll to` an end of the page or a direction goes to the LLM |
+| `click` | `.click(.cursor)` left, count 1 |
+| `double click`, `triple click` | count 2 / 3 |
+| `right click`, `middle click` | button |
+| `click <n>` | `.click(.numbered(n))` |
+| `click <name>` (anything else after "click") | `.click(.element(named: name))` |
+| `hold click` / `release click` | `.pressMouse(.left)` / `.releaseMouse(.left)` |
+| `move <up/down/left/right> [<n>]` | `.moveCursor(.relative(dx,dy))`, default 50 px |
+| `move to <n>` | `.moveCursor(.numbered(n))` |
+| `scroll <up/down/left/right> [<n>]` | `.scroll(direction, amount)`, default 5 lines, max 50 |
+| `grid` / `show grid` | `.showGrid` |
+| `zoom <n>` | `.zoomGrid(n)` (subdivide cell n with a fresh 10×8 grid) |
+| `numbers` / `show numbers` / `show labels` | `.showLabels` |
+| `hide` / `hide grid` / `hide numbers` / `cancel` | `.hideOverlay` |
+| `open <app name>` | `.openApp(name)` |
+| `start dictating`, `dictation mode`, `stop dictating`, `command mode`, `go to sleep`, `wake up` | `.setMode(...)` |
+| anything else (except a `spell` with an unknown word, which is rejected on the HUD and never sent to the LLM) | unmatched → LLM |
+
+
+Spoken tokens → characters: `period` `.`, `comma` `,`, `question mark` `?`, `exclamation point|mark` `!`, `colon` `:`, `semicolon` `;`, `dash` ` - `, `hyphen` `-`, `open quote` `"`, `close quote` `"`, `open paren` `(`, `close paren` `)`, `new line` `\n`, `new paragraph` `\n\n`. No space before `.,?!:;)`; space after them when followed by a word; capitalize the first letter of the utterance and of any word following `.`, `?`, `!`, or a newline. Across utterances, `DictationSession` inserts a leading space when the previous insertion ended in a word character and the new text starts with one. Parakeet already emits punctuation and casing; the formatter preserves it and only adds what is spoken.
+
+The README voice table is the user-facing list; the table above is the grammar contract.
+
 - `spell` takes letters, NATO words, digits and symbol words; one unknown token or a dangling `capital` types nothing.
 - `find <words>` and `scroll to <words>` find on the page; bare `find` is ⌘F.
 - `move` defaults to 50 px; `scroll` to 5 lines, max 50. `zoom <n>` puts a fresh 10×8 grid inside cell n.
@@ -65,3 +96,14 @@ Input is lowercased and stripped of `.,!?`. In a number slot "to"/"too" mean 2 a
 ## 10. Permissions and packaging
 
 `scripts/bundle.sh` builds `NoHands.app` (`LSUIElement`, `dev.nohands.app`), signed with `$CODESIGN_IDENTITY` (default ad-hoc). Accessibility trust follows the signature, so ad-hoc builds need re-granting each rebuild.
+
+## 11. Acceptance (manual, end to end)
+
+1. Launch `NoHands.app`, grant both permissions; the menu shows `CMD`.
+2. In TextEdit say "start dictating", then "hello world period this is a test exclamation mark new line second line". TextEdit shows `Hello world. This is a test!⏎Second line`.
+3. Say "stop dictating", "select all", "copy", "open safari", "new tab", "press command l", "type news dot ycombinator dot com", "enter". Safari loads the page.
+4. Say "show numbers", then "click <n>" on a visible link: it opens. Say "grid", "zoom 35", "click 40": the pointer clicks inside the sub-cell.
+5. Say "scroll down 10", "hold click", "move down 100", "release click": a drag happens.
+6. Say "go to sleep", "click" (nothing happens), "wake up", "click" (click happens).
+7. With an API key set, say "make this window full screen" (unmatched by the grammar): the model returns `press_key control command f` and the window toggles.
+8. The console shows per-utterance latency lines; grammar-path totals are under 650 ms for complete grammar commands and stop phrases (early close, NH-36).
