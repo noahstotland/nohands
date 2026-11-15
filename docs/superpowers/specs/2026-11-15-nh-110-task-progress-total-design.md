@@ -49,7 +49,7 @@ Anti-goals:
 
 `Tests/NoHandsCoreTests/TaskPanelTests.swift`, existing table:
 
-- Every `progress:` expectation becomes `step N` (for example `step 2`, `step 12` for the limit case).
+- Every `progress:` expectation becomes `step N` (for example `step 2`, `step 1` for the limit case (the label is the last step, not the limit)).
 - The table check adds that no progress label contains " of ".
 - `taskPanelLines` drops the two `fraction` checks and checks the label is `step 11`, including when the trail's limit
   (5) is below the step count, which used to clamp the bar.
