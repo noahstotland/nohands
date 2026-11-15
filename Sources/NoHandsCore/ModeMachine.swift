@@ -42,11 +42,20 @@ public struct ModeMachine: Sendable {
         return phrase == "stop dictating" || phrase == "command mode"
     }
 
-    /// Whole-utterance dictation commands: the escape phrases plus "scratch that" and "delete word".
+    /// The transcript without the attention word when the gate is on and the speaker used it.
+    private static func addressed(_ transcript: String, attention: AttentionGate) -> String {
+        if case .addressed(let rest) = attention.check(transcript) { return rest }
+        return transcript
+    }
+
+    /// Whole-utterance dictation commands: the escape phrases, "scratch that", "delete word", "delete that" and every
+    /// text edit ("select the last sentence", "delete the old files"). A phrase edit counts whether or not a field is
+    /// focused: it is never merged with its neighbours, and `route` types the words when there is no field to edit.
     public static func isDictationCommand(_ transcript: String, attention: AttentionGate = .off) -> Bool {
         if isDictationEscape(transcript, attention: attention) { return true }
         let phrase = phrase(transcript, attention: attention)
-        return phrase == "scratch that" || phrase == "delete word"
+        if phrase == "scratch that" || phrase == "delete word" || phrase == "delete that" { return true }
+        return CommandGrammar.parseEdit(addressed(transcript, attention: attention), textFocused: true) != nil
     }
 
     /// Drops the "scratch that" record. The pipeline calls it on pause: what was routed may never have been typed,
@@ -54,8 +63,10 @@ public struct ModeMachine: Sendable {
     public mutating func forgetDictationRecord() { session.forgetLast() }
 
     /// Applies mode transitions contained in the result and returns what the executor should do. `frontmost` is the
-    /// frontmost app's bundle ID, for its pack's phrases in command mode.
-    public mutating func route(_ transcript: String, frontmost bundleID: String? = nil) -> Routing {
+    /// frontmost app's bundle ID, for its pack's phrases in command mode. `textFocused` is whether the front app has a
+    /// text field focused: edits that name words in the field need it (without one they go to the model in command mode
+    /// and are typed as words in dictation).
+    public mutating func route(_ transcript: String, frontmost bundleID: String? = nil, textFocused: Bool = false) -> Routing {
         let tokens = CommandGrammar.normalize(transcript)
         guard !tokens.isEmpty else { return .ignore(reason: "empty") }
         // Only sleep and dictation read it; command mode checks the gate itself.
@@ -79,25 +90,40 @@ public struct ModeMachine: Sendable {
                 session.forgetLast()
                 return .execute([.pressKey(KeyChord(.delete, [.option]))])
             }
+            if phrase == "delete that" {
+                session.forgetLast()
+                return .execute([.pressKey(KeyChord(.delete))])
+            }
+            if let edit = CommandGrammar.parseEdit(Self.addressed(transcript, attention: attention), textFocused: textFocused) {
+                // A fixed edit moves the cursor, so "scratch that" no longer matches the screen. A phrase edit falls back
+                // to typing the words when the phrase is not in the field, so its record stays until the pipeline learns
+                // the edit ran (`forgetDictationRecord`).
+                if !edit.targetsPhrase {
+                    session.forgetLast()
+                    return .execute([.editText(edit, otherwise: nil)])
+                }
+                let text = session.next(transcript)
+                return text.isEmpty ? .ignore(reason: "empty") : .execute([.editText(edit, otherwise: text)])
+            }
             let text = session.next(transcript)
             return text.isEmpty ? .ignore(reason: "empty") : .execute([.typeText(text)])
         case .command:
             // A stop phrase is never gated: it takes the ungated path whatever the gate says.
             if attention.isOn && !StopWords.isStop(transcript) {
                 switch attention.check(transcript) {
-                case .addressed(let rest): return routeCommand(rest, frontmost: bundleID)
+                case .addressed(let rest): return routeCommand(rest, frontmost: bundleID, textFocused: textFocused)
                 case .wordOnly: return .ignore(reason: "attention word only")
                 case .notAddressed: return .ignore(reason: "not addressed")
                 case .off: break
                 }
             }
-            return routeCommand(transcript, frontmost: bundleID)
+            return routeCommand(transcript, frontmost: bundleID, textFocused: textFocused)
         }
     }
 
-    private mutating func routeCommand(_ transcript: String, frontmost bundleID: String?) -> Routing {
+    private mutating func routeCommand(_ transcript: String, frontmost bundleID: String?, textFocused: Bool) -> Routing {
         let phrase = CommandGrammar.normalize(transcript).joined(separator: " ")
-        guard let actions = grammar.parse(transcript, frontmost: bundleID) else {
+        guard let actions = grammar.parse(transcript, frontmost: bundleID, textFocused: textFocused) else {
             if let message = grammar.rejection(transcript) { return .reject(message) }
             return .resolveWithLLM(phrase)
         }
