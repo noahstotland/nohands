@@ -1,5 +1,11 @@
 # Release notes
 
+## 2026-11-15 site playbooks, fixed routes for common sites in the task request (NH-45) (#122)
+
+Merged 2026-11-15 4:19 pm UTC.
+
+When you ask for something on YouTube, Google, Wikipedia, Amazon or Reddit, the model now gets a short, fixed route for that site, such as "search for the channel, open its Videos tab, play the first video". Nothing for you to do.
+
 ## 2026-11-15 confirm before irreversible task steps (NH-61) (#120)
 
 Merged 2026-11-15 4:18 pm UTC.
