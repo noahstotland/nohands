@@ -1,8 +1,9 @@
 # NH-61: Confirm before irreversible actions
 
 **Date:** 2026-11-15
-**Status:** Draft
+**Status:** Shipped
 **Ticket:** [NH-61](https://github.com/noahstotland/nohands/issues/61)
+**Shipped:** in PR #120, with differences: [as-built](../as-built/2026-11-15-nh-61-confirm-irreversible.md)
 
 ## Goal
 
