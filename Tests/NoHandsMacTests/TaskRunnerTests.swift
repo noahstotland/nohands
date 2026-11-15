@@ -490,7 +490,8 @@ private func harnessSnapshot() -> DesktopSnapshot {
 }
 
 @MainActor private func harnessRig(_ resolver: FakeResolver, harness: FakeHarness, trace: Bool = false, settleMs: Int = 0,
-                                   vision: FakeScreenshots? = nil) -> Rig {
+                                   vision: FakeScreenshots? = nil, clock: FakeClock = FakeClock(),
+                                   sleep: @escaping @Sendable (Duration) async -> Void = { _ in }) -> Rig {
     let input = FakeInput(), ax = FakeElements(), overlay = FakeOverlay()
     ax.front = "Safari"
     ax.elements = [el(1, "Reload")]
@@ -504,7 +505,7 @@ private func harnessSnapshot() -> DesktopSnapshot {
                                   harness: harness, clipboard: FakeClipboard())
     let runner = TaskRunner(config: config, resolver: resolver, executor: executor,
                             observer: ScreenObserver(ax: ax, maxElements: 120, harness: harness),
-                            overlay: overlay, sleep: { _ in }, harness: harness, screenshots: vision)
+                            overlay: overlay, sleep: sleep, now: { clock.now() }, harness: harness, screenshots: vision)
     let log = StatusLog()
     runner.onStatus = { log.texts.append($0.text) }
     runner.onTrail = { log.trails.append($0) }
@@ -956,4 +957,96 @@ private func resolverForSend() -> FakeResolver {
         #expect(r.statuses.last == last, "\(goal) / \(reply)")
         #expect(!runner.isAwaitingAnswer)
     }
+}
+
+// MARK: settle by action
+
+@MainActor @Test func settleWaitDependsOnWhatTheStepDid() async {
+    // Step 1 runs the actions, step 2 is `done`; the walks and sleeps after the first observation belong to step 1's settle.
+    let rows: [(String, [Action], sleeps: Int, observations: Int)] = [
+        ("typing: one sleep, one look", [.typeText("a"), .wait(ms: 1)], 1, 1),
+        ("a wait-only step: no sleep", [.wait(ms: 1)], 0, 1),
+        ("return submits: polls until two readings match", [.pressKey(KeyChord(.return))], 2, 3),
+    ]
+    for (name, actions, sleeps, observations) in rows {
+        let counter = SleepCounter()
+        let r = rig(FakeResolver([step("act", .continue, actions), step("done", .done)]),
+                    sleep: { _ in await counter.tick { _ in } })
+        #expect(await r.runner.run(goal: "x", mode: .command) == .done("done"), "\(name)")
+        #expect(await counter.count == sleeps, "\(name)")
+        #expect(r.ax.walks == 1 + observations, "\(name)")
+        #expect(r.runner.settleTimes.count == r.runner.stepsRun, "\(name)")
+    }
+}
+
+@MainActor @Test func aTickingValueStopsTheSettleAtTheSecondPoll() async {
+    let counter = SleepCounter()
+    let r = rig(FakeResolver([step("submit", .continue, [.pressKey(KeyChord(.return))]), step("done", .done)]),
+                sleep: { _ in await counter.tick { _ in } })
+    // Every walk shows a new clock value; the page is otherwise the same.
+    r.ax.walkLists = (0..<30).map { n in
+        [UIElementInfo(id: 1, frame: CGRect(x: 0, y: 40, width: 80, height: 30), title: "clock", role: "AXStaticText", value: "\(n)")]
+    }
+    #expect(await r.runner.run(goal: "x", mode: .command) == .done("done"))
+    #expect(await counter.count == 2)
+}
+
+@MainActor @Test func theTypedWindowWaitRunsOnlyWhenNoWindowIsUpYet() async {
+    let url = URL(string: "https://example.com")!
+    // Settle after step 1: sleeps and snapshots (the first snapshot is the task's own first look).
+    let rows: [(String, [Action], window: Bool, wait: HarnessActionResult, waited: Bool, sleeps: Int, snapshots: Int)] = [
+        ("open_app, window came: one look", [.openApp("Safari")], false, .delivered(verified: true), true, 0, 2),
+        ("open_url, window came: keeps polling", [.openURL(url, app: nil)], false, .delivered(verified: true), true, 2, 4),
+        ("open_url, wait timed out: keeps polling", [.openURL(url, app: nil)], false, .failed("wait timed out"), true, 2, 4),
+        ("open_app, wait failed: keeps polling", [.openApp("Safari")], false, .notDelivered("no agent"), true, 2, 4),
+        ("open_url, a window exists: no wait", [.openURL(url, app: nil)], true, .delivered(verified: true), false, 2, 4),
+        ("open_app, a window exists: no wait", [.openApp("Safari")], true, .delivered(verified: true), false, 2, 4),
+        ("a click never waits for a window", [.click(.label(1), button: .left, count: 1)], false, .delivered(verified: true), false, 2, 4),
+    ]
+    for (name, actions, window, result, waited, sleeps, snapshots) in rows {
+        let h = FakeHarness(); h.snapshotResults = [harnessSnapshot()]; h.waitResult = result
+        let counter = SleepCounter()
+        let r = harnessRig(FakeResolver([step("act", .continue, actions), step("done", .done)]), harness: h, settleMs: 3000,
+                           sleep: { _ in await counter.tick { _ in } })
+        r.ax.apps = ["Safari"]
+        r.ax.windowFrame = window ? CGRect(x: 0, y: 0, width: 400, height: 300) : nil
+        #expect(await r.runner.run(goal: "x", mode: .command) == .done("done"), "\(name)")
+        let waits = h.calls.filter { $0.hasPrefix("act:wait") }
+        #expect(waits == (waited ? ["act:wait --event window-opened --app Safari --timeout 3000"] : []), "\(name)")
+        #expect(await counter.count == sleeps, "\(name)")
+        #expect(h.calls.filter { $0.hasPrefix("snapshot:") }.count == snapshots, "\(name)")
+    }
+}
+
+@MainActor @Test func timeSpentInTheWindowWaitCountsTowardSettleMs() async {
+    let clock = FakeClock()
+    let h = FakeHarness(); h.snapshotResults = [harnessSnapshot()]; h.waitResult = .failed("wait timed out")
+    h.onWait = { clock.advance(.milliseconds(2800)) }
+    let sleeps = SleepRecorder()
+    let r = harnessRig(FakeResolver([step("open", .continue, [.openApp("Safari")]), step("done", .done)]), harness: h,
+                       settleMs: 3000, clock: clock, sleep: { await sleeps.add($0) })
+    r.ax.apps = ["Safari"]; r.ax.windowFrame = nil
+    #expect(await r.runner.run(goal: "x", mode: .command) == .done("done"))
+    #expect(await sleeps.all == [.milliseconds(200)])   // 3000 ms limit - 2800 ms waited: one short poll, then stop
+}
+
+@MainActor @Test func aStopDuringTheWindowWaitEndsTheTask() async {
+    let h = FakeHarness(); h.snapshotResults = [harnessSnapshot()]
+    h.waitResult = .delivered(verified: true); h.waitDelay = .seconds(30)
+    let r = harnessRig(FakeResolver([step("open", .continue, [.openApp("Safari")]), step("done", .done)]), harness: h, settleMs: 3000)
+    r.ax.apps = ["Safari"]; r.ax.windowFrame = nil
+    let runner = r.runner
+    let started = ContinuousClock.now
+    let task = Task { await runner.run(goal: "x", mode: .command) }
+    while !h.calls.contains(where: { $0.hasPrefix("act:wait") }), started.duration(to: .now) < .seconds(5) {
+        try? await Task.sleep(for: .milliseconds(10))
+    }
+    runner.cancel()
+    #expect(await task.value == .stopped)
+    #expect(started.duration(to: .now) < .seconds(10))
+}
+
+private actor SleepRecorder {
+    var all: [Duration] = []
+    func add(_ d: Duration) { all.append(d) }
 }

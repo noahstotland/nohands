@@ -557,9 +557,11 @@ import NoHandsCore
         var trace = pending.trace
         trace.actionsDone = .now
         let steps = runner.stepsRun
+        // Each step's settle wait in ms ("settle=120+300+90"); numbers only, so it is safe in the public field.
+        let settle = runner.settleTimes.isEmpty ? "" : ", settle=" + runner.settleTimes.map(String.init).joined(separator: "+")
         PipelineLog.utterance(trace: trace, transcript: pending.transcript,
-                              outcome: "task(\(Self.kind(outcome)), steps=\(steps))",
-                              detail: "task(\(Self.kind(outcome, detailed: true)), steps=\(steps))")
+                              outcome: "task(\(Self.kind(outcome)), steps=\(steps)\(settle))",
+                              detail: "task(\(Self.kind(outcome, detailed: true)), steps=\(steps)\(settle))")
         publishStatus()
     }
 
