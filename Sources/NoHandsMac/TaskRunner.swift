@@ -26,6 +26,9 @@ public enum TaskOutcome: Equatable, Sendable {
     static let notPlaying = "not playing yet"
     static let pollInterval = 250
     static let minSettleMs = 300
+    /// The most a wait for a new window may take. The event can miss a window that appears before the wait starts,
+    /// so the rest of `settleMs` is polled instead of spent waiting.
+    static let windowWaitMs = 1500
     /// How long a capture may take before the step goes on without a picture.
     static let captureDeadline: Duration = .seconds(2)
     static let looking = "looking at the screen"
@@ -315,7 +318,7 @@ public enum TaskOutcome: Equatable, Sendable {
                 settleStart = ContinuousClock.now
                 pendingSurfaces = harness?.takeOpenSurfaces() ?? []
                 (observation, labels) = await settle(mode: mode, readings: readings, after: step.actions)
-                await annotateTabs(&observation)
+                if !isCancelled { await annotateTabs(&observation) }
                 settled = settleStart.duration(to: .now)
             }
         }
@@ -409,6 +412,8 @@ public enum TaskOutcome: Equatable, Sendable {
         if first == nil, let actions, let wait = await waitForNewWindow(after: actions, limit: limit) {
             windowWait = wait
             elapsed = wait.ms
+            // A stop during the wait: the caller ends the task, so skip the observation nobody will read.
+            if isCancelled { return (ScreenObservation(app: "", mode: mode), [:]) }
         }
         let taken: (result: Observed, ms: Int, fromHarness: Bool)
         if let first { taken = first } else { taken = await observeTimed(mode: mode, readings: readings) }
@@ -442,7 +447,7 @@ public enum TaskOutcome: Equatable, Sendable {
         let front = observer.frontWindow()
         guard front.frame == nil, !front.app.isEmpty else { return nil }
         let appOnly = !actions.contains { if case .openURL = $0 { true } else { false } }
-        let command = DesktopCommand.wait(.event, value: DesktopEvent.windowOpened.rawValue, app: front.app, ref: nil, timeoutMs: limit)
+        let command = DesktopCommand.wait(.event, value: DesktopEvent.windowOpened.rawValue, app: front.app, ref: nil, timeoutMs: min(limit, Self.windowWaitMs))
         var result: HarnessActionResult = .failed("cancelled")
         let start = now()
         await runCancellable { result = await harness.act(command) }

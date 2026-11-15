@@ -182,6 +182,8 @@ final class FakeHarness: DesktopHarness, @unchecked Sendable {
     private let lock = NSLock()
     let kind: HarnessKind = .agentDesktop
     var calls: [String] = []
+    /// `calls` read under the lock, for a test that polls while the harness is running.
+    var recordedCalls: [String] { lock.withLock { calls } }
     /// Snapshot results consumed in order (the last one repeats); nil means "no snapshot" (native fallback).
     var snapshotResults: [DesktopSnapshot?] = [nil]
     var findResult: DesktopFindMatch?

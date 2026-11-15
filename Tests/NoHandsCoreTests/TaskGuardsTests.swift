@@ -81,6 +81,8 @@ import Foundation
         ([], .none),
         ([.wait(ms: 500), .look, .readClipboard], .none),
         ([.typeText("hi"), .wait(ms: 500)], .oneLook),
+        ([.typeText("cats\n")], .full),
+        ([.typeInto(.label(2), "cats\r")], .full),
         ([.openURL(url, app: nil), .wait(ms: 500)], .full),
         ([.scroll(.down, amount: 3), .waitFor(.mediaPlaying, timeoutMs: 1000)], .oneLook),
         ([.pressKey(KeyChord(.tab))], .oneLook),

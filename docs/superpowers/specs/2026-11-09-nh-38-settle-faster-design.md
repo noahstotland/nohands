@@ -52,12 +52,12 @@ the policy of its actions.
 
 ### 2. A ticking value no longer holds the loop (`NoHandsCore`, tested)
 
-`SettleWatch` replaces the direct `Settle.same` call in the polling loop. It keeps the last two readings and is fed one
+`SettleWatch` replaces the direct `Settle.same` call in the polling loop. It keeps the last three readings and is fed one
 at a time. It reports settled when either:
 
 - `Settle.same` holds for the last two readings, or
 - the last two readings differ only in element values, and every element that changed also changed value between the
-  two readings before them.
+  previous two readings (so a ticking value settles on the second poll).
 
 An element is identified by role, title and states, because numbers and refs are reassigned on each snapshot. Elements
 sharing that identity are compared as a group of values. Any change to the app, window title, URL, surface, media
@@ -67,12 +67,15 @@ apply. This closes the settle item in NH-7.
 ### 3. A typed wait when a window is still coming (`TaskRunner`)
 
 Applies when the task's harness is agent-desktop, the step opened a URL or an app, and the front app has no window yet.
-The runner runs `wait --event window-opened --app <front app>` with the time left in `settleMs` as the timeout. That
+The runner runs `wait --event window-opened --app <front app>` with the time left in `settleMs`, at most 1500 ms, as the timeout. That
 time counts toward the limit, and the wait goes through `runCancellable` so a spoken "stop" kills it.
 
 - `open_app` with the event seen: one observation.
 - `open_url` with the event seen: polling continues for the time left, because the window appears before its page loads.
 - Timeout or failure: polling continues for the time left. A failed wait never fails the step.
+
+The wait is capped because the event is taken from a baseline read when `agent-desktop` starts, so a window that
+appears just before then never fires it. The cap keeps that case from using all of `settleMs`.
 
 If the front app already has a window, there is no wait and the step polls as `full`.
 
@@ -133,8 +136,8 @@ the wait depends on what the step did and `settleMs` is the most it can take. Th
 
 - **The agent-desktop wait is narrower than the ticket.** It runs only when the front app has no window yet, and URL
   steps keep polling after it. See Approaches. An `open_url` in a browser that is already open gets no typed wait.
-- **"Ticking" covers element values only, as the ticket says.** Native readings carry no values, so this helps
-  agent-desktop readings. On the native path a ticking text that lands in an element's title still takes the full
+- **"Ticking" covers element values only, as the ticket says.** Both the native and agent-desktop readings carry
+  values. A ticking text that lands in an element's title still takes the full
   `settleMs` after a navigation step. Treating a title as ticking would risk stopping while a page's titles are still
   filling in.
 - **A key press with no modifier, other than Return, is `oneLook`.** The ticket only names Return. Keys with Command,
@@ -155,3 +158,7 @@ the wait depends on what the step did and `settleMs` is the most it can take. Th
 Search-box suggestions that take longer than 300 ms won't be in the reading after a `type_text`. The next step can
 still press Return, and if the model wants a suggestion it sees the list one step later. A native reading after a
 local edit is taken once, so a slow animation can be caught mid-way. Neither ends a task, and both cost at most a step.
+
+`set_checked` and a bare Space key are `oneLook` although on some pages they navigate (a shopping filter checkbox, a
+focused button). The model sees the page one step later, as with the suggestions above. `type_text` or `type_into`
+text with a newline is `full`, because a newline is typed as a Return press.

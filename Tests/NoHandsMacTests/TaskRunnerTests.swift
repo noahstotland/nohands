@@ -963,15 +963,20 @@ private func resolverForSend() -> FakeResolver {
 
 @MainActor @Test func settleWaitDependsOnWhatTheStepDid() async {
     // Step 1 runs the actions, step 2 is `done`; the walks and sleeps after the first observation belong to step 1's settle.
-    let rows: [(String, [Action], sleeps: Int, observations: Int)] = [
-        ("typing: one sleep, one look", [.typeText("a"), .wait(ms: 1)], 1, 1),
-        ("a wait-only step: no sleep", [.wait(ms: 1)], 0, 1),
-        ("return submits: polls until two readings match", [.pressKey(KeyChord(.return))], 2, 3),
+    // `changing`: the screen differs for that many walks after step 1 before it holds still.
+    let rows: [(String, [Action], changing: Int, sleeps: Int, observations: Int)] = [
+        ("typing: one sleep, one look", [.typeText("a"), .wait(ms: 1)], 0, 1, 1),
+        ("a wait-only step: no sleep", [.wait(ms: 1)], 0, 0, 1),
+        ("typed text ending in a newline submits: polls", [.typeText("cats\n")], 0, 2, 3),
+        ("return submits: polls until two readings match", [.pressKey(KeyChord(.return))], 0, 2, 3),
+        ("return, page still loading: polls past the floor", [.pressKey(KeyChord(.return))], 2, 3, 4),
     ]
-    for (name, actions, sleeps, observations) in rows {
+    for (name, actions, changing, sleeps, observations) in rows {
         let counter = SleepCounter()
         let r = rig(FakeResolver([step("act", .continue, actions), step("done", .done)]),
                     sleep: { _ in await counter.tick { _ in } })
+        // Walk 0 is the task's first look; the step's settle then sees `changing` new screens, then a repeat.
+        if changing > 0 { r.ax.walkLists = (0...(changing + 1)).map { [el(1, "page \($0)")] } }
         #expect(await r.runner.run(goal: "x", mode: .command) == .done("done"), "\(name)")
         #expect(await counter.count == sleeps, "\(name)")
         #expect(r.ax.walks == 1 + observations, "\(name)")
@@ -1012,7 +1017,7 @@ private func resolverForSend() -> FakeResolver {
         r.ax.windowFrame = window ? CGRect(x: 0, y: 0, width: 400, height: 300) : nil
         #expect(await r.runner.run(goal: "x", mode: .command) == .done("done"), "\(name)")
         let waits = h.calls.filter { $0.hasPrefix("act:wait") }
-        #expect(waits == (waited ? ["act:wait --event window-opened --app Safari --timeout 3000"] : []), "\(name)")
+        #expect(waits == (waited ? ["act:wait --event window-opened --app Safari --timeout 1500"] : []), "\(name)")
         #expect(await counter.count == sleeps, "\(name)")
         #expect(h.calls.filter { $0.hasPrefix("snapshot:") }.count == snapshots, "\(name)")
     }
@@ -1038,7 +1043,7 @@ private func resolverForSend() -> FakeResolver {
     let runner = r.runner
     let started = ContinuousClock.now
     let task = Task { await runner.run(goal: "x", mode: .command) }
-    while !h.calls.contains(where: { $0.hasPrefix("act:wait") }), started.duration(to: .now) < .seconds(5) {
+    while !h.recordedCalls.contains(where: { $0.hasPrefix("act:wait") }), started.duration(to: .now) < .seconds(5) {
         try? await Task.sleep(for: .milliseconds(10))
     }
     runner.cancel()
