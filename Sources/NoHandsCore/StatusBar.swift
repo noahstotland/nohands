@@ -1,12 +1,12 @@
 import Foundation
 
-/// Where the always-on status bar sits (the menu's Status Bar submenu). Stored by the app; Core only parses it.
+/// Whether the status bar shows, and where (the menu's Status Bar submenu). Stored by the app; Core only parses it.
 public enum StatusBarPosition: String, CaseIterable, Sendable {
-    case off, top, bottom
+    case off, corner
 
-    /// A missing or unknown stored value means the default: on, at the top.
+    /// "off" means off; anything else (missing, the old "top" and "bottom", unknown) means the corner.
     public static func stored(_ raw: String?) -> StatusBarPosition {
-        raw.flatMap(StatusBarPosition.init(rawValue:)) ?? .top
+        raw == StatusBarPosition.off.rawValue ? .off : .corner
     }
 }
 
@@ -17,8 +17,9 @@ public struct StatusLine: Equatable, Sendable {
 }
 
 /// Picks what the status bar says from the app state, the mode and the prompt board's visible rows.
+/// Returns nil when there is nothing to say (listening in command mode with no prompt row).
 public enum StatusBarText {
-    public static func line(menu: MenuState, mode: Mode, rows: [PromptRow]) -> StatusLine {
+    public static func line(menu: MenuState, mode: Mode, rows: [PromptRow]) -> StatusLine? {
         switch menu {
         case .microphoneDenied:
             return StatusLine(text: "Microphone denied: allow NoHands in System Settings", tone: .bad)
@@ -39,7 +40,7 @@ public enum StatusBarText {
         switch mode {
         case .sleep: return StatusLine(text: "Asleep · say wake up", tone: .muted)
         case .dictation: return StatusLine(text: "Dictating · say stop dictating", tone: .active)
-        case .command: return StatusLine(text: "Listening", tone: .good)
+        case .command: return nil
         }
     }
 
