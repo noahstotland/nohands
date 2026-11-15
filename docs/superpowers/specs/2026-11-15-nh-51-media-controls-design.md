@@ -1,7 +1,8 @@
 # NH-51: Media controls by voice: Design
 
 **Date:** 2026-11-15  **Ticket:** [NH-51](https://github.com/noahstotland/nohands/issues/51)
-**Status:** Draft
+**Status:** Shipped
+**Shipped:** in PR #137, as specified
 
 ## Intent
 
