@@ -1036,5 +1036,99 @@
         ]
       }
     ]
+  },
+  {
+    "say": "turn on the latest outdoor boys youtube video",
+    "app": "Finder",
+    "overlay": "none",
+    "accept": [
+      {
+        "actions": [
+          {
+            "kind": "open_url",
+            "url": "https://www.youtube.com/results?search_query=outdoor+boys&sp=EgIQAg%253D%253D"
+          }
+        ]
+      },
+      {
+        "actions": [
+          {
+            "kind": "open_url",
+            "url": "https://www.youtube.com/results?search_query=outdoor+boys&sp=EgIQAg%253D%253D"
+          },
+          {
+            "kind": "wait",
+            "ms": 1500
+          }
+        ]
+      },
+      {
+        "actions": [
+          {
+            "kind": "open_url",
+            "url": "https://www.youtube.com/results?search_query=outdoor%20boys&sp=EgIQAg%253D%253D"
+          }
+        ]
+      },
+      {
+        "actions": [
+          {
+            "kind": "open_url",
+            "url": "https://www.youtube.com/results?search_query=outdoor%20boys&sp=EgIQAg%253D%253D"
+          },
+          {
+            "kind": "wait",
+            "ms": 1500
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "say": "play bohemian rhapsody on youtube",
+    "app": "Finder",
+    "overlay": "none",
+    "accept": [
+      {
+        "actions": [
+          {
+            "kind": "open_url",
+            "url": "https://www.youtube.com/results?search_query=bohemian+rhapsody"
+          }
+        ]
+      },
+      {
+        "actions": [
+          {
+            "kind": "open_url",
+            "url": "https://www.youtube.com/results?search_query=bohemian+rhapsody"
+          },
+          {
+            "kind": "wait",
+            "ms": 1500
+          }
+        ]
+      },
+      {
+        "actions": [
+          {
+            "kind": "open_url",
+            "url": "https://www.youtube.com/results?search_query=bohemian%20rhapsody"
+          }
+        ]
+      },
+      {
+        "actions": [
+          {
+            "kind": "open_url",
+            "url": "https://www.youtube.com/results?search_query=bohemian%20rhapsody"
+          },
+          {
+            "kind": "wait",
+            "ms": 1500
+          }
+        ]
+      }
+    ]
   }
 ]
