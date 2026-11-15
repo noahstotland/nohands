@@ -20,6 +20,14 @@ extension Action {
         case .goToTab(let target):
             if case .named = target { return true }
             return false
+        // Open-ended leads: "play ... bohemian rhapsody", "skip ahead ... thirty seconds", "volume up ... three".
+        case .media(let command):
+            if case .play = command { return true }
+            if case .skip = command { return true }
+            return false
+        case .volume(let change):
+            if case .mute = change { return false }
+            return true
         case .pressKey, .pressMouse, .releaseMouse, .scroll, .showGrid, .zoomGrid, .showLabels, .hideOverlay, .setMode,
              .moveWindow, .wait, .checkMedia, .ignore, .clearField, .setChecked, .setExpanded, .focusElement, .scrollTo,
              .scrollIn, .drag, .readClipboard, .readPage, .readValue, .readNotifications, .dismissNotifications, .waitFor,

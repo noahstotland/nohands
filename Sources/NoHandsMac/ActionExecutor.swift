@@ -56,6 +56,10 @@ public protocol ElementProviding: Sendable {
     func browserTabIsInFrontWindow(id: String) -> Bool
     /// Forgets the ids handed out (the end of a task).
     func resetBrowserTokens()
+    /// Whether the focused window is in full screen; nil when unknown.
+    func focusedWindowIsFullScreen() -> Bool?
+    /// Whether the focused element takes typed text.
+    func focusedElementIsTextInput() -> Bool
 }
 
 /// How a request to act on a browser tab or window went.
@@ -81,6 +85,8 @@ extension ElementProviding {
     public func browserTabIsSelected(id: String) -> Bool { false }
     public func browserTabIsInFrontWindow(id: String) -> Bool { false }
     public func resetBrowserTokens() {}
+    public func focusedWindowIsFullScreen() -> Bool? { nil }
+    public func focusedElementIsTextInput() -> Bool { false }
     public func focusedWindowTitle() -> String? { nil }
     public func webURL() -> String? { nil }
     public func didJustExpose() -> Bool { false }
@@ -145,6 +151,9 @@ extension OverlayController: OverlayPresenting {
     private let frontTimeout: Duration
     private let audio: any AudioOutputProbing
     private let mediaPoll: Duration
+    private let volume: any VolumeControlling
+    /// How long a window gets to leave full screen after Escape before the window chord is pressed.
+    private let fullScreenSettle: Duration
     /// The accessibility layer the media walk uses: one with a larger budget than `ax`, which does not reach a
     /// browser player's buttons. Nil walks with `ax`.
     private let mediaAX: (any ElementProviding)?
@@ -167,8 +176,11 @@ extension OverlayController: OverlayPresenting {
                 harness: (any DesktopHarness)? = nil, clipboard: any ClipboardAccess = PasteboardClipboard(),
                 audio: any AudioOutputProbing = AudioOutputProbe(), mediaPoll: Duration = .milliseconds(500),
                 mediaAX: (any ElementProviding)? = nil, exposureSettle: Duration = .milliseconds(600),
-                menus: any MenuReading = AXMenuReader()) {
+                menus: any MenuReading = AXMenuReader(), volume: any VolumeControlling = CoreAudioVolume(),
+                fullScreenSettle: Duration = .milliseconds(800)) {
+        self.fullScreenSettle = fullScreenSettle
         self.menus = menus
+        self.volume = volume
         self.audio = audio
         self.mediaAX = mediaAX
         self.mediaPoll = mediaPoll
@@ -367,6 +379,11 @@ extension OverlayController: OverlayPresenting {
                 if let failure = closeOtherTabs() { return failure }
             case .listTabs:
                 if let failure = await listTabs() { return failure }
+            case .media(let command):
+                if let failure = try await runMedia(command) { return failure }
+                hideStaleOverlay()
+            case .volume(let change):
+                if let failure = changeVolume(change) { return failure }
             case .setValue, .typeInto, .clearField, .selectOption, .setChecked, .setExpanded, .focusElement, .scrollTo,
                  .scrollIn, .drag, .clickIn, .menuItem, .closeApp, .windowAction, .clipboardSet, .readClipboard,
                  .readValue, .readNotifications, .dismissNotifications, .waitFor:
@@ -480,6 +497,73 @@ extension OverlayController: OverlayPresenting {
             guard ax.browserTabIsInFrontWindow(id: id) else { return cannot }
             try input.press(KeyChord(.w, [.command]))
             return nil
+        }
+    }
+
+    /// "pause", "next track", "skip ahead", "full screen video", "exit full screen": the route (YouTube's keys in a
+    /// browser on YouTube, else a system key or the window chord) after the checks that stop a toggle doing the
+    /// opposite. A command whose point is already met ("nothing is playing") shows a notice and presses nothing.
+    private func runMedia(_ command: MediaCommand) async throws -> String? {
+        switch command {
+        case .pause, .play:
+            let state = await mediaState()
+            if Task.isCancelled { return Self.cancelled }
+            if command == .pause, state != .playing { overlay.showHUD("nothing is playing"); return nil }
+            if command == .play, state == .playing { overlay.showHUD("already playing"); return nil }
+        default: break
+        }
+        let isBrowser = ax.frontmostIsBrowser()
+        let host = isBrowser ? ax.webURL().flatMap { URL(string: $0)?.host } : nil
+        switch MediaRoute.step(for: command, isBrowser: isBrowser, host: host) {
+        case .siteKeys(let chords):
+            if ax.focusedElementIsTextInput() {
+                // A letter would be typed into the box: play and pause use the system key, the rest fail.
+                switch command {
+                case .play, .pause, .playPause: try input.pressMediaKey(.playPause); return nil
+                default: return "a text box has focus: click the video first"
+                }
+            }
+            for chord in chords {
+                if Task.isCancelled { return Self.cancelled }
+                try input.press(chord)
+            }
+        case .systemKey(let key): try input.pressMediaKey(key)
+        case .windowFullScreen:
+            if ax.focusedWindowIsFullScreen() == true { overlay.showHUD("already full screen"); return nil }
+            try input.press(Self.windowFullScreen)
+        case .exitFullScreen(let siteEscape):
+            guard ax.focusedWindowIsFullScreen() == true else { overlay.showHUD("not in full screen"); return nil }
+            guard siteEscape else { try input.press(Self.windowFullScreen); return nil }
+            // Escape leaves a video's full screen but not the window's: if the window is still full screen, use the chord.
+            try input.press(KeyChord(.escape))
+            try? await Task.sleep(for: fullScreenSettle)
+            if Task.isCancelled { return Self.cancelled }   // a spoken stop during the wait must not press the chord
+            if ax.focusedWindowIsFullScreen() == true { try input.press(Self.windowFullScreen) }
+        case .unsupported(let message): return message
+        }
+        return nil
+    }
+
+    private static let windowFullScreen = KeyChord(.f, [.command, .control])
+
+    /// "volume 30 percent", "volume up", "mute": CoreAudio on the default output. Any level above 0 also unmutes, as the
+    /// volume keys do. The notice shows the new level.
+    private func changeVolume(_ change: VolumeChange) -> String? {
+        do {
+            if case .mute(let on) = change {
+                try volume.setMuted(on)
+                if on { overlay.showHUD("muted"); return nil }
+            } else {
+                guard let current = volume.level(), let target = VolumeMath.apply(change, current: current) else {
+                    return VolumeError.noControl.description
+                }
+                try volume.setLevel(target)
+                if target > 0 { try? volume.setMuted(false) }
+            }
+            overlay.showHUD(volume.level().map { "volume \($0)%" } ?? "unmuted")
+            return nil
+        } catch {
+            return "\(error)"
         }
     }
 
