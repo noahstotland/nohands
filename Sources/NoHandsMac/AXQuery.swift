@@ -18,6 +18,9 @@ public final class AXQuery: @unchecked Sendable {
     /// Browser windows and tabs handed to the task loop as opaque ids, matched by `CFEqual` so one element keeps one
     /// id for the whole task. Cleared by `resetBrowserTokens()`; guarded by `lock`.
     private var browserTokens: [(token: String, element: AXUIElement)] = []
+    /// The element the last `findOnPage` matched, under the id it handed out; `scrollIntoView` acts on it. Guarded by `lock`.
+    private var foundElement: (id: Int, element: AXUIElement)?
+    private var nextFoundID = 1_000_000
 
     static let maxDepth = 30   // YouTube links sit ~23 levels below the window
     public static let defaultMaxNodes = 2000
@@ -166,6 +169,123 @@ public final class AXQuery: @unchecked Sendable {
             visited = 0
         }
         return find(f.window, depth: 1, skippingWebAreas: true)
+    }
+
+    // MARK: find on page
+
+    /// A find walks the whole page, so it gets more nodes than a search does, and the same time.
+    static let findBudget: Duration = .milliseconds(800)
+    static let findMaxNodes = 6000
+    /// How long `scrollIntoView` re-reads the frame of an element the page was asked to scroll.
+    static let scrollSettle: Duration = .milliseconds(300)
+    /// Roles whose own value is what the user reads. No other role offers its value: a field holds the user's data.
+    static let valueTextRoles: Set<String> = ["AXStaticText", "AXHeading"]
+    /// `kAXScrollToVisibleAction`, which Swift does not import.
+    static let scrollToVisibleAction = "AXScrollToVisible"
+    static let findContainerRoles: Set<String> = ["AXLink", "AXButton"]
+    static let textEntryRoles: Set<String> = ["AXTextField", "AXTextArea", "AXSecureTextField", "AXComboBox", "AXSearchField"]
+
+    /// Walks the focused window for an element whose title, description (or, for static text and headings, value)
+    /// matches `words`, offscreen ones included: the page's web area first, then the rest of the window, menus never.
+    /// A text inside a link or button (within three levels) reports that link or button. Stops on an exact match,
+    /// when the budget runs out, or when the calling task is cancelled. The match is remembered for `scrollIntoView`.
+    public func findOnPage(words: String) -> UIElementInfo? {
+        lock.withLock { foundElement = nil }
+        var matcher = PageFind.Matcher(words: words)
+        guard let f = focusedWindow() else { return nil }
+        exposeChromiumTree(f.app, f.appEl)
+        var visited = 0
+        var nextID = 0
+        var bestElement: AXUIElement?
+        let deadline = ContinuousClock.now.advanced(by: Self.findBudget)
+
+        /// A frame the walk can use: finite and not empty.
+        func usableFrame(_ el: AXUIElement) -> CGRect? {
+            guard let r = Self.frame(el), r.origin.x.isFinite, r.origin.y.isFinite, r.width.isFinite, r.height.isFinite,
+                  r.width > 0, r.height > 0 else { return nil }
+            return r
+        }
+        func title(_ el: AXUIElement) -> String? {
+            Self.string(el, kAXTitleAttribute) ?? Self.string(el, kAXDescriptionAttribute)
+        }
+        /// Offers one text; true when the walk can stop (an exact match).
+        func offer(_ text: String, role: String, reporting el: AXUIElement, enclosing: (el: AXUIElement, role: String, depth: Int)?,
+                   depth: Int) -> Bool {
+            guard matcher.wouldTake(text), let own = usableFrame(el) else { return false }
+            var target = el, frame = own, name = text, targetRole = role
+            if Self.valueTextRoles.contains(role), let c = enclosing, depth - c.depth <= 3, let cf = usableFrame(c.el) {
+                (target, frame, name, targetRole) = (c.el, cf, title(c.el) ?? text, c.role)
+            }
+            nextID += 1
+            let info = UIElementInfo(id: nextID, frame: frame, title: name, role: targetRole)
+            let exact = matcher.offer(text, element: info)
+            if matcher.best?.id == info.id { bestElement = target }
+            return exact
+        }
+        func visit(_ el: AXUIElement, depth: Int, skippingWebAreas: Bool,
+                   enclosing: (el: AXUIElement, role: String, depth: Int)?) -> Bool {
+            guard depth <= Self.maxDepth, visited < Self.findMaxNodes, ContinuousClock.now < deadline, !Task.isCancelled else { return false }
+            visited += 1
+            AXUIElementSetMessagingTimeout(el, 0.05)
+            let role = Self.string(el, kAXRoleAttribute) ?? ""
+            if role == "AXMenuBar" || role == "AXMenuItem" || role == "AXMenu" { return false }
+            if skippingWebAreas && role == "AXWebArea" { return false }
+            var texts: [String] = []
+            let secure = role == "AXSecureTextField" || (role == "AXTextField" && Self.string(el, kAXSubroleAttribute) == "AXSecureTextField")
+            if !secure {
+                texts = [Self.string(el, kAXTitleAttribute), Self.string(el, kAXDescriptionAttribute)].compactMap { $0 }
+                if Self.valueTextRoles.contains(role), let v = Self.string(el, kAXValueAttribute) { texts.append(v) }
+            }
+            for t in texts where offer(t, role: role, reporting: el, enclosing: enclosing, depth: depth) { return true }
+            // A text-entry element's children hold what the user typed (a contenteditable editor's draft is static
+            // text under an AXTextArea): never walk into one.
+            if Self.textEntryRoles.contains(role) || secure { return false }
+            let inner = Self.findContainerRoles.contains(role) ? (el, role, depth) : enclosing
+            for c in Self.elements(el, kAXChildrenAttribute) {
+                if visit(c, depth: depth + 1, skippingWebAreas: skippingWebAreas, enclosing: inner) { return true }
+            }
+            return false
+        }
+        // The page first: a browser's own toolbar holds titles too.
+        if let web = Self.firstWebArea(f.window, depth: 1, visited: &visited, limit: Self.findMaxNodes, deadline: deadline) {
+            // A match on the page wins over one in the browser's own chrome (a tab title, a bookmark).
+            if visit(web, depth: 1, skippingWebAreas: false, enclosing: nil) || matcher.best != nil {
+                return finishFind(matcher, bestElement)
+            }
+            visited = 0
+        }
+        _ = visit(f.window, depth: 1, skippingWebAreas: true, enclosing: nil)
+        return finishFind(matcher, bestElement)
+    }
+
+    private func finishFind(_ matcher: PageFind.Matcher, _ element: AXUIElement?) -> UIElementInfo? {
+        guard !Task.isCancelled, let best = matcher.best, let element else { return nil }
+        let id = lock.withLock { () -> Int in
+            nextFoundID += 1
+            foundElement = (nextFoundID, element)
+            return nextFoundID
+        }
+        var info = best
+        info.id = id
+        return info
+    }
+
+    /// Asks the page to scroll the element `findOnPage` returned into view, then re-reads its frame for up to 300 ms
+    /// until it is on a screen (and in the focused window). Nil when the element is not the last find's, the action
+    /// fails, or the frame never comes on screen.
+    public func scrollIntoView(_ element: UIElementInfo) async -> CGRect? {
+        guard let el = lock.withLock({ foundElement.flatMap { $0.id == element.id ? $0.element : nil } }),
+              AXUIElementPerformAction(el, Self.scrollToVisibleAction as CFString) == .success else { return nil }
+        let deadline = ContinuousClock.now.advanced(by: Self.scrollSettle)
+        while !Task.isCancelled {
+            let screens = Self.screenRectsCG()
+            let window = focusedWindowFrame()
+            if let r = Self.frame(el), r.width > 0, r.height > 0, screens.contains(where: { $0.intersects(r) }),
+               window.map({ $0.intersects(r) }) ?? true { return r }
+            if ContinuousClock.now >= deadline { return nil }
+            try? await Task.sleep(for: .milliseconds(25))
+        }
+        return nil
     }
 
     /// The id for a browser window or tab element (`prefix` "w" or "t"): the same element always gets the same id.

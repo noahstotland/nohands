@@ -63,7 +63,7 @@ private let chunk = [Float](repeating: 0.1, count: 4096)
         ("new tab", false), ("press command t", false), ("go back", false), ("scroll down", false),
         ("click 12", false), ("click", false), ("move left 20", false), ("show grid", false),
         ("type hello world", true), ("open youtube", true), ("open safari", true), ("go to example.org", true),
-        ("go to cats", true), ("search for cats", true), ("search youtube for cats", true), ("click the back button", true),
+        ("go to cats", true), ("find the raptors game", true), ("search for cats", true), ("search youtube for cats", true), ("click the back button", true),
     ]
     for (phrase, expected) in table {
         guard let actions = grammar.parse(phrase) else { Issue.record("\(phrase) should parse"); continue }

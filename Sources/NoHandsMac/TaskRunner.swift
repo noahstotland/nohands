@@ -144,6 +144,7 @@ public enum TaskOutcome: Equatable, Sendable {
         // later); otherwise the screen is already what the user sees and the model is asked at once.
         _ = observer.didJustExpose()   // clear a flag left over from a walk after the previous task's last step
         _ = executor.takeReadings()
+        _ = executor.takeFound()
         // The first observation decides the task's harness: agent-desktop when it could read the frontmost app,
         // else native for the whole task (the prompt and the local model's cached prefix must not flip mid-task).
         taskHarness = harness == nil ? .native : .agentDesktop
@@ -299,6 +300,7 @@ public enum TaskOutcome: Equatable, Sendable {
             // A `done` whose actions failed did not achieve the goal: record the failure and let the model react
             // (repeat detection above covers both `continue` and `done`, so a stubborn failing batch ends as stuck).
             let readings = executor.takeReadings()
+            let found = executor.takeFound()
             if step.status == .done && failure == nil {
                 let finished = TaskOutcome.done(step.intent)
                 let hud = readings.first.map { "\(step.intent) — \($0.prefix(80))" }
@@ -307,7 +309,7 @@ public enum TaskOutcome: Equatable, Sendable {
                 // screen after this step's actions. A visible Play button sends the model round once more.
                 settleStart = ContinuousClock.now
                 pendingSurfaces = harness?.takeOpenSurfaces() ?? []
-                (observation, labels) = await settle(mode: mode, readings: readings)
+                (observation, labels) = await settle(mode: mode, readings: readings, found: found)
                 settled = settleStart.duration(to: .now)
                 if isCancelled { return await finish(.stopped) }
                 guard observation.media == .paused else { return await finish(finished, hud: hud) }
@@ -320,7 +322,7 @@ public enum TaskOutcome: Equatable, Sendable {
             if n < maxSteps {
                 settleStart = ContinuousClock.now
                 pendingSurfaces = harness?.takeOpenSurfaces() ?? []
-                (observation, labels) = await settle(mode: mode, readings: readings, after: step.actions)
+                (observation, labels) = await settle(mode: mode, readings: readings, after: step.actions, found: found)
                 if !isCancelled { await annotateTabs(&observation) }
                 settled = settleStart.duration(to: .now)
             }
@@ -399,16 +401,16 @@ public enum TaskOutcome: Equatable, Sendable {
     /// `actions` is the step just run; nil (the first step's Chromium exposure, the playback check) polls as `full`.
     /// `first` is an observation just taken (counted from its own duration) instead of a fresh one.
     func settle(mode: Mode, from first: (result: Observed, ms: Int, fromHarness: Bool)? = nil, readings: [String] = [],
-                after actions: [Action]? = nil) async -> Observed {
+                after actions: [Action]? = nil, found: UIElementInfo? = nil) async -> Observed {
         let limit = max(0, config.settleMs)
         let policy = actions.map(SettlePolicy.for) ?? .full
         if limit == 0 || policy == .none {
             if let first { return first.result }
-            return await observeTimed(mode: mode, readings: readings).result
+            return await observeTimed(mode: mode, readings: readings, found: found).result
         }
         if policy == .oneLook {
             await sleep(.milliseconds(min(Self.minSettleMs, limit)))
-            return await observeTimed(mode: mode, readings: readings).result
+            return await observeTimed(mode: mode, readings: readings, found: found).result
         }
         var elapsed = 0
         var windowWait: WindowWait?
@@ -419,7 +421,7 @@ public enum TaskOutcome: Equatable, Sendable {
             if isCancelled { return (ScreenObservation(app: "", mode: mode), [:]) }
         }
         let taken: (result: Observed, ms: Int, fromHarness: Bool)
-        if let first { taken = first } else { taken = await observeTimed(mode: mode, readings: readings) }
+        if let first { taken = first } else { taken = await observeTimed(mode: mode, readings: readings, found: found) }
         elapsed += taken.ms
         var current = taken.result
         if let windowWait, windowWait.delivered, windowWait.appOnly { return current }
@@ -429,7 +431,7 @@ public enum TaskOutcome: Equatable, Sendable {
             let step = min(Self.pollInterval, limit - elapsed)
             await sleep(.milliseconds(step))
             elapsed += step
-            let next = await observeTimed(mode: mode, readings: readings)
+            let next = await observeTimed(mode: mode, readings: readings, found: found)
             elapsed += next.ms
             current = next.result
             if watch.feed(current.observation) && elapsed >= Self.minSettleMs { break }
@@ -462,7 +464,7 @@ public enum TaskOutcome: Equatable, Sendable {
 
     /// One observation, run off the main actor (an AX walk can take up to its budget, ~1-2 s on a busy page),
     /// and how long it took in milliseconds. The overlay state and screen rects are read here, on the main actor.
-    private func observeTimed(mode: Mode, readings: [String] = []) async -> (result: Observed, ms: Int, fromHarness: Bool) {
+    private func observeTimed(mode: Mode, readings: [String] = [], found: UIElementInfo? = nil) async -> (result: Observed, ms: Int, fromHarness: Bool) {
         let observer = self.observer
         let state = overlay.state
         let screens = observer.screenRects()
@@ -472,7 +474,7 @@ public enum TaskOutcome: Equatable, Sendable {
         let start = now()
         let r = await Task.detached {
             await observer.observe(mode: mode, overlay: state, screens: screens, harnessKind: kind, readings: readings,
-                                   surfaces: surfaces, limit: limit)
+                                   surfaces: surfaces, limit: limit, found: found)
         }.value
         return ((r.observation, r.labels), Int(start.duration(to: now()) / .milliseconds(1)), r.fromHarness)
     }

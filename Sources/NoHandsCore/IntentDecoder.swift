@@ -131,6 +131,7 @@ public enum IntentDecoder {
         case "move_window":
             return (o["placement"] as? String).flatMap(WindowPlacement.init(rawValue:)).map(Action.moveWindow)
         case "search": return nonBlank(o["text"]).map(Action.search)
+        case "find": return nonBlank(o["target_name"]).map { .findOnPage($0, movePointer: false) }
         case "wait":
             if o["wait_for"] != nil { return waitFor(o) }
             switch optInt(o, "ms") {

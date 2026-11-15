@@ -8,7 +8,7 @@ extension Action {
     public var carriesSpokenText: Bool {
         switch self {
         case .typeText, .openApp, .openURL, .search, .searchSite, .setValue, .typeInto, .selectOption, .clickIn,
-             .menuItem, .closeApp, .clipboardSet:
+             .menuItem, .closeApp, .clipboardSet, .findOnPage:
             return true
         case .click(let target, _, _):
             if case .element = target { return true }
