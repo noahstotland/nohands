@@ -1,5 +1,11 @@
 # Release notes
 
+## 2026-11-15 command log and View Logs window (NH-111) (#132)
+
+Merged 2026-11-15 7:48 pm UTC.
+
+NoHands now remembers your last 50 commands. Open "View Logs…" from the menu bar to see each one step by step, with how long each step took and, for Claude commands, the tokens used. The log stays on this Mac.
+
 ## 2026-11-15 browser tabs by name and number (NH-53) (#133)
 
 Merged 2026-11-15 7:30 pm UTC.
