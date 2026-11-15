@@ -19,7 +19,7 @@ public enum SettlePolicy: Int, Comparable, Sendable {
     /// No `default`: a new action kind must choose a level.
     private static func level(_ action: Action) -> SettlePolicy {
         switch action {
-        case .wait, .look, .checkMedia, .ignore, .readClipboard, .readValue, .readNotifications, .clipboardSet,
+        case .wait, .look, .checkMedia, .listTabs, .ignore, .readClipboard, .readValue, .readNotifications, .clipboardSet,
              .readPage:
             return .none
         case .typeText(let text), .typeInto(_, let text):
@@ -33,7 +33,7 @@ public enum SettlePolicy: Int, Comparable, Sendable {
             let loads = chord.key == .return || !chord.modifiers.isDisjoint(with: [.command, .control, .option])
             return loads ? .full : .oneLook
         case .openURL, .openApp, .click, .search, .searchSite, .menuItem, .clickIn, .windowAction, .selectOption,
-             .setExpanded, .drag, .closeApp, .closeTab, .closeWindow, .selectTab, .pressMouse, .releaseMouse,
+             .setExpanded, .drag, .closeApp, .closeTab, .closeWindow, .selectTab, .goToTab, .closeOtherTabs, .pressMouse, .releaseMouse,
              .showGrid, .zoomGrid, .showLabels, .hideOverlay, .setMode, .dismissNotifications:
             return .full
         }

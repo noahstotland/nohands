@@ -17,10 +17,13 @@ extension Action {
             if case .element = target { return true }
             return false
         case .windowAction(_, let app, let title): return app != nil || title != nil
+        case .goToTab(let target):
+            if case .named = target { return true }
+            return false
         case .pressKey, .pressMouse, .releaseMouse, .scroll, .showGrid, .zoomGrid, .showLabels, .hideOverlay, .setMode,
              .moveWindow, .wait, .checkMedia, .ignore, .clearField, .setChecked, .setExpanded, .focusElement, .scrollTo,
              .scrollIn, .drag, .readClipboard, .readPage, .readValue, .readNotifications, .dismissNotifications, .waitFor,
-             .closeTab, .closeWindow, .selectTab, .look:
+             .closeTab, .closeWindow, .selectTab, .closeOtherTabs, .listTabs, .look:
             return false
         }
     }

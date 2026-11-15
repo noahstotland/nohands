@@ -54,6 +54,9 @@ public enum ActionSummary {
         case .closeTab(let n): "closeTab(\(n))"
         case .closeWindow(let n): "closeWindow(\(n))"
         case .selectTab(let n): "selectTab(\(n))"
+        case .goToTab: "goToTab"
+        case .closeOtherTabs: "closeOtherTabs"
+        case .listTabs: "listTabs"
         case .look: "look"
         }
     }
@@ -81,7 +84,9 @@ public enum ActionSummary {
         case .drag: "dragging"
         case .closeTab: "closing a tab"
         case .closeWindow: "closing a window"
-        case .selectTab: "switching tabs"
+        case .selectTab, .goToTab: "switching tabs"
+        case .closeOtherTabs: "closing tabs"
+        case .listTabs: "listing tabs"
         case .clipboardSet, .readClipboard: "using the clipboard"
         case .readValue, .readNotifications, .dismissNotifications, .checkMedia, .look, .readPage: "reading the screen"
         case .wait, .waitFor, .ignore: "waiting"

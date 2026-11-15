@@ -213,3 +213,27 @@ let g = CommandGrammar()
     ]
     for (phrase, expected) in table { #expect(g.parse(phrase) == expected, "\(phrase)") }
 }
+
+@Test func tabCommandsByNumberNameAndPosition() {
+    let cases: [(String, [Action]?)] = [
+        ("tab 3", [.goToTab(.number(3))]), ("tab three", [.goToTab(.number(3))]), ("Tab number 12.", [.goToTab(.number(12))]),
+        ("switch to tab 4", [.goToTab(.number(4))]), ("go to tab 4", [.goToTab(.number(4))]), ("open tab 99", [.goToTab(.number(99))]),
+        ("first tab", [.goToTab(.number(1))]), ("go to the first tab", [.goToTab(.number(1))]),
+        ("last tab", [.goToTab(.last)]), ("open the last tab", [.goToTab(.last)]),
+        ("switch to the YouTube tab", [.goToTab(.named("YouTube"))]),
+        ("go to the my inbox tab.", [.goToTab(.named("my inbox"))]),
+        ("open the GitHub tab", [.goToTab(.named("GitHub"))]), ("switch to youtube tab", [.goToTab(.named("youtube"))]),
+        ("close the other tabs", [.closeOtherTabs]), ("close other tabs", [.closeOtherTabs]), ("close all other tabs", [.closeOtherTabs]),
+        ("list tabs", [.listTabs]), ("list the tabs", [.listTabs]), ("list my tabs", [.listTabs]),
+        // Unchanged: other tab phrases, other rules, and what is not a tab command.
+        ("tab", [.pressKey(KeyChord(.tab))]), ("new tab", [.pressKey(KeyChord(.t, [.command]))]),
+        ("open a new tab", [.pressKey(KeyChord(.t, [.command]))]), ("close tab", [.pressKey(KeyChord(.w, [.command]))]),
+        ("close this tab", [.pressKey(KeyChord(.w, [.command]))]),
+        ("next tab", [.pressKey(KeyChord(.tab, [.control]))]), ("previous tab", [.pressKey(KeyChord(.tab, [.control, .shift]))]),
+        ("go to youtube", [.openURL(URL(string: "https://www.youtube.com")!, app: nil)]), ("open safari", [.openApp("safari")]),
+        ("open the new tab", [.pressKey(KeyChord(.t, [.command]))]), ("go to the next tab", [.pressKey(KeyChord(.l, [.command])), .typeText("the next tab"), .pressKey(KeyChord(.return))]),
+        ("tab 0", nil), ("tab 100", nil), ("youtube tab", nil), ("tab number", nil),
+        ("open chrome and go to the youtube tab", nil), ("open the other tab", [.openApp("the other tab")]),
+    ]
+    for (spoken, want) in cases { #expect(g.parse(spoken) == want, "\(spoken)") }
+}

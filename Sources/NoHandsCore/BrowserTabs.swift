@@ -242,3 +242,56 @@ public enum TabGuard {
         return nil
     }
 }
+
+/// Picks tabs for the spoken tab commands and words the "list tabs" line.
+public enum TabMatch {
+    /// The index in `tabs` of the tab `words` names, or nil. Titles and words are compared as the grammar normalizes
+    /// them, so case and punctuation don't matter. First tier with a hit wins: a title equal to the words, a title
+    /// that starts with them, a title holding every word. A word also matches its plural or singular ("doc" finds
+    /// "Docs"). Inside the tier, a tab that is not the active one wins (saying "the YouTube tab" from one YouTube tab
+    /// goes to the other), then the leftmost. No fuzzy guess.
+    public static func best(_ words: String, in tabs: [BrowserTab]) -> Int? {
+        let wanted = CommandGrammar.normalize(words)
+        guard !wanted.isEmpty else { return nil }
+        func same(_ a: String, _ b: String) -> Bool { a == b || a + "s" == b || b + "s" == a }
+        let titles = tabs.map { CommandGrammar.normalize($0.title) }
+        let tiers: [([String]) -> Bool] = [
+            { $0.count == wanted.count && zip($0, wanted).allSatisfy(same) },
+            { $0.count >= wanted.count && zip($0, wanted).allSatisfy(same) },
+            { title in wanted.allSatisfy { w in title.contains { same($0, w) } } },
+        ]
+        for tier in tiers {
+            let hits = titles.indices.filter { tier(titles[$0]) }
+            if let pick = hits.first(where: { !tabs[$0].active }) ?? hits.first { return pick }
+        }
+        return nil
+    }
+
+    /// The keyboard shortcut that selects the target without reading the strip: command-1 to command-8 for a number
+    /// from 1 to 8, command-9 (the last tab) for `.last`. Nil when the tab must be found and pressed.
+    public static func chord(for target: TabTarget) -> KeyChord? {
+        let digits: [Key] = [.one, .two, .three, .four, .five, .six, .seven, .eight]
+        switch target {
+        case .number(let n): return digits.indices.contains(n - 1) ? KeyChord(digits[n - 1], [.command]) : nil
+        case .last: return KeyChord(.nine, [.command])
+        case .named: return nil
+        }
+    }
+
+    /// The board's one notice line, at most 80 characters: `1 YouTube · 2* Inbox · 3 GitHub`, the active tab starred.
+    /// Each title is cut to its first 3 words and 16 characters. A strip that does not fit ends `+N more`.
+    public static func listLine(_ tabs: [BrowserTab]) -> String {
+        let limit = 80, joiner = " \u{00B7} "
+        let entries = tabs.enumerated().map { i, tab -> String in
+            let words = TabListing.clean(tab.title).split(separator: " ").prefix(3).joined(separator: " ")
+            let title = String(words.prefix(16)).trimmingCharacters(in: .whitespaces)
+            return "\(i + 1)\(tab.active ? "*" : "") \(title.isEmpty ? "untitled" : title)"
+        }
+        for shown in stride(from: entries.count, through: 1, by: -1) {
+            let line = entries.prefix(shown).joined(separator: joiner)
+                + (shown < entries.count ? joiner + "+\(entries.count - shown) more" : "")
+            if line.count <= limit { return line }
+        }
+        return "\(entries.count) tabs"
+    }
+}
