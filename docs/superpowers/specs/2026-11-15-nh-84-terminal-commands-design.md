@@ -107,10 +107,10 @@ work in Terminal, that closing a tab or window with a running command shows Term
 
 Core, table-driven (`TerminalPackTests.swift`, Core only, no permissions):
 
-- **Terminal in front:** every phrase in the table above, plus the global phrases the ticket lists (`new tab`,
+- **Terminal in front:** a sample phrase from each group in the table above (synonyms share one table row), plus the global phrases the ticket lists (`new tab`,
   `close tab`, `close window`, `next tab`, `previous tab`, `find`, `page up`, `page down`), resolves to its chord,
   using the shipped `CommandGrammar()` (so the registry line is tested too).
-- **Another app or none in front:** each pack-only phrase does not resolve to its Terminal chord with
+- **Another app or none in front:** each sampled pack-only phrase does not resolve to its Terminal chord with
   `com.apple.Safari` or no app in front.
 - **No stop:** no Terminal phrase is a stop phrase or has "stop" as a word; "stop", "cancel" and "cancel that" with
   Terminal in front still give what they give with no app in front.
