@@ -1130,5 +1130,21 @@
         ]
       }
     ]
+  },
+  {
+    "say": "open the raptors game",
+    "app": "Google Chrome",
+    "elements": [
+      "Raptors vs Celtics · Watch",
+      "Raptors vs Knicks · Watch",
+      "Scores"
+    ],
+    "overlay": "labels",
+    "accept": [
+      {
+        "status": "ask",
+        "actions": []
+      }
+    ]
   }
 ]

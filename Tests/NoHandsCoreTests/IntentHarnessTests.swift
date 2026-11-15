@@ -117,7 +117,8 @@ import CoreGraphics
     let all = IntentExamples.turns(for: .agentDesktop)
     #expect(all.count == IntentExamples.turns.count + IntentExamples.harnessTurns.count && IntentExamples.harnessTurns.count >= 2)
     for t in all {
-        #expect(!(try IntentDecoder.step(fromPayloadText: t.assistant)).actions.isEmpty)
+        let step = try IntentDecoder.step(fromPayloadText: t.assistant)
+        #expect(!step.actions.isEmpty || step.status == .ask)
     }
     let joined = IntentExamples.harnessTurns.map(\.assistant).joined()
     #expect(joined.contains("\"menu_item\"") && joined.contains("\"set_value\""))

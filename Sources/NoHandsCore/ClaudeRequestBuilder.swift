@@ -74,6 +74,12 @@ public struct ClaudeRequestBuilder: Sendable {
         userBlocks(request: r, playbooks: playbooks).joined()
     }
 
+    /// `text` with the word "answered" (any case) changed to "replied", so no spelling of the "User answered:" marker, which
+    /// only the builder may write, survives in model text. Stripping colon variants instead is never complete.
+    static func unmarked(_ text: String) -> String {
+        text.replacingOccurrences(of: "answered", with: "replied", options: .caseInsensitive)
+    }
+
     /// The user message in pieces, in order: goal and step, one block per history record (the first carries the
     /// `History:` header), then, after two identical steps, a note to change approach, then, when the goal or page names a
     /// known site, its routes (`SitePlaybooks`; `playbooks: false` leaves them out, for the few-shot examples), then the
@@ -83,8 +89,11 @@ public struct ClaudeRequestBuilder: Sendable {
         let goal = sanitize(r.goal, limit: 300)
         var blocks = ["Goal: \(goal)\nStep: \(r.step) of \(r.maxSteps)\n"]
         for (i, h) in r.history.enumerated() {
-            let outcome = h.failure.map { "FAILED: \(sanitize($0))" } ?? "ok"
-            blocks.append((i == 0 ? "History:\n" : "") + "  \(i + 1). \(sanitize(h.intent)) -> \(ActionSummary.kinds(h.actions)) (\(outcome))\n")
+            let outcome = h.failure.map { "FAILED: \(unmarked(sanitize($0)))" } ?? "ok"
+            // Model text never carries the marker the prompt trusts as the user's words: only `userAnswer` is written after it.
+            var intent = unmarked(sanitize(h.intent, limit: 80))
+            if let answer = h.userAnswer { intent = "Asked: \(intent) User answered: \(sanitize(answer, limit: 200))" }
+            blocks.append((i == 0 ? "History:\n" : "") + "  \(i + 1). \(intent) -> \(ActionSummary.kinds(h.actions)) (\(outcome))\n")
         }
         // Two identical steps in a row: say so while a third (which ends the task) can still be avoided.
         if let last = r.history.last, r.history.count >= 2, !last.actions.isEmpty, r.history[r.history.count - 2].actions == last.actions {

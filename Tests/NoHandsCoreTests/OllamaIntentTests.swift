@@ -29,7 +29,8 @@ import Foundation
     #expect(IntentExamples.turns.count >= 5)
     for t in IntentExamples.turns {
         #expect(t.user.contains("Request: "))
-        #expect(!(try IntentDecoder.actions(fromPayloadText: t.assistant)).isEmpty)
+        let step = try IntentDecoder.step(fromPayloadText: t.assistant)
+        #expect(!step.actions.isEmpty || step.status == .ask)
     }
     let users = IntentExamples.turns.map(\.user).joined(separator: "\n")
     for phrase in ["open chrome and go to youtube", "minimize google chrome", "click the back button", "what's the weather"] {

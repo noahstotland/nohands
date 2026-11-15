@@ -452,7 +452,7 @@ var exitStatus: Int32 = 0
                     let ms = Int(t0.duration(to: .now) / .milliseconds(1))
                     times.append(ms)
                     total += 1
-                    if errText == nil, IntentEval.matches(got, anyOf: c.accept) {
+                    if errText == nil, let status, IntentEval.matches(got, status: status, anyOf: c.accept) {
                         passed += 1
                         print("PASS \(ms)ms  \(c.say)")
                     } else {

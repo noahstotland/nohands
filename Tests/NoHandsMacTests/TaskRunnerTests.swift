@@ -1004,6 +1004,50 @@ private func resolverForSend() -> FakeResolver {
     }
 }
 
+@MainActor @Test func askedQuestionWaitsForTheAnswer() async {
+    enum Reply { case say(String), stop, silence }
+    let click = Action.click(.label(1), button: .left, count: 1)
+    let longQuestion = String(repeating: "q", count: 100)
+    let longAnswer = String(repeating: "a", count: 300)
+    // (question, what the user does, outcome, the row while waiting, the History record step 2 gets (nil: no step 2))
+    let table: [(String, Reply, TaskOutcome, String, String?)] = [
+        ("Which game?", .say("the knicks one"), .done("open it"), "step 1 · ? Which game?",
+         "Which game?|the knicks one"),
+        (longQuestion, .say(longAnswer), .done("open it"), "step 1 · ? " + String(repeating: "q", count: 79) + "…",
+         String(repeating: "q", count: 79) + "…|" + String(repeating: "a", count: 200)),
+        ("Which game?", .stop, .stopped, "step 1 · ? Which game?", nil),
+        ("Which game?", .silence, .stuck("no answer"), "step 1 · ? Which game?", nil),
+        ("Which game?", .say("   "), .stuck("no answer"), "step 1 · ? Which game?", nil),
+    ]
+    for (question, reply, outcome, waiting, record) in table {
+        var silent = false
+        if case .silence = reply { silent = true }
+        // The answer wait's timeout fires at once for a silent user and never otherwise; other sleeps return at once.
+        let hold = !silent
+        let r = rig(FakeResolver([step(question, .ask), step("open it", .done, [click])]), sleep: { d in
+            if d == TaskRunner.answerTimeout, hold { try? await Task.sleep(for: .seconds(30)) }
+        })
+        r.ax.elements = [el(1, "Watch")]
+        let runner = r.runner
+        let task = Task { await runner.run(goal: "open the raptors game", mode: .command) }
+        if !silent {
+            for _ in 0..<2000 where runner.awaitedAnswer != .question { await Task.yield() }
+            #expect(runner.awaitedAnswer == .question, "the question never waited")
+            #expect(r.statuses.last == waiting)
+            #expect(r.input.calls.isEmpty, "nothing runs while it waits")
+            switch reply {
+            case .say(let words): runner.answer(words)
+            default: runner.cancel()
+            }
+        }
+        #expect(await task.value == outcome, "\(reply)")
+        #expect(r.resolver.requests.dropFirst().first?.history.first.map { "\($0.intent)|\($0.userAnswer ?? "")" } == record, "\(reply)")
+        #expect(r.resolver.requests.dropFirst().first?.history.first?.actions.isEmpty ?? true)
+        #expect(r.input.calls.contains("click:140,55") == (record != nil))
+        #expect(runner.awaitedAnswer == nil)
+    }
+}
+
 @MainActor @Test func aFindInATaskPutsTheMatchFirstInTheNextRequestWithoutMovingThePointer() async {
     let r = rig(FakeResolver([step("find it", .continue, [.findOnPage("raptors", movePointer: false)]), step("done", .done)]))
     r.ax.pageMatch = UIElementInfo(id: 1_000_001, frame: CGRect(x: 100, y: 5000, width: 200, height: 20), title: "Raptors vs Celtics", role: "AXLink")

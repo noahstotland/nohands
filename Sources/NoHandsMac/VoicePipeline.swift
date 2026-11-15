@@ -418,7 +418,8 @@ import NoHandsCore
 
     /// An utterance arrived while a task runs: a stop phrase cancels the task (and drops the held job); while the
     /// task waits for a spoken yes, the words are its answer (a yes needs the attention word when one is set; any
-    /// other reply only stops the task); anything else replaces the held job.
+    /// other reply only stops the task); while it waits for the answer to a question, the next addressed words are
+    /// the answer; anything else replaces the held job.
     private func busy(_ job: Job) {
         guard !stopped else { return }
         if attention.isStop(job.transcript) {
@@ -432,7 +433,20 @@ import NoHandsCore
             activeTask?.cancel()   // the task's row shows "stopped" when the runner unwinds
             overlay.report(job.id, text: job.transcript, status: .stopped(PipelineText.stopping))
             PipelineLog.utterance(trace: job.trace, transcript: job.transcript, outcome: "stop", detail: "stop")
-        } else if let runner, runner.isAwaitingAnswer {
+        } else if let runner, runner.awaitedAnswer == .question {
+            // A question the model asked: stray speech is dropped and the question keeps waiting; an addressed
+            // utterance is the answer, without the attention word.
+            if isUnaddressed(job.transcript) {
+                if job.shown { overlay.report(job.id, text: job.transcript, status: .ignored("")) }
+                PipelineLog.utterance(trace: job.trace, transcript: job.transcript, outcome: "ignore(not addressed)", detail: "ignore(not addressed)")
+            } else {
+                var reply = job.transcript
+                if case .addressed(let rest) = attention.check(reply) { reply = rest }
+                runner.answer(reply)
+                overlay.report(job.id, text: job.transcript, status: .done(reply))
+                PipelineLog.utterance(trace: job.trace, transcript: job.transcript, outcome: "answer", detail: "answer")
+            }
+        } else if let runner, runner.awaitedAnswer == .confirm {
             runner.answer(job.transcript)
             overlay.report(job.id, text: job.transcript, status: .done(job.transcript))
             PipelineLog.utterance(trace: job.trace, transcript: job.transcript, outcome: "answer", detail: "answer")

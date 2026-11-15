@@ -32,7 +32,11 @@ public enum TaskOutcome: Equatable, Sendable {
     /// How long a capture may take before the step goes on without a picture.
     static let captureDeadline: Duration = .seconds(2)
     static let looking = "looking at the screen"
-    /// How long a step held for a spoken yes waits for the answer before the task stops.
+    static let noAnswer = "no answer"
+    /// The most of a question the row shows, and of the user's answer History keeps.
+    static let questionLimit = 80
+    static let answerLimit = 200
+    /// How long a step held for a spoken yes, or a question the model asked, waits for the answer.
     nonisolated static let answerTimeout: Duration = .seconds(30)
 
     private let config: AppConfig
@@ -51,6 +55,9 @@ public enum TaskOutcome: Equatable, Sendable {
     /// The task paused for a spoken answer, if any. `answer(_:)` resumes it with the words, `cancel()` and the
     /// timeout with nil. The caller decides what counts as yes.
     private var answerWait: CheckedContinuation<String?, Never>?
+    /// What the open answer wait is for, so the pipeline can route a question's answer differently from a confirm.
+    public enum AnswerKind: Equatable, Sendable { case confirm, question }
+    public private(set) var awaitedAnswer: AnswerKind?
     /// Identifies the current answer wait, so a timeout that fires late cannot resume a newer one.
     private var answerWaitID = 0
     /// agent-desktop, when installed and chosen. The task's harness kind is decided by the first observation.
@@ -117,7 +124,7 @@ public enum TaskOutcome: Equatable, Sendable {
     }
 
     /// True while the task is paused for a spoken answer: the pipeline then sends the user's next words to `answer`.
-    public var isAwaitingAnswer: Bool { answerWait != nil }
+    public var isAwaitingAnswer: Bool { awaitedAnswer != nil }
 
     /// Hands the paused task the user's reply. Does nothing when no answer is awaited.
     public func answer(_ transcript: String) { endAnswerWait(with: transcript) }
@@ -225,6 +232,32 @@ public enum TaskOutcome: Equatable, Sendable {
             // An `ignore` after earlier steps already acted is the model giving up mid-task, not chatter.
             case .ignore: return await finish(.ignored, hud: n > 1 ? Self.stoppedHUD(step.intent) : nil)
             case .stuck: return await finish(.stuck(step.intent))
+            case .ask:
+                // The model needs the user to choose: nothing runs, and the next thing said is the answer.
+                // An `ask` has no actions, so it is not fed to the repeat detector.
+                let question = Self.clipped(step.intent, to: Self.questionLimit)
+                if isCancelled { return await finish(.stopped) }
+                onStatus?(.running("step \(n) · ? \(question)"))
+                trail.begin(number: n, intent: question)
+                trail.phase = .reading
+                onTrail?(trail)
+                let reply = await awaitAnswer(.question, timeout: Self.answerTimeout)
+                if isCancelled { return await finish(.stopped) }
+                guard let said = reply?.trimmingCharacters(in: .whitespacesAndNewlines), !said.isEmpty else {
+                    return await finish(.stuck(Self.noAnswer))
+                }
+                stepsRun = n
+                trail.end(number: n, failure: nil)
+                onTrail?(trail)
+                history.append(StepRecord(intent: question, actions: [], userAnswer: String(said.prefix(Self.answerLimit))))
+                if n < maxSteps {
+                    settleStart = ContinuousClock.now
+                    pendingSurfaces = harness?.takeOpenSurfaces() ?? []
+                    (observation, labels) = await settle(mode: mode)
+                    if !isCancelled { await annotateTabs(&observation) }
+                    settled = settleStart.duration(to: .now)
+                }
+                continue
             case .continue, .done:
                 if repeats.record(step.actions) { return await finish(.stuck(Self.repeating)) }
             }
@@ -269,7 +302,7 @@ public enum TaskOutcome: Equatable, Sendable {
                 // a stop ends the task before the step runs.
                 if let verb = IrreversibleGuard.held(actions, labels: labels, goal: goal) {
                     onStatus?(.running("step \(n) · say yes to \(verb)"))
-                    let reply = await awaitAnswer(timeout: Self.answerTimeout)
+                    let reply = await awaitAnswer(.confirm, timeout: Self.answerTimeout)
                     if isCancelled { return await finish(.stopped) }
                     guard let reply, ConfirmAnswer.isYes(reply, attention: config.attentionGate) else {
                         return await finish(.stopped, hud: "stopped: \(verb) not confirmed")
@@ -531,7 +564,7 @@ public enum TaskOutcome: Equatable, Sendable {
 
     /// Pauses the task until the user answers, `cancel()` is called or `timeout` passes (nil for the last two). The
     /// timeout runs on the injected `sleep`; its task is cancelled once the wait ends.
-    private func awaitAnswer(timeout: Duration) async -> String? {
+    private func awaitAnswer(_ kind: AnswerKind, timeout: Duration) async -> String? {
         guard !isCancelled else { return nil }
         answerWaitID += 1
         let id = answerWaitID
@@ -539,6 +572,7 @@ public enum TaskOutcome: Equatable, Sendable {
         var timer: Task<Void, Never>?
         let reply = await withCheckedContinuation { (wait: CheckedContinuation<String?, Never>) in
             answerWait = wait
+            awaitedAnswer = kind
             timer = Task { @MainActor [weak self] in
                 await sleep(timeout)
                 self?.endAnswerWait(id: id, with: nil)
@@ -551,6 +585,7 @@ public enum TaskOutcome: Equatable, Sendable {
     private func endAnswerWait(id: Int? = nil, with reply: String?) {
         guard id == nil || id == answerWaitID, let wait = answerWait else { return }
         answerWait = nil
+        awaitedAnswer = nil
         wait.resume(returning: reply)
     }
 
@@ -603,6 +638,12 @@ public enum TaskOutcome: Equatable, Sendable {
         case .stopped: return .stopped(line)
         case .ignored: return .ignored(line)
         }
+    }
+
+    /// `text` trimmed and cut to `limit` characters, the last one `…` when it was cut.
+    nonisolated static func clipped(_ text: String, to limit: Int) -> String {
+        let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        return t.count <= limit ? t : String(t.prefix(limit - 1)) + "…"
     }
 
     /// Reports what the task is doing now. Until the first step starts the board row shows the same words.
