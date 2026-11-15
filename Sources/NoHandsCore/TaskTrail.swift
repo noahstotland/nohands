@@ -47,7 +47,7 @@ public struct TaskTrail: Equatable, Sendable {
     }
 }
 
-/// What the corner panel shows: the phrase, the step trail, a progress bar and a closing line.
+/// What the corner panel shows: the phrase, the step trail, the step number and a closing line.
 public struct TaskPanelContent: Equatable, Sendable {
     public enum Mark: Equatable, Sendable { case done, current, failed, stopped }
     public struct Line: Equatable, Sendable {
@@ -56,7 +56,6 @@ public struct TaskPanelContent: Equatable, Sendable {
     }
     public struct Progress: Equatable, Sendable {
         public let label: String
-        public let fraction: Double
     }
 
     public let phrase: String
@@ -128,7 +127,7 @@ public enum TaskPanelText {
 
         var progress: TaskPanelContent.Progress?
         if let last = steps.last {
-            progress = bar(last.number, of: trail.maxSteps)
+            progress = stepLabel(last.number)
         }
 
         let footer: StatusLine?
@@ -137,7 +136,6 @@ public enum TaskPanelText {
         case .failed:
             switch trail.ending {
             case .stepCap:
-                progress = bar(trail.maxSteps, of: trail.maxSteps)
                 footer = StatusLine(text: "Hit the \(trail.maxSteps)-step limit \u{00B7} try a smaller request", tone: .bad)
             case .stuck:
                 footer = StatusLine(text: "\(status.text) \u{00B7} say it another way", tone: .bad)
@@ -182,8 +180,9 @@ public enum TaskPanelText {
         }
     }
 
-    private static func bar(_ n: Int, of m: Int) -> TaskPanelContent.Progress {
-        TaskPanelContent.Progress(label: "step \(n) of \(m)", fraction: min(1, Double(n) / Double(max(1, m))))
+    /// The step number alone: the step limit is not how many steps the task needs, and nobody knows that in advance.
+    private static func stepLabel(_ n: Int) -> TaskPanelContent.Progress {
+        TaskPanelContent.Progress(label: "step \(n)")
     }
 
     private static func line(_ step: TaskStepRecord, final: Bool, status: PromptStatus) -> TaskPanelContent.Line {

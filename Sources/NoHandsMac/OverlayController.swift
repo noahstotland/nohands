@@ -550,7 +550,6 @@ private final class TaskPanelView: NSView {
     private static let vPad: CGFloat = 10
     private static let gap: CGFloat = 6
     private static let markWidth: CGFloat = 16
-    private static let trackHeight: CGFloat = 3
     private static let spinnerSize: CGFloat = 10
     private static let phraseFont = NSFont.systemFont(ofSize: 14, weight: .medium)
     private static let smallFont = NSFont.systemFont(ofSize: 12, weight: .regular)
@@ -645,20 +644,7 @@ private final class TaskPanelView: NSView {
         if let progress = content.progress {
             y += gap
             let label = Self.tail(progress.label, font: Self.smallFont, color: BoardView.color(.muted))
-            let labelW = ceil(label.size().width)
-            let trackW = max(0, inner - labelW - 10)
-            let trackY = y + (stepH - Self.trackHeight) / 2
-            let track = CGRect(x: hPad, y: trackY, width: trackW, height: Self.trackHeight)
-            NSColor(white: 1, alpha: 0.18).setFill()
-            NSBezierPath(roundedRect: track, xRadius: Self.trackHeight / 2, yRadius: Self.trackHeight / 2).fill()
-            let fillW = trackW * CGFloat(min(1, max(0, progress.fraction)))
-            if fillW > 0 {
-                let tone = content.footer?.tone ?? .active
-                BoardView.color(tone == .muted || tone == .waiting ? .active : tone).setFill()
-                let fill = CGRect(x: hPad, y: trackY, width: max(fillW, Self.trackHeight), height: Self.trackHeight)
-                NSBezierPath(roundedRect: fill, xRadius: Self.trackHeight / 2, yRadius: Self.trackHeight / 2).fill()
-            }
-            draw(label, x: hPad + trackW + 10, y: y + (stepH - textH) / 2, width: labelW, height: textH)
+            draw(label, x: hPad, y: y + (stepH - textH) / 2, width: inner, height: textH)
             y += stepH
         }
 

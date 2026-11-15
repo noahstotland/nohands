@@ -37,22 +37,22 @@ private func trail(_ steps: [(String, String)], max: Int = 12, ending: TaskTrail
     let long = String(repeating: "x", count: 90)
     let cases: [Case] = [
         Case(name: "running a step", row: row(1, "p", running, trail(two, phase: .acting)), marks: [.done, .current],
-             progress: "step 2 of 12", footer: "Acting · step 2", tone: .active, busy: true),
+             progress: "step 2", footer: "Acting · step 2", tone: .active, busy: true),
         Case(name: "running, no phase reported", row: row(1, "p", running, trail(two)), marks: [.done, .current],
-             progress: "step 2 of 12", footer: nil, tone: nil),
+             progress: "step 2", footer: nil, tone: nil),
         Case(name: "between steps", row: row(1, "p", running, trail([("a", "ok")], phase: .reading)), marks: [.done],
-             progress: "step 1 of 12", footer: "Reading · checking what changed", tone: .active, busy: true),
+             progress: "step 1", footer: "Reading · checking what changed", tone: .active, busy: true),
         Case(name: "a failed step, task goes on", row: row(1, "p", running, trail([("a", "bad")], phase: .thinking)),
-             marks: [.failed], progress: "step 1 of 12", footer: "Thinking · finding another way", tone: .active,
+             marks: [.failed], progress: "step 1", footer: "Thinking · finding another way", tone: .active,
              busy: true),
         Case(name: "done", row: row(1, "p", .done("done · p (3 steps)"), trail([("a", "ok"), ("b", "ok"), ("c", "run")], phase: .acting)),
-             marks: [.done, .done, .done], progress: "step 3 of 12", footer: "done · p (3 steps)", tone: .good),
+             marks: [.done, .done, .done], progress: "step 3", footer: "done · p (3 steps)", tone: .good),
         Case(name: "step cap", row: row(1, "p", .failed("gave up"), trail([("a", "ok")], ending: .stepCap)),
-             marks: [.done], progress: "step 12 of 12", footer: "Hit the 12-step limit · try a smaller request", tone: .bad),
+             marks: [.done], progress: "step 1", footer: "Hit the 12-step limit · try a smaller request", tone: .bad),
         Case(name: "stuck", row: row(1, "p", .failed("not sure"), trail([("a", "ok")], ending: .stuck)),
-             marks: [.done], progress: "step 1 of 12", footer: "not sure · say it another way", tone: .bad),
+             marks: [.done], progress: "step 1", footer: "not sure · say it another way", tone: .bad),
         Case(name: "resolver error", row: row(1, "p", .failed("model timed out"), trail([("a", "ok"), ("b", "run")])),
-             marks: [.done, .failed], progress: "step 2 of 12", footer: "model timed out · try again", tone: .bad),
+             marks: [.done, .failed], progress: "step 2", footer: "model timed out · try again", tone: .bad),
         Case(name: "resolver error before any step", row: row(1, "p", .failed("model timed out"), trail([])),
              marks: [], progress: nil, footer: "model timed out · try again", tone: .bad),
         Case(name: "grammar failure", row: row(1, "p", .failed("no such window")), marks: [], progress: nil,
@@ -70,6 +70,7 @@ private func trail(_ steps: [(String, String)], max: Int = 12, ending: TaskTrail
         #expect(content?.phrase == "p", "\(c.name)")
         #expect(content?.lines.map(\.mark) == c.marks, "\(c.name)")
         #expect(content?.progress?.label == c.progress, "\(c.name)")
+        #expect(content?.progress?.label.contains(" of ") != true, "\(c.name): no total")
         #expect(content?.footer?.text == c.footer, "\(c.name)")
         #expect(content?.footer?.tone == c.tone, "\(c.name)")
         #expect(content?.busy == c.busy, "\(c.name)")
@@ -94,10 +95,10 @@ private func trail(_ steps: [(String, String)], max: Int = 12, ending: TaskTrail
     #expect(c?.earlierSteps == 3)
     #expect(c?.lines.first?.text == "step4")
     #expect(c?.lines.last?.text == "step11")
-    #expect(abs((c?.progress?.fraction ?? 0) - 11.0 / 12.0) < 1e-9)
-    // More steps than the cap clamps the bar at full.
+    #expect(c?.progress?.label == "step 11")
+    // More steps than the cap still shows the step, never the cap.
     let over = TaskPanelText.content(rows: [row(1, "p", .running("x"), trail(steps, max: 5))])
-    #expect(over?.progress?.fraction == 1)
+    #expect(over?.progress?.label == "step 11")
 }
 
 @Test func taskPanelRowChoice() {
