@@ -1,7 +1,8 @@
 # NH-76: Per-app voice commands: Design
 
 **Date:** 2026-11-15  **Ticket:** [NH-76](https://github.com/noahstotland/nohands/issues/76)
-**Status:** Proposed
+**Status:** Shipped
+**Shipped:** in PR #129, with differences: [as-built](../as-built/2026-11-15-nh-76-per-app-commands.md)
 
 ## Intent
 
