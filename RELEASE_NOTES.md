@@ -1,5 +1,11 @@
 # Release notes
 
+## 2026-11-15 find on page, scroll until a named element or text is visible (NH-44) (#126)
+
+Merged 2026-11-15 5:15 pm UTC.
+
+Say "find <words>" or "scroll to <words>" and NoHands scrolls the page until that link, heading or label is on screen and leaves the pointer on it, so "click" opens it. Long task goals can use the same find instead of guessing scroll amounts.
+
 ## 2026-11-15 status bar in the bottom-right corner, no idle Listening line (NH-92) (#127)
 
 Merged 2026-11-15 5:07 pm UTC.
