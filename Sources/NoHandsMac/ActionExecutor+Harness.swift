@@ -75,9 +75,9 @@ extension ActionExecutor {
 
     /// The frontmost app's own menu, pressed through Accessibility (the menu does not open on screen). `noMatch`
     /// when no item is named so; `refused` when the app ignored the press. Either way the caller tries agent-desktop.
-    func pressMenuItem(_ spoken: String) -> MenuPress {
+    func pressMenuItem(_ spoken: String, exactOnly: Bool = false) -> MenuPress {
         let entries = menus.entries()
-        guard let i = MenuMatch.firstMatch(spoken, in: entries) else { return .noMatch }
+        guard let i = MenuMatch.firstMatch(spoken, in: entries, exactOnly: exactOnly) else { return .noMatch }
         guard entries[i].enabled else { return .disabled(entries[i].title) }
         return menus.press(i) ? .pressed : .refused(entries[i].title)
     }
@@ -134,7 +134,8 @@ extension ActionExecutor {
             return outcome(await harness.act(.click(ref: m.ref, button: .left, count: 1)))
         case .menuItem(let name):
             let last = name.split(separator: ">").last.map { $0.trimmingCharacters(in: .whitespaces) } ?? name
-            switch pressMenuItem(name) {
+            // A model step (the task loop passes labels) presses only the exact title; the user's own "menu <words>" may be closest.
+            switch pressMenuItem(name, exactOnly: labelSnapshot != nil) {
             case .pressed: return nil
             case .disabled(let title): return "menu item \(title) is disabled"
             case .refused(let title):

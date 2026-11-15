@@ -7,6 +7,7 @@ import NoHandsCore
     let menus = FakeMenus([
         MenuEntry(title: "Bookmark This Tab…", path: ["Bookmarks"], enabled: true),
         MenuEntry(title: "Close Window", path: ["File"], enabled: false),
+        MenuEntry(title: "Empty Trash…", path: ["Finder"], enabled: true),
     ])
     let x = ActionExecutor(input: FakeInput(), ax: FakeElements(), overlay: FakeOverlay(), config: AppConfig(),
                            audio: FakeAudio(), menus: menus)
@@ -25,6 +26,9 @@ import NoHandsCore
         #expect(await x.execute([.menuItem(spoken)]) == result, Comment(rawValue: spoken))
         #expect(menus.pressed == pressed, Comment(rawValue: spoken))
     }
+    // A model step (the task loop passes labels) presses only the exact title: "trash" is not "Empty Trash…".
+    #expect(await x.execute([.menuItem("trash")], labels: [:]) == "no menu item called trash")
+    #expect(menus.pressed == [0])
     menus.pressWorks = false
     #expect(await x.execute([.menuItem("bookmark this tab")]) == "couldn't press menu item Bookmark This Tab…")
 }

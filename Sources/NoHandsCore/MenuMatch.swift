@@ -6,11 +6,14 @@ public struct MenuEntry: Equatable, Sendable {
     /// The menus above the item, the menu bar item first: ["File"], or ["File", "Open Recent"] for a submenu item.
     public let path: [String]
     public let enabled: Bool
+    /// An item that only opens a submenu: pressing it does nothing, so it is never a match.
+    public let hasSubmenu: Bool
 
-    public init(title: String, path: [String], enabled: Bool) {
+    public init(title: String, path: [String], enabled: Bool, hasSubmenu: Bool = false) {
         self.title = title
         self.path = path
         self.enabled = enabled
+        self.hasSubmenu = hasSubmenu
     }
 }
 
@@ -31,10 +34,13 @@ public enum MenuMatch {
     /// 1. Exact: the folded titles are equal.
     /// 2. Closest: titles whose words start with the spoken words, then titles holding every spoken word as a whole word.
     /// Within a tier the shortest title wins, then menu bar order. There is no edit-distance guess.
-    public static func firstMatch(_ spoken: String, in entries: [MenuEntry]) -> Int? {
+    /// `exactOnly` is for steps the model chose: the task guards check the name the model sent, so only the item
+    /// with that very title may be pressed, never a longer title that happens to hold those words.
+    public static func firstMatch(_ spoken: String, in entries: [MenuEntry], exactOnly: Bool = false) -> Int? {
         var parts = spoken.split(separator: ">", omittingEmptySubsequences: false).map { fold(String($0)) }
         guard let words = parts.popLast(), !words.isEmpty else { return nil }
         let candidates = entries.indices.filter { i in
+            guard !entries[i].hasSubmenu else { return false }
             let path = entries[i].path.map { fold($0) }
             return path.count >= parts.count && Array(path.prefix(parts.count)) == parts
         }
@@ -44,7 +50,7 @@ public enum MenuMatch {
             { $0.starts(with: words) },
             { title in words.allSatisfy(title.contains) },
         ]
-        for matches in tiers {
+        for matches in exactOnly ? Array(tiers.prefix(1)) : tiers {
             let hits = candidates.filter { !folded[$0]!.isEmpty && matches(folded[$0]!) }
             // min(by:) keeps the first of equals, which is menu bar order.
             if let best = hits.min(by: { folded[$0]!.joined(separator: " ").count < folded[$1]!.joined(separator: " ").count }) {

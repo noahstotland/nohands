@@ -131,7 +131,7 @@ The script installs Ollama with Homebrew if needed, starts it, pulls the model a
 
 ### Per-app commands
 
-An app can have its own phrases, which work only while it is in front and are checked before the global ones: where an app and the table above share a phrase, the app's wins in that app only. Leading `open`, `go to` and `a` / `the` are ignored when looking one up, so `open a new tab`, `go to the new tab` and `new tab` mean the same in an app that has the phrase; with no such app in front, `open <phrase>` also runs a phrase from the table above (`open a new tab` presses command-T). Each app adds its rows below.
+An app can have its own phrases, which work only while it is in front and are checked before the global ones: where an app and the table above share a phrase, the app's wins in that app only. Leading `open`, `go to` and `a` / `the` are ignored when looking one up, so `open a new tab`, `go to the new tab` and `new tab` mean the same in an app that has the phrase; where the front app has no such phrase, `open <phrase>` (two or more words) also runs a phrase from the table above (`open a new tab` presses command-T). Each app adds its rows below.
 
 | App | Say | Does |
 |---|---|---|

@@ -32,8 +32,10 @@ import NoHandsCore
         // The first menu bar item is the Apple menu: "Shut Down…" and "Log Out…" are never reachable by name.
         for top in AXQuery.elements(bar, kAXChildrenAttribute).dropFirst() {
             guard let title = AXQuery.string(top, kAXTitleAttribute) else { continue }
-            for menu in AXQuery.elements(top, kAXChildrenAttribute) { walk.collect(menu, path: [title]) }
+            for menu in AXQuery.elements(top, kAXChildrenAttribute) { walk.queue.append((menu, [title])) }
         }
+        // Breadth first: every top-level menu is read before any submenu, so a big Bookmarks menu cannot hide Window.
+        walk.run()
         elements = walk.elements
         return walk.entries
     }
@@ -47,18 +49,25 @@ import NoHandsCore
         let deadline: ContinuousClock.Instant
         var entries: [MenuEntry] = []
         var elements: [AXUIElement] = []
+        var queue: [(menu: AXUIElement, path: [String])] = []
 
         var exhausted: Bool { entries.count >= AXMenuReader.maxItems || ContinuousClock.now >= deadline }
 
-        mutating func collect(_ menu: AXUIElement, path: [String]) {
-            for item in AXQuery.elements(menu, kAXChildrenAttribute) {
-                if exhausted { return }
-                // Separators have no title.
-                guard let title = AXQuery.string(item, kAXTitleAttribute) else { continue }
-                let enabled = (AXQuery.attr(item, kAXEnabledAttribute) as? Bool) ?? true
-                entries.append(MenuEntry(title: title, path: path, enabled: enabled))
-                elements.append(item)
-                for sub in AXQuery.elements(item, kAXChildrenAttribute) { collect(sub, path: path + [title]) }
+        mutating func run() {
+            var next = 0
+            while next < queue.count, !exhausted {
+                let (menu, path) = queue[next]
+                next += 1
+                for item in AXQuery.elements(menu, kAXChildrenAttribute) {
+                    if exhausted { return }
+                    // Separators have no title.
+                    guard let title = AXQuery.string(item, kAXTitleAttribute) else { continue }
+                    let enabled = (AXQuery.attr(item, kAXEnabledAttribute) as? Bool) ?? true
+                    let subs = AXQuery.elements(item, kAXChildrenAttribute)
+                    entries.append(MenuEntry(title: title, path: path, enabled: enabled, hasSubmenu: !subs.isEmpty))
+                    elements.append(item)
+                    for sub in subs { queue.append((sub, path + [title])) }
+                }
             }
         }
     }

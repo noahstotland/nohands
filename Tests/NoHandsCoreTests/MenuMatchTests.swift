@@ -1,15 +1,15 @@
 import Testing
 @testable import NoHandsCore
 
-private func item(_ title: String, _ path: [String] = ["File"], enabled: Bool = true) -> MenuEntry {
-    MenuEntry(title: title, path: path, enabled: enabled)
+private func item(_ title: String, _ path: [String] = ["File"], enabled: Bool = true, sub: Bool = false) -> MenuEntry {
+    MenuEntry(title: title, path: path, enabled: enabled, hasSubmenu: sub)
 }
 
 private let entries = [
     item("New Tab"), item("New Window"), item("New Incognito Window"),
     item("Save As…"), item("Save"), item("Close Tab", ["File"], enabled: false),
     item("Bookmark This Tab…", ["Bookmarks"]), item("Bookmark All Tabs…", ["Bookmarks"]),
-    item("Find", ["Edit"]), item("Find Next", ["Edit", "Find"]), item("Don't Save", ["Edit"]),
+    item("Find", ["Edit"], sub: true), item("Find…", ["Edit", "Find"]), item("Find Next", ["Edit", "Find"]), item("Don't Save", ["Edit"]),
     item("Zoom", ["Window"]), item("Zoom In", ["View"]),
 ]
 
@@ -33,8 +33,14 @@ private let entries = [
         ("edit > save as", nil),               // ...so the same words in another menu find nothing
         ("edit > find > find next", "Find Next"),
         ("view > zoom", "Zoom In"),
+        ("find", "Find…"),                     // the submenu parent is skipped for the command inside it
         ("close tab", "Close Tab"),            // disabled entries are still returned: the caller says it is disabled
     ]
+    // The model's steps match the exact title only, so "trash" cannot press "Empty Trash…".
+    let all = entries + [item("Move to Trash"), item("Empty Trash…")]
+    #expect(MenuMatch.firstMatch("trash", in: all).map { all[$0].title } == "Empty Trash…")
+    #expect(MenuMatch.firstMatch("trash", in: all, exactOnly: true) == nil)
+    #expect(MenuMatch.firstMatch("move to trash", in: all, exactOnly: true).map { all[$0].title } == "Move to Trash")
     for (spoken, title) in cases {
         let found = MenuMatch.firstMatch(spoken, in: entries).map { entries[$0].title }
         #expect(found == title, Comment(rawValue: "menu \(spoken)"))
