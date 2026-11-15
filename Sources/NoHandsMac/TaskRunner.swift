@@ -500,7 +500,6 @@ public enum TaskOutcome: Equatable, Sendable {
         }
     }
 
-    /// `hud` overrides the outcome's usual finish line.
     /// Reports what the task is doing now. Until the first step starts the board row shows the same words.
     private func setPhase(_ phase: TaskPhase) {
         guard trail.phase != phase else { return }
@@ -509,6 +508,7 @@ public enum TaskOutcome: Equatable, Sendable {
         if trail.steps.isEmpty, let line = TaskPanelText.phaseLine(trail) { onStatus?(.running(line)) }
     }
 
+    /// `hud` overrides the outcome's usual finish line.
     private func finish(_ outcome: TaskOutcome, hud: String? = nil) async -> TaskOutcome {
         // Spec Safety: a held mouse button is released on any exit; a successful `done` keeps what it did.
         if case .done = outcome {} else { executor.releaseAll() }
