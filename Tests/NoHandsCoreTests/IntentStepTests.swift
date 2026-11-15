@@ -9,7 +9,7 @@ import Foundation
     let a = try #require(s.range(of: "\"actions\"")?.lowerBound)
     #expect(i < st); #expect(st < a)
     #expect(s.contains(#""required":["intent","status","actions"]"#))
-    #expect(s.contains(#""enum":["continue","done","stuck","ignore"]"#))
+    #expect(s.contains(#""enum":["continue","done","stuck","ignore","ask"]"#))
     #expect(s.contains("\"wait\""))
     #expect(s.contains(#""ms":{"type":"integer"}"#))
     #expect(IntentSchema.systemPrompt.contains("- wait: pause for a loading page. Fields: ms (100-5000)."))
@@ -78,6 +78,18 @@ import Foundation
     #expect(ClaudeRequestBuilder.userMessage(request: req) == expected)
 }
 
+@Test func historyKeepsTheUsersAnswerWhole() {
+    let answer = String(repeating: "a", count: 200)
+    let asked = "Asked: Which Raptors game, against the Celtics or the Knicks? User answered: \(answer)"
+    let long = String(repeating: "x", count: 150)
+    let message = ClaudeRequestBuilder.userMessage(request: StepRequest(
+        goal: "g", step: 3, maxSteps: 12,
+        history: [StepRecord(intent: asked, actions: []), StepRecord(intent: long, actions: [])],
+        observation: ScreenObservation(app: "Safari", mode: .command)))
+    #expect(message.contains("  1. \(asked) -> [] (ok)"))
+    #expect(message.contains("  2. \(String(long.prefix(80))) -> "))   // any other intent stays one sentence
+}
+
 @Test func twoIdenticalStepsInARowGetANudgeOnEitherBackend() {
     let scroll: [Action] = [.scroll(.down, amount: 3)], back: [Action] = [.click(.label(2), button: .left, count: 1)]
     func message(_ lists: [[Action]]) -> String {
@@ -114,10 +126,10 @@ import Foundation
     for t in IntentExamples.turns {
         let step = try IntentDecoder.step(fromPayloadText: t.assistant)
         #expect(t.assistant.contains("\"status\""))
-        #expect(!step.actions.isEmpty)
+        #expect(!step.actions.isEmpty || step.status == .ask)   // an ask runs nothing
         statuses.append(step.status)
     }
-    #expect(statuses.contains(.continue)); #expect(statuses.contains(.ignore))
+    #expect(statuses.contains(.continue)); #expect(statuses.contains(.ignore)); #expect(statuses.contains(.ask))
     let users = IntentExamples.turns.map(\.user)
     let step2 = try #require(users.first { $0.contains("Step: 2 of") })
     #expect(step2.contains("  1. ") && step2.contains("(ok)"))

@@ -84,7 +84,9 @@ public struct ClaudeRequestBuilder: Sendable {
         var blocks = ["Goal: \(goal)\nStep: \(r.step) of \(r.maxSteps)\n"]
         for (i, h) in r.history.enumerated() {
             let outcome = h.failure.map { "FAILED: \(sanitize($0))" } ?? "ok"
-            blocks.append((i == 0 ? "History:\n" : "") + "  \(i + 1). \(sanitize(h.intent)) -> \(ActionSummary.kinds(h.actions)) (\(outcome))\n")
+            // A question and the user's answer (up to 80 + 200 characters) are kept whole; any other intent is one sentence.
+            let intent = sanitize(h.intent, limit: h.intent.hasPrefix(StepRecord.askedPrefix) ? 320 : 80)
+            blocks.append((i == 0 ? "History:\n" : "") + "  \(i + 1). \(intent) -> \(ActionSummary.kinds(h.actions)) (\(outcome))\n")
         }
         // Two identical steps in a row: say so while a third (which ends the task) can still be avoided.
         if let last = r.history.last, r.history.count >= 2, !last.actions.isEmpty, r.history[r.history.count - 2].actions == last.actions {

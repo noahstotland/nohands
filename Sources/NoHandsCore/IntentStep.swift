@@ -1,6 +1,6 @@
 import Foundation
 
-public enum StepStatus: String, Codable, Sendable, CaseIterable { case `continue`, done, stuck, ignore }
+public enum StepStatus: String, Codable, Sendable, CaseIterable { case `continue`, done, stuck, ignore, ask }
 
 public struct IntentStep: Equatable, Sendable {
     public var intent: String
@@ -68,6 +68,8 @@ public struct StepRecord: Equatable, Sendable {
     public var intent: String
     public var actions: [Action]
     public var failure: String?
+    /// Starts the record of a question the task asked and the user's answer; the request builder keeps its answer whole.
+    public static let askedPrefix = "Asked:"
     public init(intent: String, actions: [Action], failure: String? = nil) {
         self.intent = intent; self.actions = actions; self.failure = failure
     }

@@ -93,6 +93,9 @@ public enum IntentExamples {
          #"{"intent":"Move the Google Chrome window to the left half of the screen.","status":"done","actions":[{"kind":"move_window","placement":"left_half"}]}"#),
         (Self.msg("Finder", request: "what's the weather"),
          #"{"intent":"The user asked a question about the weather; this is not a computer action.","status":"ignore","actions":[{"kind":"ignore"}]}"#),
+        // Two matches on screen and the request does not say which: ask, run nothing.
+        (Self.msg("Safari", elements: [(1, "Raptors vs Celtics · Watch"), (2, "Raptors vs Knicks · Watch"), (3, "Schedule")], overlay: "labels", request: "open the raptors game"),
+         #"{"intent":"Which Raptors game, against the Celtics or the Knicks?","status":"ask","actions":[]}"#),
         // Two-step task: step 1 navigates and continues; step 2 sees the channel page and finishes.
         (ClaudeRequestBuilder.userMessage(request: StepRequest(
             goal: channelGoal, step: 1, maxSteps: 12, history: [],
