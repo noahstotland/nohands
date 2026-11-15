@@ -6,68 +6,27 @@
 
 ## Intent
 
-The corner panel says "step 2 of 24" for a task that finishes in 2 steps, because the number after "of" is the step
-limit (`maxTaskSteps` 12, `maxMediaTaskSteps` 24), not how many steps the task needs. NoHands decides one step at a
-time, so nobody knows the real total. The panel should say only what is true: which step it is on.
+The corner panel says "step 2 of 24" for a task that finishes in 2 steps, because the number after "of" is the step limit (`maxTaskSteps` 12, `maxMediaTaskSteps` 24). NoHands decides one step at a time, so the real total is unknown. The panel should say only which step it is on.
 
-## Goals, non-goals, anti-goals
+## Goals and limits
 
-Goals are the ticket's Scope and Acceptance: the progress line reads `step N` with no total, while a task runs and
-when it ends; the bar that fills toward the limit goes; the `Hit the N-step limit · try a smaller request` footer stays
-as it is.
-
-Non-goals, from the ticket: changing `maxTaskSteps` or `maxMediaTaskSteps` or how many steps a task takes, estimating
-the steps a task will need, changing the `(N steps)` count in the done line.
-
-Anti-goals:
-
-- Any label containing "of" after the step number, in any state.
-- Losing the step-limit footer, or its tone.
-- An empty gap in the panel where the bar used to be.
+- The progress line reads `step N` with no total, while a task runs and when it ends. The bar that fills toward the limit goes.
+- The `Hit the N-step limit · try a smaller request` footer stays as it is.
+- Non-goals: changing the step limits, estimating steps, the `(N steps)` count in the done line.
+- No "of" in any state, no lost footer, no empty gap where the bar was.
 
 ## Design
 
-### Core (`Sources/NoHandsCore/TaskTrail.swift`)
-
-- `TaskPanelContent.Progress` keeps only `label: String`; `fraction` is removed, since nothing draws a bar any more.
-- `TaskPanelText.bar(_:of:)` is replaced by a `stepLabel(_ n: Int)` that returns `Progress(label: "step \(n)")`.
-- While steps exist, the label is the last step's number, as today.
-- On the step-limit failure the label is still the last step's number (no longer forced to `maxSteps of maxSteps`);
-  the footer is unchanged and still names the limit from `trail.maxSteps`.
-- `TaskTrail.maxSteps` stays: the limit footer uses it.
-
-### Panel (`Sources/NoHandsMac/OverlayController.swift`)
-
-- The progress row draws only the label, left-aligned, in the muted colour, at the same row height. The track, the fill
-  and `trackHeight` (if nothing else uses it) are removed. `height(of:width:)` is unchanged: the row keeps one line.
-
-### Docs
-
-- `README.md` § Corner panel: the bar sentence becomes the step number (`step 3`) with no total, and why
-  (NoHands decides one step at a time and cannot know how many remain).
+- **Core** (`TaskTrail.swift`): `TaskPanelContent.Progress` keeps only `label`; `fraction` is removed. A `stepLabel(_:)` replaces `TaskPanelText.bar(_:of:)` and returns `step N`. On the step-limit failure the label is the last step's number, and the footer still names the limit from `trail.maxSteps`.
+- **Panel** (`OverlayController.swift`): the progress row draws only the label, left-aligned, muted, at the same row height. The track and fill are removed.
+- **README** § Corner panel: the step number with no total, and why.
 
 ## Tests
 
-`Tests/NoHandsCoreTests/TaskPanelTests.swift`, existing table:
-
-- Every `progress:` expectation becomes `step N` (for example `step 2`, `step 1` for the limit case (the label is the last step, not the limit)).
-- The table check adds that no progress label contains " of ".
-- `taskPanelLines` drops the two `fraction` checks and checks the label is `step 11`, including when the trail's limit
-  (5) is below the step count, which used to clamp the bar.
-- The limit case keeps its `Hit the 12-step limit · try a smaller request` footer and `.bad` tone.
-
-No new test file. `swift build` and `swift test` pass.
-
-## Manual check (listed in the PR)
-
-Run a two-step task in the app and see `step 1`, then `step 2`, no bar and no "of", and the panel's done line.
+In `TaskPanelTests`: every `progress:` expectation becomes `step N` and none contains " of "; the label is `step 11` even when the trail's limit (5) is below it; the limit case keeps its footer and `.bad` tone.
 
 ## Calls I made
 
-- The bar is removed in every state, including the step-limit failure, where it used to show full. The ticket only
-  says to drop it for a running task; a full bar at the end would be the only bar the user ever sees, so it reads as
-  noise. The red footer already says the limit was hit.
-- On the step-limit failure the label shows the last step's number rather than the limit. They are the same number in
-  practice; using the step keeps one rule for every state.
-- `Progress.fraction` is deleted rather than left unused, so no caller can bring back a bar toward the limit by accident.
-- The label is left-aligned where the bar used to start, rather than right-aligned where it sat after the bar.
+- The bar goes in every state, including the step-limit failure where it showed full. A lone full bar reads as noise, and the red footer already says the limit was hit.
+- On the limit failure the label shows the last step's number, one rule for every state.
+- `Progress.fraction` is deleted, so no caller can bring a bar back by accident.

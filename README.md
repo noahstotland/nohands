@@ -4,7 +4,7 @@
 
 Control your Mac with your voice and nothing else. Dictate into any app, press shortcuts, move and click the mouse, and give natural-language commands. Speech recognition runs on-device, so ordinary commands never touch the network.
 
-> **Status: work in progress.** The app is wired up end to end (microphone, voice activity detection, speech recognition, command routing, execution, menu-bar UI) but has not yet been verified on real hardware against real apps.
+> **Status: work in progress.** Not yet verified on real hardware against real apps.
 
 ## How it works
 
@@ -17,9 +17,8 @@ mic → Silero VAD → Parakeet speech recognition (on-device)
     → executor: keyboard/mouse events, accessibility lookups, grid and label overlays
 ```
 
-- **Fast path:** a deterministic grammar matches the common commands in under a millisecond.
-- **Natural language:** anything the grammar can't match goes to Claude, which returns structured actions. This needs an Anthropic API key or a local Ollama model, and is optional.
-- **Targeting:** say "show numbers" to label every clickable element in the frontmost app, or "grid" to overlay a numbered 10×8 grid you can zoom into.
+- **Fast path:** a deterministic grammar matches common commands in under a millisecond.
+- **Targeting:** "show numbers" labels clickable elements; "grid" overlays a numbered 10×8 grid. Claude or Ollama is optional.
 
 ## Requirements
 
@@ -43,242 +42,226 @@ The first build downloads and compiles [FluidAudio](https://github.com/FluidInfe
 scripts/bundle.sh && open build/NoHands.app
 ```
 
-Build from an up-to-date `main`: `scripts/bundle.sh` prints a warning to stderr when the checkout is behind `origin/main`, because features merged since then would be missing from the app.
+Build from an up-to-date `main` (`scripts/bundle.sh` warns when behind `origin/main`). A menu-bar app (no Dock icon) showing `CMD`, `DICT` or `ZZZ` for the mode.
 
-`scripts/bundle.sh` builds a release binary, assembles `build/NoHands.app` and code-signs it. NoHands is a menu-bar app (no Dock icon); the menu bar shows `CMD`, `DICT` or `ZZZ` for the current mode.
-
-**Prompt board.** Every prompt you speak gets a row at the top of the screen (below the menu bar, on the screen the pointer is on): your words on the left and how it is being serviced on the right, coloured by state. Blue while it is live (`listening…` while you are still speaking, `heard`, then for a task a phase line (`Reading · looking at the screen`, `Thinking · picking the next step`) until the first step starts and `step n · <what the model is doing>` after, with `✗ <why>` after a step that failed), yellow when `held` behind a running task, green when `done` (with the step count for a task), red when it `failed`, was `dropped` or `skipped (busy)`, grey when `stopped` or ignored. Finished rows stay 1.5 seconds (3 seconds when failed or dropped) and fade out; at most four prompts are shown. Notices such as `NoHands is listening` or `microphone error` appear as a line above the prompts.
-
-**Status bar.** A small bar appears when NoHands has something to say, and goes away when it has not: the prompt and its step while a task runs (then `done`, `stopped` or the failure for a few seconds), `Dictating`, `Asleep · say wake up`, `Paused`, `Loading speech model…`, or the problem with its fix (`Needs Accessibility: allow NoHands in System Settings`, `Microphone denied …`, `Error: … · choose Retry in the menu`). Idle in command mode it shows nothing. It is on by default, at the bottom right of the screen the pointer is on, below the corner task panel. The menu's Status Bar item chooses Off or Bottom Right (a stored Top or Bottom from an older version becomes Bottom Right); the choice applies at once and is remembered across launches (macOS user defaults, not `config.json`). The bar ignores clicks and hides while the grid or number badges are showing.
-
-**Recent commands and View Logs.** The menu's Recent commands submenu lists the last 50 commands, newest first, as `<what you said> · done|failed|stopped|ignored`. Choosing one, or choosing View Logs…, opens the NoHands Logs window: the commands on the left, and on the right the selected command's time, words, what handled it (grammar, Claude, the local model, or none), each step with its result, start time and duration, how it ended and how long it took, and for Claude the calls and tokens (`4 calls · 12,340 in · 48,100 cache read · 3,200 cache write`). The window updates as commands finish. Every command that was meant to do something is listed, including ones that failed or that the grammar rejected, and an unmatched phrase with the model off; ignored speech, answers to a task's question, words typed in dictation mode and a spoken stop (the stopped task shows `stopped`) are not. The local model has no token counts.
-
-**Corner panel.** While a request runs, a panel at the bottom right of the screen the pointer is on shows what you said, the steps so far (`✓` done, `✗` failed, a dot for the one running), a phase line with a small spinner while it works (`Reading`, `Thinking` or `Acting` with a few plain words, never your text) and the step number, `step 3`, with no total, because NoHands decides one step at a time and cannot know how many remain (the step limit, `maxTaskSteps` or `maxMediaTaskSteps` for a request to play something, is shown only when a task hits it). When the request ends the panel keeps the outcome (`done`, or the failure with what to try next) for 1.5 seconds (3 for a failure), then fades out. Saying "stop" clears it at once. A short command like `scroll down` shows only the phrase and the result. The panel has no setting, ignores clicks, and hides while the grid or number badges are showing.
+- **Prompt board.** One row per spoken prompt at the top of the pointer's screen: blue while live (`listening…`, `heard`, `Reading · looking at the screen`, `step n · <intent>`, `✗ <why>`), yellow `held`, green `done`, red `failed`, `dropped` or `skipped (busy)`, grey `stopped` or ignored. Finished rows stay 1.5 s (3 s if failed or dropped); at most four; notices (`NoHands is listening`, `microphone error`) show above. Details: `docs/superpowers/specs/2026-11-08-nh-71-no-hands-rows-design.md`, `docs/superpowers/specs/2026-11-15-nh-118-thinking-progress-design.md`.
+- **Status bar.** Bottom right of the pointer's screen, below the corner panel; shows only with something to say (`Dictating`, `Asleep · say wake up`, `Paused`, `Loading speech model…`, a task step, a problem with its fix); hides with the grid or number badges. Off or Bottom Right from the menu (macOS user defaults, not `config.json`). Details: `docs/superpowers/specs/2026-11-07-nh-66-status-bar-overlay-design.md`, `docs/superpowers/specs/2026-11-15-nh-92-status-bar-corner-design.md`.
+- **Corner panel.** While a request runs: what you said, the steps (`✓`, `✗`, a dot), a phase line (`Reading`, `Thinking` or `Acting`), `step 3` with no total; the outcome stays 1.5 s (3 s for a failure). Details: `docs/superpowers/specs/2026-11-08-nh-70-corner-overlay-design.md`.
+- **Recent commands and View Logs.** The last 50 commands, newest first, as `<what you said> · done|failed|stopped|ignored`; each opens in the NoHands Logs window (handler, steps, Claude calls and tokens: `4 calls · 12,340 in · 48,100 cache read · 3,200 cache write`). Details: `docs/superpowers/specs/2026-11-15-nh-111-view-logs-design.md`.
 
 **First run:**
 
-1. **Microphone** — macOS asks when the app starts. If you click Don't Allow, the menu shows "Microphone denied — open Settings".
-2. **Accessibility** — needed to type, click and read UI elements. macOS opens a prompt; enable NoHands under System Settings > Privacy & Security > Accessibility. The menu shows a red "Grant Accessibility…" item until it is granted.
-3. **Screen Recording** (optional) — needed only when `visionFallback` is on (see [Multi-step tasks](#multi-step-tasks)). The menu shows a red "Grant Screen Recording…" item, only while `visionFallback` is on, the backend is Claude and the permission is missing; it asks macOS and opens System Settings > Privacy & Security > Screen & System Audio Recording, where you enable NoHands. macOS often applies this grant only after the app is relaunched, so quit and reopen NoHands if the item stays after you allowed it. Without the grant, steps that would have a picture run without one and the prompt's row says `screen recording not granted`.
-4. NoHands starts listening only after Microphone and Accessibility are granted, and re-checks Accessibility every few seconds (and pauses if you revoke it), so no restart is needed. The first launch also downloads the speech models.
+1. **Microphone:** macOS asks at start; on Don't Allow the menu shows "Microphone denied" with an open-Settings item.
+2. **Accessibility:** enable NoHands under System Settings > Privacy & Security > Accessibility; a red "Grant Accessibility…" item shows until granted.
+3. **Screen Recording** (optional): with `visionFallback` on and Claude as backend, a red "Grant Screen Recording…" item opens System Settings > Privacy & Security > Screen & System Audio Recording; it often applies after a relaunch. Without it steps run without a picture (`screen recording not granted`).
+4. NoHands listens only once Microphone and Accessibility are granted, re-checking Accessibility every few seconds.
 
-**Ad-hoc signature caveat:** by default the app is ad-hoc signed, so macOS treats every rebuild as a new app and you must re-grant Microphone and Accessibility (and Screen Recording, if you use `visionFallback`) each time (remove the stale NoHands entry in Accessibility first, and likewise in Screen Recording; the new grant may need a relaunch to take effect). Set a stable signing identity to avoid this:
+**Ad-hoc signature:** every rebuild is a new app to macOS, so re-grant Microphone, Accessibility and Screen Recording each time. A stable identity avoids this:
 
 ```bash
 CODESIGN_IDENTITY="Apple Development: Your Name (TEAMID)" scripts/bundle.sh
 ```
 
-**Start at Login:** the menu's Start at Login item registers the app as a login item (System Settings > General > Login Items) and shows a tick while it is on; the state is read from macOS each time the menu opens. If you turned NoHands off in Login Items, the item says `allow in Login Items` and opens that pane. It is disabled when NoHands runs without an app bundle (`swift run`); use `build/NoHands.app`. The login item is tied to the app's path and signature, so a rebuild may need re-ticking or re-approval.
+**Start at Login:** a menu item registers a login item and shows a tick; if turned off in Login Items it says `allow in Login Items`. Disabled under `swift run`.
 
-**Logs:** each utterance logs one line, `[asr=…ms total=…ms sinceVoice=…ms] <transcript> -> <what it did>` (`sinceVoice` counts from the last moment you were heard, so it includes the silence wait that `total` leaves out), plus one `claude: step N <ms>ms cache=<read>/<written> in=<n> out=<n>` line per Claude response, a `claude: session calls=<n> in=<n> cache=<read>/<written> out=<n>` line when each Claude task ends (the running total for this app session) and one `ollama: step N <ms>ms` line per local model response (token counts and timing only, no text), an `intent backend: claude|local|off` line at start and on each switch from the Model menu, warm-up results, warnings and errors, through the unified log:
+**Logs:** each utterance logs `[asr=…ms total=…ms sinceVoice=…ms] <transcript> -> <what it did>`, plus `claude: step N <ms>ms cache=<read>/<written> in=<n> out=<n>`, `claude: session calls=<n> in=<n> cache=<read>/<written> out=<n>` (when each Claude task ends, the running total for this app session), `ollama: step N <ms>ms` and `intent backend: claude|local|off` lines:
 
 ```bash
 log stream --predicate 'subsystem == "dev.nohands.app"'
 ```
 
-Transcripts are logged as private, so they show as `<private>` unless private data logging is enabled (`sudo log config --mode "private_data:on"`). Running `build/NoHands.app/Contents/MacOS/NoHands` directly from a terminal also prints the full lines to that terminal.
+Transcripts log as `<private>` unless private data logging is on (`sudo log config --mode "private_data:on"`); running `build/NoHands.app/Contents/MacOS/NoHands` from a terminal prints full lines.
 
-**Claude API key:** shell exports do not reach an app started with `open`. Choose **Set Claude API key…** in the menu, paste the key into the masked field and restart NoHands; it is saved to `~/.config/nohands/config.json` (see Configuration) and never shown again. Without a key, natural-language commands show "LLM off" and the fast grammar still works.
+**Claude API key:** shell exports do not reach an app started with `open`. Choose **Set Claude API key…**, paste, restart; saved to `~/.config/nohands/config.json`. Without a key, natural-language commands show "LLM off".
 
 ## Local model (no API key)
 
-NoHands can resolve natural-language commands with a model running on your Mac through Ollama, so nothing leaves the machine and it works offline once the model is downloaded.
+Ollama on your Mac: nothing leaves the machine; works offline once downloaded.
 
 ```bash
 scripts/setup-local-model.sh            # picks a model by RAM
 scripts/setup-local-model.sh qwen2.5:3b-instruct   # or name one
 ```
 
-The script installs Ollama with Homebrew if needed, starts it, pulls the model and runs a smoke test. It is safe to re-run. You can also download the model from the NoHands menu. Ollama installed with brew starts at login (`brew services`), so the model server is there after a reboot.
+Installs Ollama with Homebrew if needed, starts it, pulls the model, smoke tests; safe to re-run. The menu can also download the model. Ollama from brew starts at login (`brew services`). The menu can also download the model.
 
-- **Default model:** `qwen2.5:7b-instruct` with 12 GB of RAM or more, otherwise `qwen2.5:3b-instruct`.
-- **RAM:** the 7B model needs about 5 GB free, the 3B model about 2 GB.
-- **Backend choice:** `intentBackend` is `auto` (default: Claude when an API key is set, otherwise the local model), `claude`, `local` or `off`. The menu's **Model: …** item shows which one is in use and switches between Claude and the local model with no restart: pick a row and the next command that needs the model goes to it (a task already running finishes on the old one, and a command held behind it goes to the new one). The pick is saved to `intentBackend` in `config.json`, so it holds across restarts. The Claude row is greyed out until a key is in effect; a key saved from the menu this session applies after a restart. `auto` and `off` are set in the file only: picking the row already in use does nothing, and the menu never writes `off`. Set `localModel` and `ollamaURL` to change the model or server (only `127.0.0.1`, `localhost` or `::1` over `http` is accepted).
-- **If it fails:** the prompt's row says `local model not running: start Ollama` or `local model not downloaded: see the NoHands menu`.
+- **Default model:** `qwen2.5:7b-instruct` with 12 GB of RAM or more, else `qwen2.5:3b-instruct` (free RAM about 5 GB and 2 GB).
+- **Backend:** `intentBackend` is `auto` (Claude when a key is set, else local), `claude`, `local` or `off`. The menu's **Model: …** item switches Claude and local with no restart; the Claude row is greyed out until a key is in effect. `auto` and `off` are file-only. Details: `docs/superpowers/specs/2026-11-09-nh-116-backend-toggle-design.md`.
+- **Server:** `localModel` and `ollamaURL` (`127.0.0.1`, `localhost` or `::1` over `http` only).
+- **If it fails:** `local model not running: start Ollama` or `local model not downloaded: see the NoHands menu`.
 
 ## Voice commands
 
 | Say | Does |
 |---|---|
-| `type <words>` | Types the words with spoken punctuation applied |
-| `spell <letters>` | Types letters, NATO words (`kilo`, `x ray`), digits and `space`, `dash`, `dot`, `underscore`, `at sign` as one string with no spaces; `capital` uppercases the next letter (`spell capital kilo nine x ray` types `K9x`). One unknown word types nothing and the row says which |
+| `type <words>` | Types the words, spoken punctuation applied |
+| `spell <letters>` | Letters, NATO words (`kilo`, `x ray`), digits, `space`, `dash`, `dot`, `underscore`, `at sign` as one string; `capital` uppercases the next letter (`spell capital kilo nine x ray` types `K9x`) |
 | `press command shift s` | Presses a key chord |
 | `enter`, `tab`, `escape`, `delete`, arrow names | Presses that key |
 | `undo`, `redo`, `copy`, `paste`, `cut`, `select all`, `save`, `find` | Standard shortcuts |
-| `new tab`, `close tab`, `close window`, `quit app`, `switch app`, `spotlight` | App and window shortcuts; filler words are ignored, so `close the current tab` and `close this window` work too |
+| `new tab`, `close tab`, `close window`, `quit app`, `switch app`, `spotlight` | App and window shortcuts; filler ignored (`close the current tab`, `close this window`) |
 | `minimize`, `full screen`, `hide app`, `reload` / `refresh` | Window and app shortcuts |
-| `left half`, `right half`, `snap left`, `top left`, `maximize`, `center window` | Moves and resizes the frontmost window on its screen (halves, quarters, thirds); richer phrasing such as `make the window half width and snap to the left side of the screen` goes through the model |
+| `left half`, `right half`, `snap left`, `top left`, `maximize`, `center window` | Moves and resizes the front window; richer phrasing such as `make the window half width and snap to the left side of the screen` goes to the model |
 | `go back`, `go forward`, `next tab`, `previous tab` | Browser and tab navigation |
-| `tab 3`, `tab number 3`, `switch to tab 3`, `go to tab 3`, `first tab`, `last tab` | Go to that tab (1 to 99) in the front browser. Tabs 1 to 8 and `last` press command-1 to command-9, which also works in Firefox; a higher number clicks the tab in the strip, so it needs a browser that shows its strip to Accessibility (Chrome, Safari). Does nothing outside a browser (`no browser in front`) |
-| `switch to the YouTube tab`, `go to the YouTube tab`, `open the YouTube tab` | Go to the tab whose title matches the words: the same title, else one that starts with them, else one that holds every word; a tab that is not already showing wins, then the leftmost. The lead word and the closing `tab` are required (`youtube tab` alone is not a command), and a name can't start with `new`, `next`, `previous`, `first`, `last` or `other`. A miss says `no tab called …` |
-| `close the other tabs`, `close other tabs`, `close all other tabs` | Presses the browser's own Close Other Tabs menu item (Safari has it in File). A browser whose menu bar has no such item (Chrome keeps it in the tab's right-click menu) says `no Close Other Tabs menu item in …` and closes nothing |
-| `list tabs`, `list the tabs`, `list my tabs` | Shows the front window's tabs as one line on the board for a few seconds: `1 YouTube · 2* Inbox · 3 GitHub`, the open tab starred, titles cut short, `+N more` when the strip is long |
-| `go to <site>` | A site name or domain opens in your default browser; other text goes to the address bar, typed and followed by Return |
-| `search for <words>` | Searches where you are: the search box of the page or app in front (YouTube, Amazon, GitHub, Finder, Mail…) gets the words and Return; a page without one but with a known results page (YouTube, Google, Amazon, Reddit, Wikipedia…) is navigated to it in the current tab; any other browser page searches from the address bar. In an app with nothing to search, the row says so and nothing is typed. A search box outside the front window is not used, and words that start with a script or browser scheme (`javascript:`, `file:`, `chrome:`), or any other `scheme:text` with no space after the colon, are refused with `can't search for that` |
-| `search for <words> on <site>`, `search <site> for <words>` | When that site is the page in front, it is searched there: its search box gets the words and Return, else its results page opens in the same tab. Otherwise its results page opens in your default browser |
-| `is it playing`, `is the video playing`, `is anything playing` | Says whether media is playing in the front window (`playing`, `paused`, `none`), on the prompt's row. A Pause or Play button in the window decides; with no such button, sound from any other app on the Mac counts as `playing` |
+| `tab 3`, `tab number 3`, `switch to tab 3`, `go to tab 3`, `first tab`, `last tab` | Tab 1 to 99; outside a browser `no browser in front` |
+| `switch to the YouTube tab`, `go to the YouTube tab`, `open the YouTube tab` | Tab by title; miss: `no tab called …` |
+| `close the other tabs`, `close other tabs`, `close all other tabs` | Close Other Tabs menu item; none (Chrome): `no Close Other Tabs menu item in …` |
+| `list tabs`, `list the tabs`, `list my tabs` | Board line for a few seconds: `1 YouTube · 2* Inbox · 3 GitHub` |
+| `go to <site>` | Site or domain in the default browser; other text goes to the address bar |
+| `search for <words>` | The page's or app's search box, else a known results page (YouTube, Google, Amazon, Reddit, Wikipedia…), else the address bar. Refused: `javascript:`, `file:`, `chrome:`, any `scheme:text`: `can't search for that` |
+| `search for <words> on <site>`, `search <site> for <words>` | That site's search box if in front, else its results page |
+| `is it playing`, `is the video playing`, `is anything playing` | Row says `playing`, `paused` or `none` |
 | `click`, `double click`, `right click`, `middle click` | Clicks at the pointer |
 | `click 42` | Clicks label or grid cell 42 |
 | `click save` | Clicks the element named "save" |
-| `click first video`, `click the second result`, `click the 3rd link`, `click last video` | When no element has exactly that title, a position among the numbered elements: any other word (`video`, `result`, `one`, …) counts the page's links with a title of three or more words (a thumbnail and title link with the same name count once); `link`, `button`, `checkbox`, `tab`, `field`, `box` and `menu item` count elements of that role. Ordinals run `first` to `tenth`, `1st`, `2nd`, … and `last`. With too few matches it fails with `no element named …; say its label number from the list`. Only `click` and `move`; a model step that sends a position is clicked the same way |
-| `hold click` / `release click` | Press and release the mouse button (drag) |
+| `click first video`, `click the second result`, `click the 3rd link`, `click last video` | With no exact title, the position among numbered elements (`first` to `tenth`, `1st`, `2nd`, … `last`); too few: `no element named …; say its label number from the list` |
+| `hold click` / `release click` | Press and release the button (drag) |
 | `move up 100`, `move to 12` | Moves the pointer |
 | `scroll down 10` | Scrolls |
-| `find <words>` | Scrolls the front window until text or an element with those words (a link, button, heading or label; typed field contents never match) is on screen and leaves the pointer on it (when agent-desktop found the match instead of the app's own tree it cannot, so the pointer stays), so `click` opens it. An exact match wins over one that starts with the words, then one that contains them; a leading `the` is ignored. Bare `find` is still command-F. With nothing on the page the row says `no match for <words> on this page`. The model has the same `find` action, which does not move the pointer and lists the match first in its next step (when the find is the step's last action and number badges are not showing) |
-| `scroll to <words>` | The same as `find <words>`. `scroll to the top` and `scroll to the bottom` are not finds: they go to the model |
+| `find <words>` | Scrolls until text or an element with those words shows, pointer left on it; bare `find` is command-F; none: `no match for <words> on this page` |
+| `scroll to <words>` | Same as `find <words>`; `scroll to the top` and `scroll to the bottom` go to the model |
 | `grid`, `zoom 35`, `show numbers`, `hide` | Targeting overlays |
 | `open safari` | Opens or focuses an app |
-| `open youtube`, `open youtube.com`, `open reddit in safari` | Opens a website in your default browser, or in the named one (known site names: YouTube, Gmail, Google, Reddit, GitHub, Wikipedia, Netflix, Amazon and others; any `name.com` works) |
+| `open youtube`, `open youtube.com`, `open reddit in safari` | Website in the default or named browser (any `name.com` works) |
 | `start dictating` / `stop dictating` | Switch between command and dictation mode |
 | `scratch that` (dictation) | Deletes what your last dictated phrase typed |
 | `delete word` (dictation) | Deletes the previous word |
 | `go to sleep` / `wake up` | Pause and resume listening |
-| `menu <words>` | Presses the menu item of the front app that the words name, such as `menu bookmark this tab` or `menu save as`, through Accessibility; the menu does not open on screen. An exact title wins, else a title that starts with the words, else one that holds every word; a mishearing finds nothing and the row says `no menu item called <words>`. A greyed-out item says `menu item <title> is disabled`. The Apple menu is never searched (no `menu shut down`) |
+| `menu <words>` | Presses the front app's menu item through Accessibility, e.g. `menu bookmark this tab`, `menu save as`; none: `no menu item called <words>`; greyed: `menu item <title> is disabled`; the Apple menu is never searched (no `menu shut down`) |
 
-With `attentionWord` set (see Configuration), start each command with it: `computer, new tab`. Commands without it are ignored.
+Details: `docs/superpowers/specs/2026-11-05-nh-10-spell-command-design.md`, `docs/superpowers/specs/2026-11-15-nh-53-browser-tabs-design.md`, `docs/superpowers/specs/2026-11-05-nh-15-search-on-site-design.md`, `docs/superpowers/specs/2026-11-15-nh-93-ordinal-click-target-design.md`, `docs/superpowers/specs/2026-11-15-nh-44-find-on-page-design.md`.
 
-In a browser, number badges and `click <name>` cover the page's links, buttons and fields as well as the toolbar; `show numbers` and `click <name>` can take up to about half a second longer in a browser than in other apps, and the first one in a Chromium browser such as Chrome (once per launch of the browser) about a second longer while the page's accessibility tree is built.
-
-In dictation mode, say `period`, `comma`, `question mark`, `new line`, `new paragraph`, `open quote` and similar to insert punctuation.
+- With `attentionWord` set, start each command with it: `computer, new tab`.
+- In a browser `show numbers` and `click <name>` can take about half a second longer (a second on the first per launch in Chromium).
+- In dictation mode, say `period`, `comma`, `question mark`, `new line`, `new paragraph`, `open quote` and similar to insert punctuation.
 
 ### Per-app commands
 
-An app can have its own phrases, which work only while it is in front and are checked before the global ones: where an app and the table above share a phrase, the app's wins in that app only. Leading `open`, `go to` and `a` / `the` are ignored when looking one up, so `open a new tab`, `go to the new tab` and `new tab` mean the same in an app that has the phrase; where the front app has no such phrase, `open <phrase>` (two or more words) also runs a phrase from the table above (`open a new tab` presses command-T). Each app adds its rows below.
+An app can have phrases that work only while it is in front and win on a shared phrase. Leading `open`, `go to` and `a` / `the` are ignored in lookup (`open a new tab`, `go to the new tab`, `new tab` are the same); where the app lacks the phrase, `open <phrase>` (two or more words) runs the global one (`open a new tab` presses command-T). Each app adds its rows below. Details: `docs/superpowers/specs/2026-11-15-nh-76-per-app-commands-design.md`.
 
 | App | Say | Does |
 |---|---|---|
 
 ## CLI tools
 
-`nohands-cli` exercises the pieces without the menu-bar app (`swift run nohands-cli <subcommand>`). Subcommands that act on other apps need Accessibility for your terminal and wait a few seconds so you can focus the target app. `task` with `visionFallback` on (see Configuration) also needs Screen Recording for your terminal, and sends pictures of the focused window to Claude on the steps described under Vision fallback.
+`nohands-cli` exercises the pieces without the menu-bar app (`swift run nohands-cli <subcommand>`). Subcommands acting on other apps need Accessibility for your terminal and wait a few seconds so you can focus the target.
 
 | Subcommand | Does |
 |---|---|
-| `type "<text>"` | Waits 2 s, then types the text |
-| `key "<chord>"` | Presses a key chord, e.g. `"command shift s"` |
+| `type "<text>"` | Waits 2 s, then types |
+| `key "<chord>"` | Presses a chord, e.g. `"command shift s"` |
 | `click-at <x> <y>` | Clicks at screen coordinates |
 | `move <x> <y>` | Moves the pointer |
-| `transcribe <wav>` | Transcribes an audio file and prints timings |
-| `vad-test <wav>` | Prints voice-activity events for an audio file |
-| `endpoint-test <wav>…` | Replays each file through the VAD, the early close and the speech recognizer, and prints the early and full text, whether the early close fired and was accepted, and the milliseconds from the true end of speech to the early text; ends with a summary line |
-| `bench <dir>` | Dry-run latency benchmark: replays each `.wav` in the folder through the VAD, early close and speech recognizer, parses the text, and prints per-file lag, recognition and parse times plus p50 and p95 per stage; executes nothing and calls no model backend (the speech models download on first use, so a first run needs the network). Phrase list and a generator script: `Tests/Fixtures/audio/README.md` |
+| `transcribe <wav>` | Transcribes a file, prints timings |
+| `vad-test <wav>` | Prints voice-activity events |
+| `endpoint-test <wav>…` | Replays files through VAD, early close and recognizer; prints early and full text and timing |
+| `bench <dir>` | Dry-run latency benchmark over each `.wav`: p50 and p95 per stage; no model backend. Phrases: `Tests/Fixtures/audio/README.md` |
 | `elements` | Lists the frontmost app's actionable elements |
 | `click "<name>"` | Clicks the named element |
 | `grid` | Shows the 10×8 grid, zooms into cell 35 |
-| `labels` | Shows numbered badges on the frontmost app's elements |
-| `parse "<text>" [--app <bundle id>]` | Dry run: prints the actions the grammar produces (or "no match -> LLM", or "rejected: ..." for a `spell` with an unknown word, e.g. `parse "spell capital kilo nine x ray"`); executes nothing |
-| `menu "<words>"` / `menu --list` | After 2 s (3 s for `--list`) prints the frontmost app's menu item those words name and presses it; `--list` prints the app's menu items. Dev tools for checking menu names and `AXPress` in an app |
+| `labels` | Shows numbered badges |
+| `parse "<text>" [--app <bundle id>]` | Dry run: the grammar's actions, "no match -> LLM", or "rejected: ..." |
+| `menu "<words>"` / `menu --list` | After 2 s (3 s for `--list`) presses the frontmost app's named menu item, or lists them |
 | `run "<phrase>"...` | Executes grammar phrases in order |
-| `observe` | Prints what the task loop sends the model about the frontmost app: window title, URL, a `Media:` line (`playing`, `paused` or `none`) and numbered elements with roles |
-| `resolve "<text>"` | Dry run: sends text and the frontmost app's labels to the configured backend and prints the step (`intent`, `status`, actions); executes nothing (Claude spends API credit) |
-| `task "<goal>"` | Waits 3 s, then runs the goal as a multi-step task on the frontmost app for real, printing each step's intent, actions and settle time, then the outcome; Ctrl-C stops it like "stop", a second Ctrl-C quits at once (status 130); exits 2 when the task ends stuck, failed or stopped |
-| `scenarios [file] [--only name]` | Waits 3 s, then runs each scripted task goal in `scripts/task-scenarios.json` (or `file`) for real, one at a time, and scores it against a fresh screen check rather than the model's word: `pass`, `false-done` (the model said done, the screen disagrees), `unclaimed` (the screen is right but the task did not end done), `fail`, `stopped`, `start-failed` or `not-run`. Prints each scenario's steps and time, then a summary and a markdown table. Exits 0 only when every scenario passes, 2 otherwise (1 for a bad file or `--only` name). It takes over the screen, mouse and keyboard for several minutes and leaves tabs open: close the tabs an earlier run left first. Ctrl-C stops the suite; a second quits at once (130) |
-| `listen` | Microphone to VAD to speech recognition, printing transcripts |
-| `claude-check` | Sends one small request to Claude with your key (the app's real step request, asking for one token) and prints whether commands will work: connected, key rejected, model not found, request rejected (with the API's message, key hidden), rate limited, unavailable, timed out, no network, or no key (nothing is sent). Exits 0 only when connected. Spends about one step's input tokens |
-| `desktop-status` | Where the agent-desktop binary was found, its version, what it reports for Accessibility, and the harness in use |
-| `snapshot [app]` | Waits 3 s, then prints the task-loop observation of the frontmost (or named) app as agent-desktop sees it: a `Media:` line and numbered elements with roles, values and states |
+| `observe` | Prints what the task loop sends the model: title, URL, `Media:` line, numbered elements |
+| `resolve "<text>"` | Dry run: sends text and labels to the backend, prints the step (`intent`, `status`, actions); spends API credit |
+| `task "<goal>"` | Waits 3 s, runs the goal as a task for real, printing each step. Ctrl-C stops it, a second quits (130); exits 2 when stuck, failed or stopped |
+| `scenarios [file] [--only name]` | Waits 3 s, runs each goal in `scripts/task-scenarios.json` for real, scored against a fresh screen check: `pass`, `false-done`, `unclaimed`, `fail`, `stopped`, `start-failed`, `not-run`. Exits 0 only when all pass, 2 otherwise (1 for a bad file or name). Takes over screen, mouse and keyboard. Ctrl-C stops; a second quits (130). Details: `docs/superpowers/specs/2026-11-09-nh-49-task-scenarios-design.md` |
+| `listen` | Microphone to recognition, printing transcripts |
+| `claude-check` | One-token request with your key; prints connected, key rejected, model not found, request rejected, rate limited, unavailable, timed out, no network, or no key. Exit 0 only when connected |
+| `desktop-status` | Where agent-desktop was found, version, Accessibility, harness in use |
+| `snapshot [app]` | Waits 3 s, prints the task-loop observation as agent-desktop sees it |
 
 ## Configuration
 
-Optional file at `~/.config/nohands/config.json`. Every key may be omitted. For the bundled app this file is the way to supply the API key, and the menu's Set Claude API key… (Change Claude API key… once one is saved) writes it for you: `ANTHROPIC_API_KEY` in the environment overrides the file, but it only reaches the app when you run the binary from a terminal or set it with `launchctl setenv ANTHROPIC_API_KEY ...`. The file holds a secret: Set Claude API key… leaves the file mode 600 and the folder mode 700 (to set it by hand, run `chmod 600 ~/.config/nohands/config.json`); NoHands logs a warning at launch if it contains a key and is readable by other users. Invalid JSON falls back to defaults and is flagged in the menu. The menu's Open config.json… creates the file (`{}`, mode 600, in a `~/.config/nohands` folder of mode 700) if it is missing and opens it in your default editor; Open config.json… never changes an existing file. Set Claude API key… keeps every other setting but rewrites the file sorted and indented, and refuses a config.json that is not valid JSON or a symlink (fix it by hand first). The Model item does the same for `intentBackend`, except that it keeps the file's existing mode (a new file is mode 600). Changes apply after a restart, except `intentBackend` set from the Model item, which applies from the next command.
+Optional file `~/.config/nohands/config.json`; every key may be omitted. Changes apply after a restart, except `intentBackend` set from the Model item. Invalid JSON falls back to defaults and is flagged in the menu.
 
-The menu's Claude line says what is set up, from the config alone and with no network traffic: `Claude: key set (config.json)` (or `ANTHROPIC_API_KEY`), `Claude: no key, using the local model`, or `Claude: not used (intentBackend = local)`. Choose Check Claude connection to test it: NoHands sends one small request (the real step request, asking for one token) and the line then reads, for example, `Claude: connected at 14:32` (with a green ✓ in front, shown only for a connected result and not while a check runs) or `Claude: key rejected at 14:32, check anthropicAPIKey`, until you restart or switch model. The check runs only when you choose it, and spends about one request's input tokens. `nohands-cli claude-check` does the same from a terminal and prints the API's full error message when it rejects the request. The key itself is never shown.
+| Key | Default | Range / values |
+|---|---|---|
+| `anthropicAPIKey` | none | `sk-ant-...` |
+| `intentModel` | `claude-haiku-5-5` | any Claude model id |
+| `intentEffort` | `low` | `low` … `max` |
+| `intentBackend` | `auto` | `auto`, `claude`, `local`, `off` |
+| `localModel` | `qwen2.5:7b-instruct` | any Ollama model |
+| `ollamaURL` | `http://127.0.0.1:11434` | loopback `http` only |
+| `asrModelVersion` | `v2` | |
+| `silenceMs` | `1000` | |
+| `earlySilenceMs` | `350` | `0` turns off |
+| `mergeWindowMs` | `500` | `0` acts at once |
+| `mergeWindowUnfinishedMs` | `1500` | `0` acts at once |
+| `gridColumns` | `10` | |
+| `gridRows` | `8` | |
+| `moveStepPx` | `50` | |
+| `scrollStepLines` | `5` | |
+| `maxTaskSteps` | `12` | 1 to 30 |
+| `maxMediaTaskSteps` | `24` | 1 to 30 |
+| `llmDeadlineMs` | `12000` | 2000 to 60000 |
+| `settleMs` | `3000` | 0 to 10000 |
+| `maxObservedElements` | `120` | 10 to 300 |
+| `localLlmDeadlineMs` | `30000` | 2000 to 120000 |
+| `localMaxObservedElements` | `40` | 10 to 300 |
+| `echoCancellation` | `true` | |
+| `attentionWord` | `""` | up to three words |
+| `visionFallback` | `false` | |
 
-Under the Claude line, once Claude has made a call, a second line shows the running total for this app session, for example `Claude this session: 14 calls, 31k in, 9k cached, 2k out` ("in" is fresh input including cache writes, "cached" is cache reads). It counts every call that got a reply, including the connection check and calls from tasks you stopped, resets when NoHands restarts (not when the config reloads or the backend changes), and holds counts only, never text.
+The agent-desktop keys are under [agent-desktop harness](#agent-desktop-harness).
 
-```json
-{
-  "anthropicAPIKey": "sk-ant-...",
-  "intentModel": "claude-haiku-5-5",
-  "intentEffort": "low",
-  "intentBackend": "auto",
-  "localModel": "qwen2.5:7b-instruct",
-  "ollamaURL": "http://127.0.0.1:11434",
-  "asrModelVersion": "v2",
-  "silenceMs": 1000,
-  "earlySilenceMs": 350,
-  "mergeWindowMs": 500,
-  "mergeWindowUnfinishedMs": 1500,
-  "gridColumns": 10,
-  "gridRows": 8,
-  "moveStepPx": 50,
-  "scrollStepLines": 5,
-  "maxTaskSteps": 12,
-  "maxMediaTaskSteps": 24,
-  "llmDeadlineMs": 12000,
-  "settleMs": 3000,
-  "maxObservedElements": 120,
-  "localLlmDeadlineMs": 30000,
-  "localMaxObservedElements": 40,
-  "echoCancellation": true,
-  "attentionWord": "",
-  "visionFallback": false
-}
-```
-
-**Echo cancellation.** `echoCancellation` (true by default) turns on macOS voice processing on the microphone, which removes what the Mac's own speakers play before NoHands listens. Set it to `false` if an external audio interface does its own processing and the two clash. If macOS refuses voice processing, NoHands keeps listening without it and says so in the log.
-
-**Attention word.** `attentionWord` (empty by default, which means off) makes command mode act only on utterances that start with it: with `"computer"`, `computer, new tab` opens a tab and `new tab` on its own does nothing, with no HUD or row. It can be up to three words; a longer value, or a stop phrase such as "stop", is treated as off. The word is matched in the transcript, not acoustically, so pick a word the recognizer hears reliably and that you don't say in passing; if it mishears the word, the command is silently ignored. `stop` (and `computer, stop`), `wake up` and the dictation escapes (`stop dictating`, `command mode`) work with or without the word. Dictation mode still types everything it hears. Say the word first: "computer, stop" stops, "stop, computer" does not. Don't pick a command phrase such as "start dictating" as the word.
-
-**Task loop keys.** `maxTaskSteps` (1 to 30) is how many observe-and-act steps a multi-step request may take. `maxMediaTaskSteps` (1 to 30, default 24) replaces it for a request to play or watch something (it has a word like play, watch, stream, video, game, match, movie, episode or listen), because stream sites throw overlays and pop-unders before the play button. `llmDeadlineMs` (2000 to 60000) is how long each model call may take. `settleMs` (0 to 10000) is the most time, in wall-clock terms and including the time spent reading the screen, to wait for the screen to stop changing after an action (and before the first step only when a Chromium browser's page content was just switched on). The wait depends on what the step did: none after a `wait` or a read, one short pause after typing or scrolling, and polling up to `settleMs` after a click, a page or app open or Return; `settleMs` is the most it can take. `maxObservedElements` (10 to 300) caps how many on-screen elements are sent to the model. When the local model is the backend, `localLlmDeadlineMs` (2000 to 120000, default 30000) and `localMaxObservedElements` (10 to 300, default 40) replace those two: a 7B model on an M1 Pro needs 5 to 20 s per step, and every element costs about 14 prompt tokens.
-
-**Vision fallback.** `visionFallback` (false by default) lets a task step send a picture of the focused window to Claude when the accessibility tree has failed the model. It works only with Claude as the intent backend (the local model never gets a picture, whatever this key says) and needs the Screen Recording permission. See [Multi-step tasks](#multi-step-tasks) and [Privacy](#privacy).
-
-**Pausing mid-command.** You do not have to say a command in one breath. `silenceMs` is how long you can go quiet before the recognizer closes an utterance (1 s by default). A complete command that is not left open for more words (a key command, a mode change, a numbered click, scroll, move) and a stop phrase are the exception: they close after `earlySilenceMs` of quiet (about 350 ms by default, one 256 ms voice-detector chunk), so "new tab" or "stop" acts well before a full second passes. Commands that carry words you may still be saying (`type …`, `open …`, `go to …`, `search for …`, `click <name>`), anything the grammar does not parse, and anything said while words are already held keep `silenceMs`; dictation and sleep always do. Set `earlySilenceMs` to 0 to turn this off; the catch is that a pause of 350 ms or more inside a closed command acts on the first part ("click twenty … three" clicks 20). After the full silence, a transcript the fast grammar does not already understand is held for `mergeWindowMs` (longer, `mergeWindowUnfinishedMs`, when it starts with `spell`, which the grammar understands but holds so a pause mid-spelling stays one string, or when it ends on a word like "the" or "click" that leaves the command hanging); its row on the prompt board shows `listening…`. If you start speaking again inside that window, the next piece is appended and the whole thing is treated as one request, so "click the … uh, the back button" reaches the model as a single sentence. Set both windows to 0 to act on every utterance at once. A stop phrase ("stop", "cancel", "never mind", also "stop stop" or "um, stop") is never held or merged: it goes through at once, and in command mode it also discards the unfinished words before it. In dictation, "stop dictating" and "command mode" likewise go through on their own instead of being typed as part of the text, and so do "scratch that" and "delete word".
-
-**How the model reads a request.** The transcript comes from speech recognition, so the model is told to first write a one-sentence `intent` (what you meant, with recognition errors, filler and self-corrections resolved) and only then the actions that carry it out. `intentEffort` (`low` … `max`) sets how hard Claude thinks before answering; `low` is the default and the fastest.
-
-The default model is `claude-haiku-5-5` at `low` effort, chosen for cost. For a stronger model, set `"intentModel": "claude-opus-5-5"` and `"intentEffort": "medium"` in `config.json` and restart. Haiku has no server-side fallback, so a request the model declines is not retried on another model; it just fails with the usual "didn't catch that" row.
+- **API key.** `ANTHROPIC_API_KEY` overrides the file but reaches the app only from a terminal or after `launchctl setenv ANTHROPIC_API_KEY ...`. The menu's key item writes the file with mode 600 (folder 700; by hand `chmod 600 ~/.config/nohands/config.json`) and refuses a symlink or invalid JSON; the Model item does the same for `intentBackend`. A launch warning is logged if others can read a file holding a key. Open config.json… creates `{}` if missing, never edits an existing file.
+- **Claude line in the menu** reads the config alone: `Claude: key set (config.json)`, `Claude: no key, using the local model`, `Claude: not used (intentBackend = local)`. Check Claude connection sends a one-token request: `Claude: connected at 14:32` or `Claude: key rejected at 14:32, check anthropicAPIKey`. Details: `docs/superpowers/specs/2026-11-09-nh-103-claude-status-menu-design.md`.
+- **Session total:** once Claude has made a call, a second line shows the running total for this app session, e.g. `Claude this session: 14 calls, 31k in, 9k cached, 2k out` ("in" is fresh input including cache writes, "cached" is cache reads). It counts every call that got a reply, including the connection check and stopped tasks, resets when NoHands restarts (not on config reload or backend change), and holds counts only, never text. Details: `docs/superpowers/specs/2026-11-15-nh-112-token-usage-design.md`.
+- **Echo cancellation.** `echoCancellation` removes what the Mac's speakers play (macOS voice processing); set `false` if an external audio interface clashes.
+- **Attention word.** `attentionWord` (empty = off): command mode acts only on utterances starting with it (`computer, new tab` works, `new tab` alone does nothing). More than three words, or a stop phrase, counts as off. `stop`, `wake up` and the dictation escapes (`stop dictating`, `command mode`) work with or without it. Details: `docs/superpowers/specs/2026-11-05-nh-12-attention-word-design.md`.
+- **Task loop keys.** `maxMediaTaskSteps` replaces `maxTaskSteps` for a request to play or watch. `llmDeadlineMs`: per model call. `settleMs`: the most wait for the screen to settle after an action. `maxObservedElements`: elements sent to the model. The local model uses `localLlmDeadlineMs` and `localMaxObservedElements` instead.
+- **Pausing mid-command.** `silenceMs` closes an utterance. A complete command and a stop phrase close after `earlySilenceMs` (one 256 ms chunk), so a pause of 350 ms or more inside acts on the first part ("click twenty … three" clicks 20); open-ended commands (`type …`, `open …`, `go to …`, `search for …`, `click <name>`), unparsed speech, dictation and sleep keep `silenceMs`. Speech the grammar does not understand is then held `mergeWindowMs` (`mergeWindowUnfinishedMs` if it starts with `spell` or ends on a word like "the"), row `listening…`, later speech appended. A stop phrase (see Stopping; also "um, stop") is never held. Details: `docs/superpowers/specs/2026-11-08-nh-36-early-grammar-endpointing-design.md`.
+- **How the model reads a request.** A one-sentence `intent`, then the actions. `intentEffort` sets how hard Claude thinks; `low` is fastest. `claude-haiku-5-5` at `low` is chosen for cost; for more, set `"intentModel": "claude-opus-5-5"` and `"intentEffort": "medium"`. No server-side fallback on Haiku.
 
 ## Multi-step tasks
 
-A request the fast grammar does not understand runs as a task: NoHands looks at the frontmost app (window title, URL and up to `maxObservedElements` numbered on-screen elements; while number badges are shown, the model sees the same numbers as the badges), asks the model for the next step, runs that step's actions, waits for the screen to stop changing (how long depends on what the step did, and `settleMs` is the most it can take), and looks again. Each step's answer is a one-sentence `intent`, a `status` (`continue`, `done`, `stuck`, `ignore` or `ask`) and a few actions; the prompt's row shows `step n · <intent>` (and `✗ <why>` after a step whose actions failed). "Open Veritasium's latest video" becomes: open the channel's Videos tab in the default browser (`open_url`; the browser is named only when you name one), then (after seeing the page) click the first video. Before typing into an app it just opened, NoHands waits for that app to be frontmost and to show a window, so a cold-launched browser does not swallow the keystrokes. The task ends when the model says `done`, says `stuck` (the row shows why), reaches the step cap (`maxTaskSteps`, or `maxMediaTaskSteps` for a request to play or watch something), or proposes the same actions three times in a row; any held mouse button is released when a task does not finish `done`. If the model answers `ignore` after earlier steps already acted, the row shows `stopped: <intent>`. A goal to play, watch, turn on or listen to something is done only when the screen shows media playing: after the model says `done`, NoHands looks once more, and if a Play button is still showing it asks the model once more (`not playing yet`), then ends `stuck` if the video still is not playing. The model can also wait for playback (`wait_for` `media_playing`, polled by NoHands every half second), for example through a pre-roll ad. The finish line ends with the number of steps that ran. As a safety guard in code (not just the prompt), a step that would press command-W is blocked unless your request contains the word close (closes, closing, closed) or shut, and command-Q unless it contains quit (quits, quitting), exit (exiting) or shut. Whole words only, and per key: "close this tab" does not allow quitting the app. A menu item gets the same rule by its title: "Close Window" needs a close word and "Quit Safari" a quit word in the request ("Exit Full Screen" is not held). Nothing from a blocked step runs and the model is told it was blocked. A step that would press a button or menu item named send, delete, remove, discard, pay, buy, purchase, checkout, confirm, submit, publish, post, unsubscribe, transfer, place order or empty trash (a click, cursor move, focus, `set_value`, `select_option`, `type_into` or `set_checked` on it by name or number, where a partial name counts as any button it could find for it (the one with exactly that title, else any whose title contains it), a menu path that contains the word, or Return while that button has focus, which needs the agent-desktop harness to see the focus) is not run until you confirm, unless your request already says that verb (any form, not after "not" or "don't": "send the reply" allows Send, and only Send; "buy a lamp" still asks before Place order). The row shows `step n · say yes to <verb>` for 30 seconds. Say "yes", "confirm" or "do it" (with "please" if you like; when you have set an attention word, start with it, so a "yes" from a TV does not count) and the step runs; any other words, silence, or "stop" ends the task with nothing run, and the row shows `stopped: <verb> not confirmed`. Whole words only ("Sender", "Sent" and "Posts" are not asked about), a yes covers that one step and the verbs it named (a step with both Send and Delete asks `say yes to send and delete`), and the grammar commands you say yourself ("click send") are not asked about. Three more code-level fixes catch slips a small local model makes. A `type_text` that is a whole web address (`http(s)://`, `www.`, or a common ending such as `.com`) is opened as `open_url` instead of typed, and a bare Return right after it is dropped; this does not apply when your request says to type or write text, or when the step first ran `open_app` or `command-l`. A click on an app's menu-bar item, by number or by name, is refused as a failed step unless your request mentions a menu or says the item's own words ("click edit, click copy"), and not while number badges are showing; in a task the menu bar is numbered after the page's elements, and a click by name goes to the page element with that exact title. After two identical steps in a row the model is told to try a different approach, because a third identical step ends the task.
+A request the grammar does not understand runs as a task: look at the frontmost app (title, URL, up to `maxObservedElements` numbered elements), ask the model for the next step, run it, wait for the screen to settle (`settleMs` at most), repeat. Each answer has an `intent`, a `status` (`continue`, `done`, `stuck`, `ignore` or `ask`) and actions. Details: `docs/superpowers/specs/2026-11-04-task-agent-design.md`.
 
-When the screen offers two or more matches and your request does not say which ("open the Raptors game" with two games listed), the task asks instead of guessing: the row shows `step n · ? <question>` (cut to 80 characters), nothing runs, and the next thing you say is the answer. With an attention word set, start the answer with it; other speech is ignored and the question keeps waiting. "Stop" still stops the task, and 30 seconds of silence ends it `stuck: no answer`. The task goes on from a fresh look at the screen with your answer in its history. A question uses one of the task's steps.
-
-**Site routes.** When a request names YouTube, Google, Wikipedia, Amazon or Reddit, or the page is on one of them, the model also gets a few fixed lines on how to get around that site (for example, the search URL and what to click on the results page), written by NoHands and never taken from the page.
-
-**Reading the page.** In a browser, a link or button with a generic title ("Watch", "Play", "Read more", "Details", or none) is listed with the words just before it, as `3 [link] Watch near: "Raptors vs Celtics 7:30 PM"` (the last 40 characters of the nearest static text or heading above it in the page; native observations only). When that is not enough, the model has a `read_page` action with no fields: it reads the visible text of the front window (a browser's page; elsewhere the whole window, menus and text fields never) and the next step gets it under `Read:` as one line of up to 4,000 characters, with ` | ` between text runs. The page text is sent in that one step only, and like element titles it is untrusted data, never instructions. A page with no visible text fails the step with `no text on this page`. There is no voice phrase for it. A spoken "stop" ends the walk.
-
-**Planned goals.** A goal that looks multi-step (four or more words, about playing media or naming a website, and not naming a browser or saying "this", "current" or "here") first asks the model once for a short plan, written from your words alone: two to eight steps from a fixed set (open a supported site, search a supported site, click an element by its title, click the first item in the page's content, wait for media to play), each with a check of what the screen should show afterwards. The model picks each site from the list of supported sites (the ones NoHands knows a search page for) and never writes a web address: NoHands builds every address itself, and a plan whose open or search step names any other site, or that does not begin by opening or searching a site, is thrown away. NoHands runs the plan in code and reads each check against the screen, so the model does not have to choose every step from a long element list. Every plan step goes through the same guards, step cap and "stop" as a model step, and a plan whose checks and searches do not name something from your request is thrown away. For a request to play something, NoHands adds a final wait-for-media step when the plan lacks one (a plan already at eight steps is thrown away instead). The prompt's row shows `Thinking · planning the steps` while the plan is being written. If a check misses (after one extra look 1.5 s later), a click finds nothing, or a step fails, the plan ends and the usual step-by-step loop takes over from there with the plan's steps as its History. Other goals run exactly as before. While a plan runs NoHands reads up to 200 elements per step (the lists are not sent to the model); the usual `maxObservedElements` cap applies again once the plan ends.
-
-**Vision fallback (off by default).** Some controls have no accessible name or are not in the element list at all, such as a video player's play button. With `"visionFallback": true`, Claude as the backend and Screen Recording granted, NoHands attaches a JPEG picture of the focused window (not the whole screen; at most 1200 px on the long side) to a step in three cases: the previous step failed because its named target was missing or stale (`no element named …` or `element changed, …`; `no label N` does not count), the model asked for one with the `look` action, or the model answered `stuck` on a step that had no picture (NoHands then looks once and asks again at the same step; this does not use up a step, and a `stuck` that already had a picture ends the task). The prompt's row shows `step n · looking at the screen`, or the reason there is no picture (`screen recording not granted`, `screen capture failed`, or `a menu or sheet is open`, since a single-window picture would leave the menu out); the task goes on without the picture. If the grant is missing when the model answers `stuck`, the task ends and its message names it. `look` takes no fields and changes nothing on screen; its picture arrives with the next step, and number badges on screen are drawn into it with the same numbers as the element list. When the picture is there, the model may click with a picture point: `target_kind` `point` with `x` and `y` in the picture's pixels, (0, 0) at its top-left. NoHands maps the point to the screen. A point is valid only on the step that carries the picture (on any other step with vision on it is refused with `point needs a screenshot: say look first`, which gets a picture on the next step), must be the first action of that step, and only one action in the step may use one (a click, a cursor move, or a drag's start and end). A point outside the picture is refused, and if the window moved or another app came to the front since the picture, nothing runs and the step fails with `element changed`, which gets a fresh picture on the next step. Clicking a window's or tab's close box with a point is not blocked by code: only the prompt tells the model not to close anything the request did not ask to close, so keep `visionFallback` off if you cannot accept that risk. The other guards (command-W and command-Q, tabs the task did not open) still apply to every step.
-
-**Pop-ups and extra tabs.** An ad blocker in your browser is the first line of defence against pop-ups; NoHands closes what gets through. In a browser the model sees a numbered list of windows and tabs and can close a tab or window with `close_tab` and `close_window` (and switch with `select_tab`), but only one the task itself opened since it started: a tab or window that was already open is never closed unless your request says close, and neither is the tab the task navigated to. It dismisses cookie banners and "click to continue" layers with their own close control, waits out countdowns, and sets `done` for a request to play something only when the video is playing. Tabs are read through Accessibility (no extra permission); Chrome and Safari show their tabs, a browser that hides its tab strip is read by windows only. Browser steps send up to 20 tab titles, plus the titles of new tabs and windows, to the configured intent backend like window titles, and never anywhere else.
-
-**Stopping a task.** Say "stop" (or "cancel", "never mind", "abort", "stop the task"; repeats and fillers such as "stop stop" or "no, stop" count too). It aborts the request or action in flight; the task's row shows `stopped` and the stop's own row `stopping the task`. From the CLI, Ctrl-C stops `nohands-cli task` the same way; a second Ctrl-C quits at once.
-
-**Talking while a task runs.** Anything else you say while a task runs, other than an answer to a question or a yes it is waiting for, is held, and its row shows `held · runs after this task (say stop to cancel)`. Only the newest utterance is kept: saying something else replaces it, and the replaced utterance's row shows `dropped`. It runs once the task ends, unless it is more than 60 seconds old by then or you said "stop" (which drops it along with the task); either way its row shows `dropped` and nothing from it runs.
-
-**Config.** `maxTaskSteps` (default 12), `maxMediaTaskSteps` (24, for requests to play or watch something), `llmDeadlineMs` (12000, per model call), `settleMs` (3000) and `maxObservedElements` (120); with the local backend, `localLlmDeadlineMs` (30000) and `localMaxObservedElements` (40) apply instead of the last two. See [Configuration](#configuration).
+- **Ending.** On `done`, `stuck`, the step cap (`maxTaskSteps`, `maxMediaTaskSteps` for play or watch), or the same actions three times running. A held mouse button is released unless `done`. `ignore` after earlier steps shows `stopped: <intent>`.
+- **Media.** A play, watch or listen goal is done only when media plays: after `done` NoHands looks once more; a visible Play button gets one more model call (`not playing yet`), then `stuck`. `wait_for` `media_playing` polls every half second.
+- **Close and quit guard (code).** command-W is blocked unless the request contains close (closes, closing, closed) or shut; command-Q unless quit (quits, quitting), exit (exiting) or shut. Whole words, per key; menu items follow by title. A blocked step runs nothing.
+- **Confirmation guard.** A step pressing a button or menu item named send, delete, remove, discard, pay, buy, purchase, checkout, confirm, submit, publish, post, unsubscribe, transfer, place order or empty trash waits unless the request already says that verb. The row shows `step n · say yes to <verb>` for 30 s; "yes", "confirm" or "do it" runs it, anything else ends the task (`stopped: <verb> not confirmed`). A yes covers one step (`say yes to send and delete`). Grammar commands you say are not asked about. Details: `docs/superpowers/specs/2026-11-15-nh-61-confirm-irreversible-design.md`.
+- **Small-model slip fixes (code).** A `type_text` that is a whole web address becomes `open_url`; a click on a menu-bar item fails unless the request mentions a menu or the item's words ("Exit Full Screen" is not held). Site routes (YouTube, Google, Wikipedia, Amazon, Reddit) are fixed hints written by NoHands. Details: `docs/superpowers/specs/2026-11-08-nh-90-small-model-slips-design.md`, `docs/superpowers/specs/2026-11-09-nh-45-site-playbooks-design.md`.
+- **Questions.** With several matches and no way to choose, the row shows `step n · ? <question>` (cut to 80 characters) and your next words are the answer; 30 s of silence ends it `stuck: no answer`. Details: `docs/superpowers/specs/2026-11-15-nh-47-task-asks-question-design.md`.
+- **Reading the page.** Generic links ("Watch", "Play", "Read more") list the 40 characters before them (`3 [link] Watch near: "Raptors vs Celtics 7:30 PM"`). `read_page` returns the window's visible text under `Read:` in the next step only, up to 4,000 characters, untrusted; none: `no text on this page`. Details: `docs/superpowers/specs/2026-11-15-nh-50-read-page-text-design.md`.
+- **Planned goals.** A goal of four or more words about playing media or naming a website first gets one model plan of two to eight fixed-set steps (the model never writes a web address), run in code under the same guards and "stop"; a missed check (after 1.5 s) hands over to the step loop. Details: `docs/superpowers/specs/2026-11-08-nh-91-model-written-plans-design.md`.
+- **Vision fallback (off by default).** With `"visionFallback": true`, Claude and Screen Recording, a JPEG of the focused window (at most 1200 px long side) is attached when the last step failed on a missing or stale target (`no element named …`, `element changed, …`), the model used `look`, or it answered `stuck` with no picture (`screen capture failed` and `screen recording not granted` show on the row). A close box clicked by point is not blocked by code. Details: `docs/superpowers/specs/2026-11-08-nh-41-vision-fallback-design.md`.
+- **Pop-ups and extra tabs.** `close_tab`, `close_window` and `select_tab` work only on tabs or windows the task opened. Up to 20 tab titles go to the intent backend. Details: `docs/superpowers/specs/2026-11-05-nh-42-close-popups-until-video-plays-design.md`.
+- **Stopping.** "stop" ("cancel", "never mind", "abort", "stop the task", "stop stop", "no, stop") aborts the request in flight; rows show `stopped` and `stopping the task`. CLI: Ctrl-C.
+- **Talking while a task runs.** Other speech is held (`held · runs after this task (say stop to cancel)`); only the newest is kept (the replaced row shows `dropped`); it runs after the task unless over 60 s old or you said "stop".
 
 ### agent-desktop harness
 
-With [agent-desktop](https://github.com/vercel-labs/agent-desktop) installed (`npm i -g agent-desktop` or `brew install agent-desktop`, macOS 13+), tasks observe and act through it instead of NoHands' own accessibility walk and synthesized clicks. The menu shows `Harness: agent-desktop <version>` when it is in use and `Harness: native (…)` with the reason when it is not. The harness is picked when NoHands starts listening; the menu re-checks each time it opens and adds `restart NoHands to use it` once an install or a permission grant would change the pick. `nohands-cli desktop-status` prints the same.
+With [agent-desktop](https://github.com/vercel-labs/agent-desktop) installed (`npm i -g agent-desktop` or `brew install agent-desktop`, macOS 13+), tasks observe and act through it instead of NoHands' own accessibility walk. The menu shows `Harness: agent-desktop <version>` or `Harness: native (…)` (`restart NoHands to use it` after an install or grant); `nohands-cli desktop-status` prints it. Details: `docs/superpowers/specs/2026-11-04-agent-desktop-harness-design.md`.
 
-What changes with the harness:
+- **Observation.** The model sees each field's value (`= "cats"`) and states (checked, selected, disabled, expanded, offscreen); an open sheet or menu is listed next (`Surface: sheet`).
+- **Actions** land on the element (a real click only if agent-desktop delivered nothing): `set_value`, `type_into`, `clear`, `select`, `check`/`uncheck`/`toggle`, `expand`/`collapse`, `focus`, `scroll_to`, `scroll_element`, `drag`, `menu_item` (exact title; works without agent-desktop), `click_in` (`dock`, `menubar`, `sheet`, `alert`, `popover`, `menu`, `menu_bar_extras`), `close_app` (request must say quit, exit, shut or close), `window`, `clipboard_set`, `read_clipboard`, `read_value`, `read_notifications`, `dismiss_notifications` (results under `Read:` next step), `wait` with `wait_for`.
+- **Fallback.** Chosen once per task; if agent-desktop cannot read the frontmost app (no window, another Space, minimized, locked screen) the task runs natively. Grammar commands and dictation never use it.
 
-- **Observation.** Each step snapshots the frontmost app's accessibility tree through agent-desktop: elements keep stable references, and the model also sees each field's current value (`= "cats"`) and states (checked, selected, disabled, expanded, offscreen). When an action opens a sheet, menu, alert or popover, the next step lists that surface's elements instead of the window's (`Surface: sheet`).
-- **Actions on elements** land on the element, not on a point: `click` presses the element semantically, with a real click only when agent-desktop reports it delivered nothing. New model actions: `set_value`, `type_into`, `clear`, `select` (dropdown option), `check`/`uncheck`/`toggle`, `expand`/`collapse`, `focus`, `scroll_to`, `scroll_element`, `drag`.
-- **Menus, Dock and dialogs by name.** `menu_item` runs a menu bar command by its name ("Save As…"), pressed through Accessibility, so it works without agent-desktop too (a model step presses only the item with exactly that title; "Close" and "Quit" items need the request to say close or quit, like `close_app`; the Apple menu is never searched); `click_in` clicks a named item in a surface (`dock`, `menubar`, `sheet`, `alert`, `popover`, `menu`, `menu_bar_extras`).
-- **Apps, windows, clipboard, notifications.** `close_app` (guarded like command-Q: the request must say quit, exit, shut or close), `window` (minimize, maximize, restore, focus by app and title), `clipboard_set`, `read_clipboard`, `read_value`, `read_notifications`, `dismiss_notifications`. What a `read_*` action read arrives in the next step under `Read:`; a task that finishes with a reading shows it on its row.
-- **Typed waits.** `wait` with `wait_for` blocks on a signal (text appearing, a window title, a menu opening or closing, an element becoming actionable, or a lifecycle event such as `window_opened`) instead of a fixed pause. `wait_for` `media_playing` also works without agent-desktop.
+| Key | Default | Meaning |
+|---|---|---|
+| `desktopHarness` | `auto` | `auto` (agent-desktop when found and Accessibility is granted), `agentDesktop`, `native` |
+| `agentDesktopPath` | searched | Absolute path. Search: `/opt/homebrew/bin`, `/usr/local/bin`, `~/.bun/bin`, `~/.volta/bin`, `~/.npm-global/bin`, `~/.local/bin`, every nvm node version, `PATH` |
+| `agentDesktopTimeoutMs` | `8000` | Per action |
+| `agentDesktopSnapshotMs` | `3000` | Per snapshot |
+| `agentDesktopHeadedFallback` | `true` | |
+| `agentDesktopTrace` | `false` | When true each task runs in a session whose trace, text fields redacted, is under `~/.agent-desktop/sessions` |
 
-The harness is chosen once per task from its first observation: if agent-desktop cannot read the frontmost app (no window, the window is on another Space or minimized, a locked screen), the whole task runs natively, with the same loop and prompt board. On the local backend such a task uses the native prompt, which is not the prefix the warm-up cached, so its first step pays the full prefill once. Grammar commands ("click 12", "type hello", "press command s") and dictation never go through agent-desktop. Physical input (`--headed`) is used only after agent-desktop says nothing was delivered, so a click or a submit is never doubled.
-
-**Config.** `desktopHarness` (`auto`, default: agent-desktop when found and Accessibility is granted; `agentDesktop`; `native`), `agentDesktopPath` (absolute path; by default `/opt/homebrew/bin`, `/usr/local/bin`, `~/.bun/bin`, `~/.volta/bin`, `~/.npm-global/bin`, `~/.local/bin`, every nvm node version and `PATH` are searched, since an app started with `open` has no shell PATH), `agentDesktopTimeoutMs` (8000 per action), `agentDesktopSnapshotMs` (3000 per snapshot), `agentDesktopHeadedFallback` (true), `agentDesktopTrace` (false: when true each task runs in an agent-desktop session whose trace, with text fields redacted, is under `~/.agent-desktop/sessions`). agent-desktop needs the Accessibility grant for NoHands itself, which NoHands already requires.
-
-**Claude vs. the local model.** Switch with the menu's Model item (see [Configuration](#configuration)); no restart is needed. Use Claude for multi-step tasks. The local model is not yet proven for them: in the recorded runs with `qwen2.5:7b-instruct`, the cold first request timed out and the warm one answered `ignore`; no task has completed successfully on it so far. It may still handle simple one-step requests. Each step costs the model 5 to 20 s on an M1 Pro (about 2,200 prompt tokens of instructions and examples, plus the screen, decoded at about 14 tokens per second), so the local backend gets its own `localLlmDeadlineMs` (30 s) and sends at most `localMaxObservedElements` (40) elements. While NoHands is listening it warms the model every 20 minutes by running that fixed prefix through Ollama, so it sits in Ollama's prompt cache; the first command after a warm-up skips that part of the wait. Requests that still end with "timed out" mean the machine is short on memory (check swap use) or `localLlmDeadlineMs` needs raising.
+**Claude vs. the local model.** Use Claude for tasks: with `qwen2.5:7b-instruct` the cold first request timed out, the warm one answered `ignore`, and no task has completed. A step costs 5 to 20 s on an M1 Pro (about 2,200 prompt tokens), hence `localLlmDeadlineMs` (30 s) and `localMaxObservedElements` (40). NoHands warms the model every 20 minutes while listening.
 
 ## Privacy
 
-Audio never leaves your machine. Only commands the grammar can't match are sent to Claude (or to the local model, which stays on your Mac), as text: your transcript, the frontmost app's name and the titles of its visible controls. Multi-step task steps also send the focused window's title, the page URL (in a browser) and each element's role, to Claude or to the local model alike. They also send a `Media:` line (`playing`, `paused` or `none`), read from the window's Play or Pause buttons or, when there are none, from whether another app is producing sound; no audio or title is sent. With the agent-desktop harness, each listed field's current value (what is typed in a search box or a form, cut at 60 characters) is sent too; clipboard text, a full element value and the notification list are sent only in the step after the model explicitly asked to read them. Text handed to agent-desktop (`set_value`, `type_into`, `clipboard_set`) travels in the child process's arguments, visible to `ps` while it runs. The plan request for a goal that looks multi-step sends only your transcript. Without an API key nothing is sent off the Mac; with the local backend, text goes only to Ollama on `127.0.0.1`.
-
-**Command log.** The last 50 commands are saved to `~/.config/nohands/command-log.json` (folder mode 700, file mode 600, replaced atomically) so the View Logs window survives a restart. It holds what you said and what was typed or clicked, stays on this Mac and is never sent anywhere. A missing or damaged file starts an empty log and is replaced by the next command; there is no export, search or clear, so delete the file to clear it.
-
-**Screenshots.** With `visionFallback` on, pixels leave the Mac only on the task steps described in [Multi-step tasks](#multi-step-tasks) (a failed named target, a `look`, or a `stuck` retry), and only to Claude: the local model is never sent a picture, and nothing is captured when the backend is local or the flag is off. The picture is the focused window only, and shows whatever that window shows, including text, messages and passwords visible in it. It is held in memory for the step, is never saved to disk and is not logged.
-
-**There is no wake-word model.** By default everything the microphone hears is acted on; the optional `attentionWord` makes command mode ignore speech that doesn't start with it. It is matched in the transcript, so audio is still transcribed on the Mac. Echo cancellation removes what the Mac's own speakers play, but other people talking, a phone on speaker or very loud playback can still be heard, so "go to sleep" is still the safe choice for calls. Any audio the microphone still hears is transcribed, acted on unless `attentionWord` filters it out, and in dictation mode it is typed into the focused app. With an API key, phrases the grammar doesn't match are also sent to Claude as text. Say "go to sleep" before leaving the desk or during calls; only "wake up" is honored while asleep.
+- Audio never leaves your machine.
+- Only commands the grammar can't match go to Claude (or the local model, which stays on your Mac), as text: your transcript, the frontmost app's name and its controls' titles.
+- Task steps also send the window title, the page URL (in a browser), each element's role, and a `Media:` line (`playing`, `paused` or `none`) read from Play or Pause buttons or whether another app makes sound.
+- With agent-desktop, each listed field's current value (cut at 60 characters) is sent; clipboard text, a full element value and notifications only after the model asked to read them. Text handed to it (`set_value`, `type_into`, `clipboard_set`) is visible to `ps` while it runs.
+- The plan request sends only your transcript.
+- Without an API key nothing is sent off the Mac; with the local backend, text goes only to Ollama on `127.0.0.1`.
+- **Command log.** The last 50 commands go to `~/.config/nohands/command-log.json` (folder mode 700, file mode 600, replaced atomically): what you said and what was typed or clicked. Never sent; delete the file to clear it.
+- **Screenshots.** With `visionFallback` on, pixels leave the Mac only on the task steps in [Multi-step tasks](#multi-step-tasks), only to Claude, never the local model; nothing is captured when the backend is local or the flag is off. The picture is the focused window only, so it can show text, messages and passwords. Held in memory, never saved, not logged.
+- **There is no wake-word model.** Everything the microphone hears is acted on; `attentionWord` makes command mode ignore speech that doesn't start with it. Other people, a phone on speaker or loud playback can still be acted on or, in dictation mode, typed. Say "go to sleep" before leaving the desk or during calls; only "wake up" is honored while asleep.
 
 ## Layout
 
@@ -301,6 +284,6 @@ See [the design spec](docs/superpowers/specs/2026-11-04-nohands-design.md) and [
 
 NoHands is under the [Apache License 2.0](LICENSE). Third-party notices are in [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md).
 
-Speech and local models are downloaded at run time and keep their own licences: the Parakeet speech models are CC-BY-4.0, Silero VAD is MIT, and Qwen 2.5 7B is Apache-2.0. The 3B Qwen model, the low-memory default for the local backend, is research-only and not for commercial use; see THIRD_PARTY_LICENSES.md. To change it, set `localModel` in the config file.
+Speech and local models are downloaded at run time and keep their own licences: Parakeet speech models CC-BY-4.0, Silero VAD MIT, Qwen 2.5 7B Apache-2.0. The 3B Qwen model, the low-memory default for the local backend, is research-only and not for commercial use (see THIRD_PARTY_LICENSES.md); set `localModel` to change it.
 
 To report a security problem, see [SECURITY.md](SECURITY.md). To contribute, see [CONTRIBUTING.md](CONTRIBUTING.md).
