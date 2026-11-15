@@ -68,6 +68,7 @@ Input is normalized first: lowercased, ASR punctuation stripped (`.,!?`), whites
 | `press <modifiers…> <key>` e.g. "press command shift s" | `.pressKey(KeyChord)` |
 | `enter`, `tab`, `escape`, `space`, `delete` / `backspace`, `forward delete`, `up`/`down`/`left`/`right` | `.pressKey` of that key |
 | `undo`, `redo`, `copy`, `paste`, `cut`, `select all`, `save`, `find`, `new tab`, `close tab`, `close window`, `quit app`, `switch app`, `spotlight`, `delete word`, `delete line` | the standard ⌘ shortcut (`redo` = ⇧⌘Z, `switch app` = ⌘⇥, `spotlight` = ⌘␣, `delete word` = ⌥⌫, `delete line` = ⌘⌫) |
+| `find <words>`, `scroll to <words>` | `.findOnPage(words, movePointer: true)`; bare `find` stays ⌘F, and `scroll to` an end of the page or a direction goes to the LLM |
 | `click` | `.click(.cursor)` left, count 1 |
 | `double click`, `triple click` | count 2 / 3 |
 | `right click`, `middle click` | button |
