@@ -39,6 +39,19 @@ final class FakeElements: ElementProviding, @unchecked Sendable {
     /// Set to report that the next walk freshly exposed a Chromium page tree (cleared when read).
     var exposeOnNextWalk = false
     func searchFieldFrame() -> CGRect? { searchBox }
+    /// Page find: what the walk returns (nil: no match), where a scroll lands the element (nil: the scroll fails),
+    /// the words searched for, the elements scrolled, and a hook run inside the walk (a test cancels the task there).
+    var pageMatch: UIElementInfo?
+    var scrollLandsAt: CGRect? = CGRect(x: 100, y: 300, width: 200, height: 20)
+    var findWords: [String] = []
+    var scrolled: [UIElementInfo] = []
+    var onFind: (@Sendable () -> Void)?
+    func findOnPage(words: String) -> UIElementInfo? { findWords.append(words); onFind?(); return pageMatch }
+    func scrollIntoView(_ element: UIElementInfo) async -> CGRect? { scrolled.append(element); return scrollLandsAt }
+    /// Read page: the text runs the walk returns, and a hook run inside the walk.
+    var pageRuns: [String] = []
+    var onPageText: (@Sendable () -> Void)?
+    func pageText() -> [String] { onPageText?(); return pageRuns }
     /// The browser's windows and tabs (nil: the front app is not a browser) and the tab and window ids closed or selected.
     var browser: [BrowserWindow]?
     var closedTabs: [String] = []

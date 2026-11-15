@@ -56,6 +56,9 @@ public enum Action: Equatable, Codable, Sendable {
     /// Search for words on a named site: inside that site when it is the page in front, else its results page in
     /// the default browser. `site` is a `SiteSearch.templates` key ("youtube.com"), never free text.
     case searchSite(String, site: String)
+    /// Scroll the focused window until text or an element with these words is on screen. `movePointer` leaves the
+    /// pointer on the match (the voice command, so a bare "click" follows); the model's find never moves it.
+    case findOnPage(String, movePointer: Bool)
     case wait(ms: Int)
     /// Report whether media is playing in the front window as a reading. Grammar only ("is it playing"); the
     /// model has no kind for it.
@@ -82,6 +85,9 @@ public enum Action: Equatable, Codable, Sendable {
     case windowAction(DesktopWindowOp, app: String?, title: String?)
     case clipboardSet(String)
     case readClipboard
+    /// Read the visible text of the focused window's page as a reading (`page: …`), for choosing between controls
+    /// whose titles alone don't say which is the target. Native walk under either harness.
+    case readPage
     case readValue(ElementTarget)
     case readNotifications
     case dismissNotifications(app: String?)

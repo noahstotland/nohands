@@ -30,6 +30,15 @@ public protocol ElementProviding: Sendable {
     /// The frame (CG coordinates) of the search box in the frontmost window, when it shows one: a page's own
     /// search field first, else the app's. Never a browser's address bar.
     func searchFieldFrame() -> CGRect?
+    /// Walks the focused window, offscreen parts included, for an element or text matching `words` (see
+    /// `PageFind.Matcher`); the match is remembered for `scrollIntoView`. Honors the calling task's cancellation.
+    func findOnPage(words: String) -> UIElementInfo?
+    /// The visible text of the focused window's page in reading order (see `AXQuery.pageText`); empty when there is
+    /// none. Honors the calling task's cancellation.
+    func pageText() -> [String]
+    /// Scrolls the element `findOnPage` just returned into view and returns its frame (CG coordinates) once it is on
+    /// a screen; nil when it cannot be scrolled or never arrives.
+    func scrollIntoView(_ element: UIElementInfo) async -> CGRect?
     /// Whether the frontmost app is a web browser (its address bar searches the web).
     func frontmostIsBrowser() -> Bool
     /// The frontmost browser's name and its windows and tabs, with opaque ids that stay the same for the same window
@@ -61,6 +70,9 @@ public enum BrowserActionResult: Equatable, Sendable {
 
 extension ElementProviding {
     public func searchFieldFrame() -> CGRect? { nil }
+    public func findOnPage(words: String) -> UIElementInfo? { nil }
+    public func pageText() -> [String] { [] }
+    public func scrollIntoView(_ element: UIElementInfo) async -> CGRect? { nil }
     public func frontmostIsBrowser() -> Bool { false }
     public func browserWindows() -> (app: String, windows: [BrowserWindow])? { nil }
     public func closeBrowserTab(id: String) -> BrowserActionResult { .failed("no browser tabs") }
@@ -118,6 +130,7 @@ extension OverlayController: OverlayPresenting {
     static let needsHarness = "needs agent-desktop"
     public static let elementChanged = "element changed, look again"
     static let readingLimit = 300
+    static let noPageText = "no text on this page"
 
     let input: any InputSynthesizing
     let ax: any ElementProviding
@@ -144,6 +157,8 @@ extension OverlayController: OverlayPresenting {
     private var tabSnapshot: TabListing?
     /// Text the model asked to read (`read_*` actions) since the last `takeReadings()`.
     public private(set) var readings: [String] = []
+    /// The element the last `findOnPage` scrolled into view, until `takeFound()`.
+    public private(set) var found: UIElementInfo?
 
     public init(input: any InputSynthesizing, ax: any ElementProviding, overlay: any OverlayPresenting,
                 config: AppConfig, frontTimeout: Duration = .seconds(1.5), windowTimeout: Duration = .seconds(6),
@@ -170,8 +185,23 @@ extension OverlayController: OverlayPresenting {
         return readings
     }
 
+    /// The element a find just scrolled to; the task loop lists it first in the next observation.
+    public func takeFound() -> UIElementInfo? {
+        defer { found = nil }
+        return found
+    }
+
     func addReading(_ label: String, _ text: String) {
-        readings.append(String("\(label): \(text)".prefix(Self.readingLimit)))
+        // A label can come from the page (an element's title), so it can never spell the page reading's `page: `
+        // prefix: colons go, and a bare "page" is renamed.
+        var safe = label.replacingOccurrences(of: ":", with: " ").trimmingCharacters(in: .whitespaces)
+        if safe.lowercased() == PageText.readingLabel { safe = "\(safe) value" }
+        readings.append(String("\(safe): \(text)".prefix(Self.readingLimit)))
+    }
+
+    /// The page reading, the only long one. Only code calls this, so page content can't choose the long limit.
+    func addPageReading(_ text: String) {
+        readings.append(String("\(PageText.readingLabel): \(text)".prefix(PageText.limit)))
     }
 
     /// Executes in order; stops at the first failure. Returns the failure message if any (the caller shows it on
@@ -190,6 +220,9 @@ extension OverlayController: OverlayPresenting {
                 pressed = []
                 return Self.cancelled
             }
+            // A found element is the next observation's number 1 only when the find was the step's last act: anything
+            // after it may have changed the page.
+            if case .findOnPage = action {} else { found = nil }
             if let message = await run(action, isLast: i == actions.count - 1) {
                 if !pressed.isEmpty { input.releaseAll() }
                 pressed = []
@@ -306,8 +339,13 @@ extension OverlayController: OverlayPresenting {
                 try? await Task.sleep(for: .milliseconds(ms))
             case .checkMedia:
                 addReading("Media", await mediaState().rawValue)
+            case .findOnPage(let words, let movePointer):
+                if let failure = try await findOnPage(words, movePointer: movePointer) { return failure }
+                hideStaleOverlay()
             case .ignore, .look:
                 break
+            case .readPage:
+                if let failure = await readPage() { return failure }
             case .closeTab(let n):
                 guard let tab = tabSnapshot?.tab(n) else { return "no tab \(n)" }
                 if let failure = try await closeTab(id: tab.id) { return failure }
@@ -510,6 +548,65 @@ extension OverlayController: OverlayPresenting {
         guard ax.didJustExpose() else { return first }
         try? await Task.sleep(for: exposureSettle)
         return Task.isCancelled ? first : ax.actionableElements()
+    }
+
+    /// "find <words>": the focused window is walked, offscreen parts included, for the words; the match is scrolled
+    /// into view and kept for `takeFound()`. With `movePointer` (the spoken command) the pointer is left on it, so a
+    /// bare "click" follows; the model's find never moves it. Nothing natively and a harness: agent-desktop's find and
+    /// scroll-to. A cancel (a spoken stop) is seen after the walk and again before the scroll.
+    private func findOnPage(_ words: String, movePointer: Bool) async throws -> String? {
+        found = nil
+        guard words.count <= PageFind.maxWords else { return "text too long" }
+        guard !PageFind.normalize(words).isEmpty else { return "nothing to find" }
+        PipelineLog.info("find: walking the page (len=\(words.count))")
+        _ = ax.didJustExpose()
+        var match = ax.findOnPage(words: words)
+        if ax.didJustExpose() {
+            try? await Task.sleep(for: exposureSettle)
+            if !Task.isCancelled { match = ax.findOnPage(words: words) }
+        }
+        if Task.isCancelled { return Self.cancelled }
+        if let match {
+            guard let frame = await ax.scrollIntoView(match) else {
+                return Task.isCancelled ? Self.cancelled : "couldn't scroll to \(words)"
+            }
+            if Task.isCancelled { return Self.cancelled }
+            var shown = match
+            shown.frame = frame
+            found = shown
+            if movePointer { try input.moveMouse(to: shown.clickPoint(screens: ax.screenRectsCG())) }
+            return nil
+        }
+        if let harness, let m = await harness.find(app: ax.frontmostAppName(), surface: nil, name: words) {
+            if Task.isCancelled { return Self.cancelled }
+            switch await harness.act(.scrollTo(ref: m.ref)) {
+            case .delivered: break
+            case .failed(let message), .notDelivered(let message): return message
+            case .elementChanged: return Self.elementChanged
+            }
+            found = UIElementInfo(id: 0, frame: .zero, title: m.name, role: m.role, ref: m.ref)
+            return nil
+        }
+        return Task.isCancelled ? Self.cancelled : PageFind.failure(words)
+    }
+
+    /// "read_page": the focused window's visible text as one `page:` reading for the next step. A cancel (a spoken
+    /// stop) is seen after the walk, before anything is kept. Always the native walk: an agent-desktop snapshot holds
+    /// no static text.
+    private func readPage() async -> String? {
+        _ = ax.didJustExpose()
+        var runs = ax.pageText()
+        if ax.didJustExpose() {
+            try? await Task.sleep(for: exposureSettle)
+            if !Task.isCancelled { runs = ax.pageText() }
+        }
+        if Task.isCancelled { return Self.cancelled }
+        // Room for the label, so the cut mark is never trimmed off the end.
+        let text = PageText.join(runs, limit: PageText.limit - PageText.readingLabel.count - 2)
+        guard !text.isEmpty else { return Self.noPageText }
+        PipelineLog.info("read_page: \(text.count) characters", detail: text)
+        addPageReading(text)
+        return nil
     }
 
     private func namedElements(for target: ClickTarget) async -> [UIElementInfo]? {

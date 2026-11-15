@@ -195,7 +195,7 @@ private func step(_ intent: String, _ status: StepStatus, _ actions: [Action] = 
     let entered = Gate(), release = Gate()
     r.resolver?.scripted = [step("type a", .continue, [.typeText("a")]), step("type b", .done, [.typeText("b")])]
     r.resolver?.onResolve = { n in if n == 2 { entered.open(); await release.wait() } }
-    await r.pipeline.handle(transcript: "find the newest video", trace: trace())
+    await r.pipeline.handle(transcript: "play the newest video", trace: trace())
     #expect(r.pipeline.isTaskActive)                       // handle returned while the task runs
     await entered.wait()                                   // step 2 is resolving
     await r.pipeline.handle(transcript: "stop", trace: trace())
@@ -213,7 +213,7 @@ private func step(_ intent: String, _ status: StepStatus, _ actions: [Action] = 
     let entered = Gate(), release = Gate()
     r.resolver?.scripted = [step("type a", .done, [.typeText("a")])]
     r.resolver?.onResolve = { _ in entered.open(); await release.wait() }
-    await r.pipeline.handle(transcript: "find the newest video", trace: trace())
+    await r.pipeline.handle(transcript: "play the newest video", trace: trace())
     await entered.wait()
     await r.pipeline.handle(transcript: "scroll down", trace: trace())   // held, then replaced (newest wins)
     await r.pipeline.handle(transcript: "click", trace: trace())
@@ -240,7 +240,7 @@ private func step(_ intent: String, _ status: StepStatus, _ actions: [Action] = 
             if d == TaskRunner.answerTimeout { try? await Task.sleep(for: .seconds(30)) }
         })
         r.resolver?.scripted = [step("Which game?", .ask), step("type a", .done, [.typeText("a")])]
-        await r.pipeline.handle(transcript: (word.isEmpty ? "" : "computer, ") + "find the newest video", trace: trace())
+        await r.pipeline.handle(transcript: (word.isEmpty ? "" : "computer, ") + "play the newest video", trace: trace())
         for _ in 0..<400 where r.runner?.awaitedAnswer != .question { try? await Task.sleep(for: .milliseconds(5)) }
         #expect(r.runner?.awaitedAnswer == .question, "the question never waited")
         for words in said {
@@ -272,7 +272,7 @@ private func step(_ intent: String, _ status: StepStatus, _ actions: [Action] = 
     let entered = Gate()
     r.resolver?.scripted = [step("type a", .done, [.typeText("a")])]
     r.resolver?.onResolve = { _ in entered.open(); await Gate().wait() }   // blocks until cancelled
-    await r.pipeline.handle(transcript: "find the newest video", trace: trace())
+    await r.pipeline.handle(transcript: "play the newest video", trace: trace())
     await entered.wait()
     await r.pipeline.handle(transcript: "click", trace: trace())          // held
     r.pipeline.pause()
@@ -308,7 +308,7 @@ private func step(_ intent: String, _ status: StepStatus, _ actions: [Action] = 
                             step("type c", .done, [.typeText("c")])]
     // Step 2 blocks in a detached task, so cancelling the runner does not unblock it: the task is still unwinding.
     r.resolver?.onResolve = { n in if n == 2 { entered.open(); await Task.detached { await release.wait() }.value } }
-    await r.pipeline.handle(transcript: "find the newest video", trace: trace())
+    await r.pipeline.handle(transcript: "play the newest video", trace: trace())
     await entered.wait()
     await r.pipeline.handle(transcript: "stop", trace: trace())
     await r.pipeline.handle(transcript: "click", trace: trace())   // held while the stopped task unwinds
@@ -316,7 +316,7 @@ private func step(_ intent: String, _ status: StepStatus, _ actions: [Action] = 
     release.open()
     await r.pipeline.waitForTask()
     #expect(r.pipeline.lastTaskOutcome == .stopped)
-    await r.pipeline.handle(transcript: "find the next video", trace: trace())
+    await r.pipeline.handle(transcript: "play the next video", trace: trace())
     await r.pipeline.waitForTask()
     #expect(r.pipeline.lastTaskOutcome == .done("type c"))
     #expect(r.typed == ["type:a", "type:c"])
@@ -330,7 +330,7 @@ private func step(_ intent: String, _ status: StepStatus, _ actions: [Action] = 
         let entered = Gate(), release = Gate()
         r.resolver?.scripted = [step("type a", .done, [.typeText("a")])]
         r.resolver?.onResolve = { _ in entered.open(); await release.wait() }
-        await r.pipeline.handle(transcript: "find the newest video", trace: trace())
+        await r.pipeline.handle(transcript: "play the newest video", trace: trace())
         await entered.wait()
         await r.pipeline.handle(transcript: "click", trace: trace(age: age))   // held regardless of age
         release.open()
@@ -346,7 +346,7 @@ private func step(_ intent: String, _ status: StepStatus, _ actions: [Action] = 
     let entered = Gate()
     r.resolver?.scripted = [step("type a", .done, [.typeText("a")])]
     r.resolver?.onResolve = { _ in entered.open(); await Gate().wait() }   // blocks until cancelled
-    await r.pipeline.handle(transcript: "find the newest video", trace: trace())
+    await r.pipeline.handle(transcript: "play the newest video", trace: trace())
     await entered.wait()
     await r.pipeline.handle(transcript: "scroll down", trace: trace())   // held
     await r.pipeline.handle(transcript: "stop", trace: trace())
@@ -361,7 +361,7 @@ private func step(_ intent: String, _ status: StepStatus, _ actions: [Action] = 
 @MainActor @Test func stopRightAfterHandleCancelsBeforeTheFirstResolve() async {
     let r = rig()
     r.resolver?.scripted = [step("type a", .done, [.typeText("a")])]
-    await r.pipeline.handle(transcript: "find the newest video", trace: trace())
+    await r.pipeline.handle(transcript: "play the newest video", trace: trace())
     await r.pipeline.handle(transcript: "stop", trace: trace())          // the runner has not resolved yet
     await r.pipeline.waitForTask()
     #expect(r.pipeline.lastTaskOutcome == .stopped)
@@ -399,7 +399,7 @@ private func step(_ intent: String, _ status: StepStatus, _ actions: [Action] = 
         r.resolver?.scripted = [step("type a", .continue, [.typeText("a")]), step("type b", .done, [.typeText("b")])]
         r.resolver?.onResolve = { n in if n == 2 { entered.open(); await release.wait() } }
         let feed = MergeFeed(r.pipeline, attention: AttentionGate(configured: word))
-        await feed.say(word.isEmpty ? "find the newest video" : "computer find the newest video")   // not a grammar command: released after the short window
+        await feed.say(word.isEmpty ? "play the newest video" : "computer play the newest video")   // not a grammar command: released after the short window
         await entered.wait()                               // the task is resolving step 2
         await feed.say(word.isEmpty ? "open the" : "computer open the")   // dangling: would wait 3 s and merge with what follows
         await feed.say(stop)                               // must not become "open the stop"
@@ -418,7 +418,7 @@ private func step(_ intent: String, _ status: StepStatus, _ actions: [Action] = 
     let entered = Gate(), release = Gate()
     r.resolver?.scripted = [step("type a", .done, [.typeText("a")])]
     r.resolver?.onResolve = { _ in entered.open(); await release.wait() }
-    await r.pipeline.handle(transcript: "computer find the newest video", trace: trace())
+    await r.pipeline.handle(transcript: "computer play the newest video", trace: trace())
     await entered.wait()
     await r.pipeline.handle(transcript: "computer click", trace: trace())   // held
     await r.pipeline.handle(transcript: "new tab", trace: trace())          // stray: dropped silently
@@ -455,7 +455,7 @@ private func step(_ intent: String, _ status: StepStatus, _ actions: [Action] = 
         a.scripted = [typeA]
         b.scripted = [typeB]
         a.onResolve = { _ in entered.open(); await release.wait() }
-        await r.pipeline.handle(transcript: "find the newest video", trace: trace())
+        await r.pipeline.handle(transcript: "play the newest video", trace: trace())
         await entered.wait()
         let replacement = newRunner(r, b)
         r.pipeline.replaceRunner(replacement)

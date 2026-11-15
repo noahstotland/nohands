@@ -55,7 +55,7 @@ mic (AVAudioEngine with voice processing / echo cancellation unless `echoCancell
 
 Mode is shown in the menu bar: the winking-face glyph (`Resources/MenuBarIcon.png`, with an `@2x`; the `mic` symbol only when they are missing, as in an unbundled `swift run`) + `CMD` / `DICT` / `ZZZ` text.
 
-The menu ends with a group above Quit: **Start at Login** (a checkbox backed by `SMAppService.mainApp`, read from the system each time the menu opens), **Status Bar** (a submenu Off / Top / Bottom for the always-on status bar, kept in user defaults), **Model** (a submenu that shows the backend in use as `Model: Claude|Local|Off`, switches between Claude and the local model with no restart, and saves `intentBackend` to config.json) and **Open config.json…** (creates the file with mode 600 if missing, opens it in the default editor, and says to restart NoHands to apply changes).
+The menu ends with a group above Quit: **Start at Login** (a checkbox backed by `SMAppService.mainApp`, read from the system each time the menu opens), **Status Bar** (a submenu Off / Bottom Right for the status bar, kept in user defaults), **Model** (a submenu that shows the backend in use as `Model: Claude|Local|Off`, switches between Claude and the local model with no restart, and saves `intentBackend` to config.json) and **Open config.json…** (creates the file with mode 600 if missing, opens it in the default editor, and says to restart NoHands to apply changes).
 
 ## 6. Command grammar (deterministic)
 
@@ -68,6 +68,7 @@ Input is normalized first: lowercased, ASR punctuation stripped (`.,!?`), whites
 | `press <modifiers…> <key>` e.g. "press command shift s" | `.pressKey(KeyChord)` |
 | `enter`, `tab`, `escape`, `space`, `delete` / `backspace`, `forward delete`, `up`/`down`/`left`/`right` | `.pressKey` of that key |
 | `undo`, `redo`, `copy`, `paste`, `cut`, `select all`, `save`, `find`, `new tab`, `close tab`, `close window`, `quit app`, `switch app`, `spotlight`, `delete word`, `delete line` | the standard ⌘ shortcut (`redo` = ⇧⌘Z, `switch app` = ⌘⇥, `spotlight` = ⌘␣, `delete word` = ⌥⌫, `delete line` = ⌘⌫) |
+| `find <words>`, `scroll to <words>` | `.findOnPage(words, movePointer: true)`; bare `find` stays ⌘F, and `scroll to` an end of the page or a direction goes to the LLM |
 | `click` | `.click(.cursor)` left, count 1 |
 | `double click`, `triple click` | count 2 / 3 |
 | `right click`, `middle click` | button |

@@ -554,6 +554,18 @@ private func harnessSnapshot() -> DesktopSnapshot {
     #expect(r.resolver.requests.allSatisfy { $0.observation.harness == .agentDesktop && $0.observation.elements.first?.title == "Reload" })
 }
 
+@MainActor @Test func pageTextReachesTheNextRequestOnceAndEmptyPagesFailTheStep() async {
+    let h = FakeHarness(); h.snapshotResults = [harnessSnapshot()]
+    let r = harnessRig(FakeResolver([step("read", .continue, [.readPage]), step("look", .continue, [.wait(ms: 100)]),
+                                     step("done", .done)]), harness: h)
+    r.ax.pageRuns = ["Raptors vs Celtics", "7:30 PM", "Watch"]
+    #expect(await r.runner.run(goal: "open the raptors game", mode: .command) == .done("done"))
+    #expect(r.resolver.requests.map(\.observation.readings) == [[], ["page: Raptors vs Celtics | 7:30 PM | Watch"], []])
+    let empty = harnessRig(FakeResolver([step("read", .continue, [.readPage]), step("stuck", .stuck)]), harness: h)
+    _ = await empty.runner.run(goal: "open the raptors game", mode: .command)
+    #expect(empty.resolver.requests[1].history.first?.failure == ActionExecutor.noPageText)
+}
+
 @MainActor @Test func doneWithReadingsShowsTheFirstOneInTheHUD() async {
     let h = FakeHarness(); h.snapshotResults = [harnessSnapshot()]; h.readResult = "hello world"
     let r = harnessRig(FakeResolver([step("read it", .done, [.readClipboard])]), harness: h)
@@ -1034,6 +1046,15 @@ private func resolverForSend() -> FakeResolver {
         #expect(r.input.calls.contains("click:140,55") == (record != nil))
         #expect(runner.awaitedAnswer == nil)
     }
+}
+
+@MainActor @Test func aFindInATaskPutsTheMatchFirstInTheNextRequestWithoutMovingThePointer() async {
+    let r = rig(FakeResolver([step("find it", .continue, [.findOnPage("raptors", movePointer: false)]), step("done", .done)]))
+    r.ax.pageMatch = UIElementInfo(id: 1_000_001, frame: CGRect(x: 100, y: 5000, width: 200, height: 20), title: "Raptors vs Celtics", role: "AXLink")
+    #expect(await r.runner.run(goal: "open the raptors game", mode: .command) == .done("done"))
+    #expect(r.resolver.requests[1].observation.elements.first?.title == "Raptors vs Celtics")
+    #expect(r.resolver.requests[1].observation.elements.first?.number == 1)
+    #expect(!r.input.calls.contains { $0.hasPrefix("move:") })
 }
 
 // MARK: settle by action

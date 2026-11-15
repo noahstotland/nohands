@@ -26,6 +26,7 @@ public enum ActionSummary {
         case .moveWindow(let p): "moveWindow(\(p.rawValue))"
         case .search(let q): "search(len=\(q.count))"
         case .searchSite(let q, let site): "searchSite(len=\(q.count), site=\(site))"
+        case .findOnPage(let w, let move): "findOnPage(len=\(w.count), movePointer=\(move))"
         case .wait: "wait"
         case .checkMedia: "checkMedia"
         case .ignore: "ignore"
@@ -45,6 +46,7 @@ public enum ActionSummary {
         case .windowAction(let op, _, _): "windowAction(\(op.rawValue))"
         case .clipboardSet(let t): "clipboardSet(len=\(t.count))"
         case .readClipboard: "readClipboard"
+        case .readPage: "readPage"
         case .readValue: "readValue"
         case .readNotifications: "readNotifications"
         case .dismissNotifications: "dismissNotifications"
@@ -64,7 +66,7 @@ public enum ActionSummary {
         case .pressKey: "pressing keys"
         case .click, .clickIn, .pressMouse, .releaseMouse, .setChecked, .setExpanded, .focusElement: "clicking"
         case .moveCursor: "moving the pointer"
-        case .scroll, .scrollTo, .scrollIn: "scrolling"
+        case .scroll, .scrollTo, .scrollIn, .findOnPage: "scrolling"
         case .showGrid, .zoomGrid: "showing the grid"
         case .showLabels: "showing numbers"
         case .hideOverlay: "hiding overlays"
@@ -81,7 +83,7 @@ public enum ActionSummary {
         case .closeWindow: "closing a window"
         case .selectTab: "switching tabs"
         case .clipboardSet, .readClipboard: "using the clipboard"
-        case .readValue, .readNotifications, .dismissNotifications, .checkMedia, .look: "reading the screen"
+        case .readValue, .readNotifications, .dismissNotifications, .checkMedia, .look, .readPage: "reading the screen"
         case .wait, .waitFor, .ignore: "waiting"
         }
     }

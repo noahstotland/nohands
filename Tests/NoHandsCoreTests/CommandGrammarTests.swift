@@ -199,3 +199,17 @@ let g = CommandGrammar()
     #expect(g.parse("make the window half width and snap to the left side of the screen") == nil)
     #expect(g.parse("left") == [.pressKey(KeyChord(.left))])
 }
+
+@Test func findOnPageAndScrollToWords() {
+    let table: [(String, [Action]?)] = [
+        ("find the Raptors game", [.findOnPage("the Raptors game", movePointer: true)]),
+        ("Find Outdoor Boys.", [.findOnPage("Outdoor Boys", movePointer: true)]),
+        ("scroll to the schedule", [.findOnPage("the schedule", movePointer: true)]),
+        ("scroll to top gear", [.findOnPage("top gear", movePointer: true)]),
+        ("find", [.pressKey(KeyChord(.f, [.command]))]),               // bare find stays command-F
+        ("find the", [.pressKey(KeyChord(.f, [.command]))]),
+        ("scroll to the top", nil), ("scroll to bottom", nil), ("scroll to the top of the page", nil), ("scroll to", nil), ("scroll to the down", nil),
+        ("scroll down", [.scroll(.down, amount: 5)]),
+    ]
+    for (phrase, expected) in table { #expect(g.parse(phrase) == expected, "\(phrase)") }
+}

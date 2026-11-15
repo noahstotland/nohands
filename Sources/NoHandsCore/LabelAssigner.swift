@@ -12,9 +12,12 @@ public struct UIElementInfo: Equatable, Sendable {
     public var value: String?
     /// agent-desktop state tokens: checked, selected, disabled, expanded, collapsed, focused, offscreen, …
     public var states: [String]
+    /// The words just before a generic link or button on a web page (`PageText.near`); nil elsewhere.
+    public var near: String?
 
     public init(id: Int, frame: CGRect, title: String, role: String,
-                ref: String? = nil, value: String? = nil, states: [String] = []) {
+                ref: String? = nil, value: String? = nil, states: [String] = [], near: String? = nil) {
+        self.near = near
         self.id = id
         self.frame = frame
         self.title = title

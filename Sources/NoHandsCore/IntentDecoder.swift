@@ -131,6 +131,7 @@ public enum IntentDecoder {
         case "move_window":
             return (o["placement"] as? String).flatMap(WindowPlacement.init(rawValue:)).map(Action.moveWindow)
         case "search": return nonBlank(o["text"]).map(Action.search)
+        case "find": return nonBlank(o["target_name"]).map { .findOnPage($0, movePointer: false) }
         case "wait":
             if o["wait_for"] != nil { return waitFor(o) }
             switch optInt(o, "ms") {
@@ -179,6 +180,7 @@ public enum IntentDecoder {
             return .windowAction(op, app: nonBlank(o["app_name"]), title: op == .focus ? nonBlank(o["title"]) : nil)
         case "clipboard_set": return misfiled(o) ? nil : (o["value"] as? String).map(Action.clipboardSet)
         case "read_clipboard": return .readClipboard
+        case "read_page": return .readPage
         case "read_value": return elementTarget(o).map(Action.readValue)
         case "read_notifications": return .readNotifications
         case "close_tab": return number(o["target_number"]).map(Action.closeTab)

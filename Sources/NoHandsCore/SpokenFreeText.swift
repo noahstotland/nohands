@@ -8,7 +8,7 @@ extension Action {
     public var carriesSpokenText: Bool {
         switch self {
         case .typeText, .openApp, .openURL, .search, .searchSite, .setValue, .typeInto, .selectOption, .clickIn,
-             .menuItem, .closeApp, .clipboardSet:
+             .menuItem, .closeApp, .clipboardSet, .findOnPage:
             return true
         case .click(let target, _, _):
             if case .element = target { return true }
@@ -19,7 +19,7 @@ extension Action {
         case .windowAction(_, let app, let title): return app != nil || title != nil
         case .pressKey, .pressMouse, .releaseMouse, .scroll, .showGrid, .zoomGrid, .showLabels, .hideOverlay, .setMode,
              .moveWindow, .wait, .checkMedia, .ignore, .clearField, .setChecked, .setExpanded, .focusElement, .scrollTo,
-             .scrollIn, .drag, .readClipboard, .readValue, .readNotifications, .dismissNotifications, .waitFor,
+             .scrollIn, .drag, .readClipboard, .readPage, .readValue, .readNotifications, .dismissNotifications, .waitFor,
              .closeTab, .closeWindow, .selectTab, .look:
             return false
         }
