@@ -1,5 +1,11 @@
 # Release notes
 
+## 2026-11-15 per-app voice commands, packs and menu items by name (NH-76) (#129)
+
+Merged 2026-11-15 6:51 pm UTC.
+
+Say `menu <name>` in any app (for example `menu bookmark this tab`) to run that menu command without opening the menu. "open a new tab" now works like "new tab". Apps can now bring their own phrases; none ship yet.
+
 ## 2026-11-15 a task asks the user a question and takes the answer by voice (NH-47) (#130)
 
 Merged 2026-11-15 6:36 pm UTC.
