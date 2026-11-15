@@ -1,7 +1,8 @@
 # NH-109: Show a green checkmark by the Claude status when Claude works: Design
 
 **Date:** 2026-11-15  **Ticket:** [NH-109](https://github.com/noahstotland/nohands/issues/109)
-**Status:** Draft
+**Status:** Shipped
+**Shipped:** in PR #131, as specified
 
 ## Intent
 
