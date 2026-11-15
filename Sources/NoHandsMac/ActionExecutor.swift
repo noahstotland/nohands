@@ -523,7 +523,10 @@ extension OverlayController: OverlayPresenting {
                 default: return "a text box has focus: click the video first"
                 }
             }
-            for chord in chords { try input.press(chord) }
+            for chord in chords {
+                if Task.isCancelled { return Self.cancelled }
+                try input.press(chord)
+            }
         case .systemKey(let key): try input.pressMediaKey(key)
         case .windowFullScreen:
             if ax.focusedWindowIsFullScreen() == true { overlay.showHUD("already full screen"); return nil }
@@ -534,6 +537,7 @@ extension OverlayController: OverlayPresenting {
             // Escape leaves a video's full screen but not the window's: if the window is still full screen, use the chord.
             try input.press(KeyChord(.escape))
             try? await Task.sleep(for: fullScreenSettle)
+            if Task.isCancelled { return Self.cancelled }   // a spoken stop during the wait must not press the chord
             if ax.focusedWindowIsFullScreen() == true { try input.press(Self.windowFullScreen) }
         case .unsupported(let message): return message
         }
