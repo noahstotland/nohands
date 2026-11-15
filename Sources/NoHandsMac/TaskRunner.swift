@@ -97,6 +97,11 @@ public enum TaskOutcome: Equatable, Sendable {
     /// it ends and when the run ends stuck. The CLI leaves it nil.
     public var onTrail: ((TaskTrail) -> Void)?
     private var trail = TaskTrail(maxSteps: 1)
+    /// The steps of the current (or last) `run`, with their times; the command log reads it when the task ends.
+    public var currentTrail: TaskTrail { trail }
+
+    /// The Claude token counts of the calls made since the last take (see `IntentResolving.takeUsage`).
+    public func takeUsage() async -> [ClaudeUsage] { await resolver.takeUsage() }
 
     public init(config: AppConfig, resolver: any IntentResolving, executor: ActionExecutor,
                 observer: ScreenObserver, overlay: any OverlayPresenting,

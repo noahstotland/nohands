@@ -17,10 +17,15 @@ public protocol IntentResolving: Sendable {
     /// Asks for a plan for the goal alone (no screen content). nil means no plan; the task loop then runs as usual.
     /// A throw other than a cancel is treated as no plan by the caller.
     func plan(goal: String) async throws -> TaskPlan?
+    /// The token counts of the Claude calls made since the last take, and clears them. Resolvers that do not call
+    /// Claude return none.
+    func takeUsage() async -> [ClaudeUsage]
 }
 
 extension IntentResolving {
     public func plan(goal: String) async throws -> TaskPlan? { nil }
+
+    public func takeUsage() async -> [ClaudeUsage] { [] }
 
     /// One-shot convenience: step 1 of a fresh request, returning just the actions.
     public func resolve(_ transcript: String, context: IntentContext) async throws -> [Action] {
@@ -38,6 +43,8 @@ public actor ClaudeIntentResolver: IntentResolving {
     private let session: URLSession
     private let baseURL: URL
     private let deadline: Duration
+    /// Usage of each call since the last `takeUsage`. A command's tokens are read once, when its task ends.
+    private var usage: [ClaudeUsage] = []
 
     /// `baseURL` and `deadline` exist for tests; production uses the defaults.
     public init(config: AppConfig, session: URLSession = .shared,
@@ -68,7 +75,9 @@ public actor ClaudeIntentResolver: IntentResolving {
         }
         // Counts and timing only; logged before decoding so a malformed step still shows its cache numbers.
         let ms = Int(started.duration(to: .now) / .milliseconds(1))
-        PipelineLog.info("claude: step \(stepRequest.step) \(ms)ms \(ClaudeUsage.logFragment(ClaudeUsage.from(response: data)))")
+        let used = ClaudeUsage.from(response: data)
+        if let used { usage.append(used) }
+        PipelineLog.info("claude: step \(stepRequest.step) \(ms)ms \(ClaudeUsage.logFragment(used))")
         do {
             return try IntentDecoder.step(fromResponse: data)
         } catch let e as IntentDecodeError {
@@ -84,8 +93,15 @@ public actor ClaudeIntentResolver: IntentResolving {
         }
         let ms = Int(started.duration(to: .now) / .milliseconds(1))
         let plan = TaskPlan.decode(fromResponse: data)
-        PipelineLog.info("claude: plan \(ms)ms \(plan.map { "\($0.steps.count) steps" } ?? "none") \(ClaudeUsage.logFragment(ClaudeUsage.from(response: data)))")
+        let used = ClaudeUsage.from(response: data)
+        if let used { usage.append(used) }
+        PipelineLog.info("claude: plan \(ms)ms \(plan.map { "\($0.steps.count) steps" } ?? "none") \(ClaudeUsage.logFragment(used))")
         return plan
+    }
+
+    public func takeUsage() async -> [ClaudeUsage] {
+        defer { usage = [] }
+        return usage
     }
 
     private func makeBuilder() -> ClaudeRequestBuilder {
