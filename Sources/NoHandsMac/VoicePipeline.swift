@@ -417,8 +417,8 @@ import NoHandsCore
     }
 
     /// An utterance arrived while a task runs: a stop phrase cancels the task (and drops the held job); while the
-    /// task waits for a spoken yes, the words are its answer (the attention word is not needed: it is a reply to the
-    /// row on screen, and anything but a yes only stops the task); anything else replaces the held job.
+    /// task waits for a spoken yes, the words are its answer (a yes needs the attention word when one is set; any
+    /// other reply only stops the task); anything else replaces the held job.
     private func busy(_ job: Job) {
         guard !stopped else { return }
         if attention.isStop(job.transcript) {

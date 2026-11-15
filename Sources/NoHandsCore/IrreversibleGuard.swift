@@ -52,15 +52,19 @@ public enum IrreversibleGuard {
         return (0...(words.count - phrase.count)).contains { Array(words[$0..<($0 + phrase.count)]) == phrase }
     }
 
-    /// The goal's words, minus any word right after a negation ("don't send it" does not allow Send).
+    /// The goal's words, minus any word in the same clause after a negation ("don't send it", "I don't want to send
+    /// it" do not allow Send). A comma, full stop, "but" or "then" ends the clause.
     private static func goalVerbs(_ goal: String) -> Set<String> {
-        let negations: Set<String> = ["not", "never", "dont", "didnt", "wont", "cant", "no", "without"]
+        let negations: Set<String> = ["not", "never", "dont", "doesnt", "didnt", "wont", "cant", "shouldnt", "wouldnt",
+                                      "isnt", "no", "nor", "without"]
+        let breaks: Set<String> = ["but", "then"]
+        let plain = goal.replacingOccurrences(of: "\u{2019}", with: "").replacingOccurrences(of: "'", with: "")
         var out = Set<String>()
-        var negated = false
-        for word in words(goal.replacingOccurrences(of: "\u{2019}", with: "").replacingOccurrences(of: "'", with: "")) {
-            if negations.contains(word) { negated = true; continue }
-            if !negated { out.insert(word) }
-            negated = false
+        for clause in plain.split(whereSeparator: { ",.;!?".contains($0) }) {
+            var negated = false
+            for word in words(String(clause)) {
+                if breaks.contains(word) { negated = false } else if negations.contains(word) { negated = true } else if !negated { out.insert(word) }
+            }
         }
         return out
     }
@@ -69,20 +73,25 @@ public enum IrreversibleGuard {
     /// when the step may run. One yes then covers exactly the verbs it was asked about.
     public static func held(_ actions: [Action], labels: [Int: UIElementInfo], goal: String) -> String? {
         let goalWords = goalVerbs(goal)
-        var found: [String] = []
+        var asked: [String] = []
         for action in actions {
             guard let name = targetName(of: action, labels: labels) else { continue }
-            // A named target is looked up by the executor with a partial match ("order" finds "Place order"), so the
-            // element it will press is checked too, not only the words the model wrote.
-            var nameWords = words(name)
-            if isNamed(action), let found = LabelAssigner.find(named: name, in: labels.keys.sorted().compactMap { labels[$0] }) {
-                nameWords += words(found.title)
+            // The executor finds a named target by a partial match ("order" finds "Place order") in a live walk that
+            // may differ from `labels`, so every label the name could match is checked too, not only its own words.
+            var candidates = [words(name)]
+            if isNamed(action) {
+                let q = name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+                if !q.isEmpty {
+                    candidates += labels.values.filter { $0.title.lowercased().contains(q) }.map { words($0.title) }
+                }
             }
-            for verb in verbs where contains(nameWords, words(verb.name)) && !found.contains(verb.name) {
-                if !verb.allowedBy.allSatisfy({ !$0.isDisjoint(with: goalWords) }) { found.append(verb.name) }
+            for nameWords in candidates {
+                for verb in verbs where contains(nameWords, words(verb.name)) && !asked.contains(verb.name) {
+                    if !verb.allowedBy.allSatisfy({ !$0.isDisjoint(with: goalWords) }) { asked.append(verb.name) }
+                }
             }
         }
-        return found.isEmpty ? nil : found.joined(separator: " and ")
+        return asked.isEmpty ? nil : asked.joined(separator: " and ")
     }
 
     private static func isNamed(_ action: Action) -> Bool {

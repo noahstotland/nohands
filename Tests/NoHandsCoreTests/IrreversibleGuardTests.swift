@@ -46,6 +46,8 @@ private func el(_ id: Int, _ title: String, role: String = "AXButton", states: [
         ([.focusElement(.named("Send"))], labels, "reply to Anna", "send"),
         // a negated verb does not allow itself
         (click(1), labels, "reply to Anna but don't send it", "send"), (click(1), labels, "send it, don't delete", nil),
+        (click(1), labels, "I don't want to send it", "send"), (click(1), labels, "don't actually send it", "send"),
+        (click(1), labels, "no problem, send it", nil), (click(1), labels, "don't wait, send it", nil),
         // every held verb in the step is named, so one yes covers exactly what was asked about
         (click(6) + click(5) + click(1), labels, "reply to Anna", "place order and send"),
         (click(1) + click(1) + click(5), labels, "send it", "place order"),
