@@ -1,7 +1,8 @@
 # NH-84: Terminal voice commands: Design
 
 **Date:** 2026-11-15  **Ticket:** [NH-84](https://github.com/noahstotland/nohands/issues/84)
-**Status:** Draft
+**Status:** Shipped
+**Shipped:** in PR #138, as specified
 
 ## Intent
 
