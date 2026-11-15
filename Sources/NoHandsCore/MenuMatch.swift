@@ -29,6 +29,21 @@ public enum MenuMatch {
         return String(spaced).split(whereSeparator: { $0.isWhitespace }).map(String.init)
     }
 
+    /// The title as the irreversible guard and the shortcut guard see it: lowercased, trailing "…" or "..." removed,
+    /// whitespace collapsed, and nothing else changed. A model step must equal this, never the looser `fold`, so no
+    /// character the fold deletes can turn a word the guards would catch ("Emp'ty Trash", "Se...nd") into a match.
+    public static func plain(_ text: String) -> String {
+        var t = text.lowercased().trimmingCharacters(in: .whitespaces)
+        for tail in ["…", "..."] where t.hasSuffix(tail) { t = String(t.dropLast(tail.count)).trimmingCharacters(in: .whitespaces) }
+        return t.split(whereSeparator: { $0.isWhitespace }).joined(separator: " ")
+    }
+
+    /// Titles in the Apple menu: never pressed by name, whichever way the item is found.
+    public static let appleMenuTitles: Set<String> = [
+        "about this mac", "system settings", "system preferences", "app store", "recent items", "force quit",
+        "sleep", "restart", "shut down", "lock screen", "log out",
+    ]
+
     /// The index in `entries` of the item `spoken` names, or nil. `spoken` may be a path ("file > save as"): that
     /// limits the search to that menu and matches the last part.
     /// 1. Exact: the folded titles are equal.
@@ -50,8 +65,11 @@ public enum MenuMatch {
             { $0.starts(with: words) },
             { title in words.allSatisfy(title.contains) },
         ]
+        let spokenPlain = plain(spoken.split(separator: ">").last.map(String.init) ?? spoken)
         for matches in exactOnly ? Array(tiers.prefix(1)) : tiers {
-            let hits = candidates.filter { !folded[$0]!.isEmpty && matches(folded[$0]!) }
+            let hits = candidates.filter {
+                !folded[$0]!.isEmpty && matches(folded[$0]!) && (!exactOnly || plain(entries[$0].title) == spokenPlain)
+            }
             // min(by:) keeps the first of equals, which is menu bar order.
             if let best = hits.min(by: { folded[$0]!.joined(separator: " ").count < folded[$1]!.joined(separator: " ").count }) {
                 return best

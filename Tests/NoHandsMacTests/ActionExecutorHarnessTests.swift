@@ -109,6 +109,10 @@ private let labels: [Int: UIElementInfo] = [
     h!.findResult = DesktopFindMatch(ref: "@s1:e9", role: "menuitem", name: "Empty Trash…", path: [], disabled: false)
     #expect(await x.execute([.menuItem("trash")], labels: [:]) == "no menu item called trash")
     #expect(h!.calls.last == "find:menubar:Notes:trash")
+    // The Apple menu is out of reach by name even through agent-desktop.
+    h!.findResult = DesktopFindMatch(ref: "@s1:e1", role: "menuitem", name: "Shut Down…", path: [], disabled: false)
+    #expect(await x.execute([.menuItem("shut down")]) == "no menu item called shut down")
+    #expect(h!.calls.last == "find:menubar:Notes:trash")
     let (native, _, _, _, _, _) = makeHarnessed(harness: nil)
     #expect(await native.execute([.menuItem("Paste")]) == "no menu item called Paste")
 }

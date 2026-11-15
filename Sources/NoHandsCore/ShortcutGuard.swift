@@ -31,6 +31,12 @@ public enum ShortcutGuard {
                 }
             case .closeApp:
                 if closeAppWords.isDisjoint(with: words) { return "blocked: close_app not allowed for this request" }
+            case .menuItem(let title):
+                // "Close Window", "Quit Chrome": the menu form of the guarded chords asks the same of the goal.
+                let titleWords = Set(CommandGrammar.normalize(title))
+                for (key, allowed) in allowWords where !allowed.isDisjoint(with: titleWords) && allowed.isDisjoint(with: words) {
+                    return "blocked: menu item \(title) not allowed for this request"
+                }
             default:
                 continue
             }

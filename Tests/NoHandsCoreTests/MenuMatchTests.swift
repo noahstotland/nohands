@@ -40,6 +40,11 @@ private let entries = [
     let all = entries + [item("Move to Trash"), item("Empty Trash…")]
     #expect(MenuMatch.firstMatch("trash", in: all).map { all[$0].title } == "Empty Trash…")
     #expect(MenuMatch.firstMatch("trash", in: all, exactOnly: true) == nil)
+    // ...and the guards read the name as written: characters the loose fold deletes do not make a match.
+    for sneaky in ["emp'ty trash", "empty tra...sh", "e`mpty trash"] {
+        #expect(MenuMatch.firstMatch(sneaky, in: all, exactOnly: true) == nil, Comment(rawValue: sneaky))
+    }
+    #expect(MenuMatch.firstMatch("Empty Trash...", in: all, exactOnly: true).map { all[$0].title } == "Empty Trash…")
     #expect(MenuMatch.firstMatch("move to trash", in: all, exactOnly: true).map { all[$0].title } == "Move to Trash")
     for (spoken, title) in cases {
         let found = MenuMatch.firstMatch(spoken, in: entries).map { entries[$0].title }
