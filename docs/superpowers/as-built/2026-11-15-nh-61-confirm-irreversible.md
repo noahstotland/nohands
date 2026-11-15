@@ -12,5 +12,5 @@
 - Return on a focused button is guarded only where the element list carries the focused state, which is the agent-desktop harness; the native accessibility walk does not report it.
 - `ConfirmAnswer.isYes` takes the attention word as a parameter.
 - With an attention word configured, a yes must start with it (the spec said the word was not needed). A stray "yes" from a TV then stops the task instead of confirming.
-- A named target is also checked against the observed elements it could press (those with exactly that title, else every one whose title contains it), and moving the cursor or focus onto a guarded button is held like a click.
+- A named target is also checked against the observed elements it could press (those with exactly that title, else every one whose title contains it), and moving the cursor or focus onto a guarded button is held like a click, and so are `select_option`, `type_into` and `set_checked` by name.
 - A verb after a negation ("not", "never", "don't", "no", "without" and the like) in the same clause of the goal does not allow itself; a comma, "but" or "then" ends the clause. An element that appears on screen only after the observation, or beyond the element cap, is not seen by the guard.
