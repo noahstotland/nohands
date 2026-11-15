@@ -1,4 +1,5 @@
 import Foundation
+import AppKit
 import NoHandsCore
 
 /// mic -> VAD -> assembler -> (bounded queue, newest 4: early and full jobs) -> ASR -> (serial job stream) -> ModeMachine -> executor / resolver.
@@ -147,12 +148,12 @@ import NoHandsCore
     /// dictation commands (escape phrases, "scratch that", "delete word") in dictation mode. Internal so tests build their MergeBuffer the same way.
     /// With the attention word on, a command mode grammar command counts only after the word ("computer, go back").
     nonisolated static func isComplete(_ transcript: String, mode: Mode, grammar: CommandGrammar,
-                                       attention: AttentionGate = .off) -> Bool {
+                                       attention: AttentionGate = .off, frontmost: String? = nil) -> Bool {
         if attention.isStop(transcript) { return true }
         switch mode {
         case .command:
             // "spell" always waits the merge window: a pause mid-spelling must not type half and send the rest to the model.
-            func complete(_ phrase: String) -> Bool { CommandGrammar.normalize(phrase).first != "spell" && grammar.parse(phrase) != nil }
+            func complete(_ phrase: String) -> Bool { CommandGrammar.normalize(phrase).first != "spell" && grammar.parse(phrase, frontmost: frontmost) != nil }
             switch attention.check(transcript) {
             case .off: return complete(transcript)
             case .addressed(let rest): return complete(rest)
@@ -166,10 +167,10 @@ import NoHandsCore
     /// True when the grammar parses `transcript` (after the attention word) to actions carrying spoken text, or does not
     /// parse it at all: such a command keeps the full silence window.
     nonisolated static func carriesSpokenText(_ transcript: String, grammar: CommandGrammar,
-                                              attention: AttentionGate = .off) -> Bool {
+                                              attention: AttentionGate = .off, frontmost: String? = nil) -> Bool {
         var phrase = transcript
         if case .addressed(let rest) = attention.check(transcript) { phrase = rest }
-        return grammar.parse(phrase)?.carriesSpokenText ?? true
+        return grammar.parse(phrase, frontmost: frontmost)?.carriesSpokenText ?? true
     }
 
     /// One unit of work for the serial ASR loop. `early` is a pass over the audio so far, started after a short
@@ -256,11 +257,12 @@ import NoHandsCore
 
         let grammar = CommandGrammar(config: config.grammarConfig)
         let attention = self.attention
+        let front = FrontmostApp.shared   // a pack phrase closes the merge window early, like a global one
         let merge = MergeBuffer(
             merger: UtteranceMerger(windowMs: config.mergeWindowMs, unfinishedWindowMs: config.mergeWindowUnfinishedMs),
             gate: attention,
-            isComplete: { Self.isComplete($0, mode: $1, grammar: grammar, attention: attention) },
-            carriesSpokenText: { Self.carriesSpokenText($0, grammar: grammar, attention: attention) },
+            isComplete: { Self.isComplete($0, mode: $1, grammar: grammar, attention: attention, frontmost: front.bundleID) },
+            carriesSpokenText: { Self.carriesSpokenText($0, grammar: grammar, attention: attention, frontmost: front.bundleID) },
             onHold: { [weak self] text in
                 Task { @MainActor in self?.listening(text) }
             },
@@ -475,7 +477,7 @@ import NoHandsCore
             return nil
         }
         lastTranscript = text
-        var routing = modeMachine.route(text)
+        var routing = modeMachine.route(text, frontmost: NSWorkspace.shared.frontmostApplication?.bundleIdentifier)
         // A stop phrase with no task running must not start one (held jobs never get here: busy() intercepts them).
         if case .resolveWithLLM(let phrase) = routing, StopWords.isStop(phrase) { routing = .ignore(reason: "stop") }
         var outcome = PipelineText.summary(routing)                    // public: kinds only

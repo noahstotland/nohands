@@ -21,7 +21,7 @@ private let labels: [Int: UIElementInfo] = [
     let i = FakeInput(), e = FakeElements(), o = FakeOverlay(), c = FakeClipboard()
     e.front = "Notes"
     let x = ActionExecutor(input: i, ax: e, overlay: o, config: AppConfig(), frontTimeout: .milliseconds(150),
-                           windowTimeout: .milliseconds(300), harness: harness, clipboard: c)
+                           windowTimeout: .milliseconds(300), harness: harness, clipboard: c, menus: FakeMenus([]))
     return (x, i, e, o, harness, c)
 }
 
@@ -102,11 +102,11 @@ private let labels: [Int: UIElementInfo] = [
     #expect(await x.execute([.menuItem("File > Save As…")]) == nil)
     #expect(h!.calls == ["find:menubar:Notes:Save As…", "act:click @s1:e5"])
     h!.findResult = DesktopFindMatch(ref: "@s1:e5", role: "menuitem", name: "Paste", path: [], disabled: true)
-    #expect(await x.execute([.menuItem("Paste")]) == "menu item is disabled")
+    #expect(await x.execute([.menuItem("Paste")]) == "menu item Paste is disabled")
     h!.findResult = nil
-    #expect(await x.execute([.menuItem("Nothing")]) == "no menu item named 'Nothing'")
+    #expect(await x.execute([.menuItem("Nothing")]) == "no menu item called Nothing")
     let (native, _, _, _, _, _) = makeHarnessed(harness: nil)
-    #expect(await native.execute([.menuItem("Paste")]) == "needs agent-desktop")
+    #expect(await native.execute([.menuItem("Paste")]) == "no menu item called Paste")
 }
 
 @MainActor @Test func clickInDockFindsWithoutApp() async {

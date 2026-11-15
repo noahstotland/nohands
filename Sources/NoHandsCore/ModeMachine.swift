@@ -53,8 +53,9 @@ public struct ModeMachine: Sendable {
     /// and the user may edit by hand before resuming, so the record no longer matches the screen.
     public mutating func forgetDictationRecord() { session.forgetLast() }
 
-    /// Applies mode transitions contained in the result and returns what the executor should do.
-    public mutating func route(_ transcript: String) -> Routing {
+    /// Applies mode transitions contained in the result and returns what the executor should do. `frontmost` is the
+    /// frontmost app's bundle ID, for its pack's phrases in command mode.
+    public mutating func route(_ transcript: String, frontmost bundleID: String? = nil) -> Routing {
         let tokens = CommandGrammar.normalize(transcript)
         guard !tokens.isEmpty else { return .ignore(reason: "empty") }
         // Only sleep and dictation read it; command mode checks the gate itself.
@@ -84,19 +85,19 @@ public struct ModeMachine: Sendable {
             // A stop phrase is never gated: it takes the ungated path whatever the gate says.
             if attention.isOn && !StopWords.isStop(transcript) {
                 switch attention.check(transcript) {
-                case .addressed(let rest): return routeCommand(rest)
+                case .addressed(let rest): return routeCommand(rest, frontmost: bundleID)
                 case .wordOnly: return .ignore(reason: "attention word only")
                 case .notAddressed: return .ignore(reason: "not addressed")
                 case .off: break
                 }
             }
-            return routeCommand(transcript)
+            return routeCommand(transcript, frontmost: bundleID)
         }
     }
 
-    private mutating func routeCommand(_ transcript: String) -> Routing {
+    private mutating func routeCommand(_ transcript: String, frontmost bundleID: String?) -> Routing {
         let phrase = CommandGrammar.normalize(transcript).joined(separator: " ")
-        guard let actions = grammar.parse(transcript) else {
+        guard let actions = grammar.parse(transcript, frontmost: bundleID) else {
             if let message = grammar.rejection(transcript) { return .reject(message) }
             return .resolveWithLLM(phrase)
         }
