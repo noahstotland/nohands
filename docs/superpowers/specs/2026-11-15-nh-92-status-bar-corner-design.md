@@ -1,7 +1,8 @@
 # NH-92: Move the status bar to the bottom-right corner and remove the always-on Listening line: Design
 
 **Date:** 2026-11-15  **Ticket:** [NH-92](https://github.com/noahstotland/nohands/issues/92)
-**Status:** Draft
+**Status:** Shipped
+**Shipped:** in PR #127, as specified
 
 ## Intent
 
