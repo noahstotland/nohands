@@ -213,3 +213,16 @@ private let labels: [Int: UIElementInfo] = [
     waiting.cancel()
     #expect(await waiting.value == ActionExecutor.cancelled)
 }
+
+@MainActor @Test func ordinalNameClicksTheShownResultThroughTheHarness() async {
+    let (x, i, _, _, h, _) = makeHarnessed()
+    h!.actResults = [.delivered(verified: true)]
+    let shown: [Int: UIElementInfo] = [
+        1: UIElementInfo(id: 1, frame: CGRect(x: 0, y: 0, width: 50, height: 20), title: "Home", role: "link", ref: "@s1:e9"),
+        2: UIElementInfo(id: 2, frame: CGRect(x: 0, y: 50, width: 50, height: 20), title: "Raptors vs Celtics Full Game", role: "link", ref: "@s1:e7"),
+    ]
+    #expect(await x.execute([.click(.element(named: "first video"), button: .left, count: 1)], labels: shown) == nil)
+    #expect(i.calls.isEmpty && h!.calls == ["act:click @s1:e7"])
+    #expect(await x.execute([.click(.element(named: "tenth video"), button: .left, count: 1)], labels: shown)
+        == "no element named 'tenth video'; say its label number from the list")
+}

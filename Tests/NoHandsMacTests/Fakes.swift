@@ -64,6 +64,8 @@ final class FakeElements: ElementProviding, @unchecked Sendable {
     private var justExposed = false
     /// Number of `actionableElements()` walks.
     var walks = 0
+    /// When non-empty, each walk returns the next list (the last repeats) instead of `elements`.
+    var walkLists: [[UIElementInfo]] = []
     /// Called on every walk (e.g. to advance a fake clock), and where each walk ran.
     var onWalk: (@Sendable () -> Void)?
     var walkedOnMainThread: [Bool] = []
@@ -80,7 +82,7 @@ final class FakeElements: ElementProviding, @unchecked Sendable {
         walkScreens.append(screens)
         onWalk?()
         if exposeOnNextWalk { exposeOnNextWalk = false; justExposed = true }
-        return elements
+        return walkLists.isEmpty ? elements : walkLists[min(walks - 1, walkLists.count - 1)]
     }
     func didJustExpose() -> Bool { defer { justExposed = false }; return justExposed }
     func screenRectsCG() -> [CGRect] { [CGRect(x: 0, y: 0, width: 1000, height: 800)] }

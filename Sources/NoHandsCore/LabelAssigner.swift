@@ -85,6 +85,13 @@ public enum LabelAssigner {
         return Dictionary(uniqueKeysWithValues: sorted.enumerated().map { ($0.offset + 1, $0.element) })
     }
 
+    /// Only an exact (case-insensitive) title match; nil if none.
+    public static func find(exactly name: String, in elements: [UIElementInfo]) -> UIElementInfo? {
+        let q = name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !q.isEmpty else { return nil }
+        return elements.first { $0.title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == q }
+    }
+
     /// Exact (case-insensitive) title match first, then prefix, then contains; nil if none.
     public static func find(named name: String, in elements: [UIElementInfo]) -> UIElementInfo? {
         let q = name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()

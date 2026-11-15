@@ -92,7 +92,7 @@ Spoken tokens → characters: `period` `.`, `comma` `,`, `question mark` `?`, `e
 ## 8. Mouse targeting
 
 - **Grid:** 10 columns × 8 rows over the screen containing the pointer, cells numbered 1–80 left-to-right, top-to-bottom, drawn as a translucent overlay with the number centered in each cell. `zoom <n>` replaces the grid with a 10×8 grid inside cell n; on a 1512×982 screen the zoomed cells are about 15×12 px, small enough to hit any control. `click <n>` clicks the cell center and hides the grid.
-- **Labels:** numbered badges on every actionable accessibility element of the frontmost app (roles: button, link, text field, text area, checkbox, radio button, pop-up button, menu item, menu bar item, tab, slider, combo box, cell, row, disclosure triangle, increment/decrement). Elements are gathered depth-first with a depth limit of 12 and a time budget of 150 ms, deduplicated by frame, capped at 200, sorted top-to-bottom then left-to-right, numbered from 1.
+- **Labels:** numbered badges on every actionable accessibility element of the frontmost app (roles: button, link, text field, text area, checkbox, radio button, pop-up button, menu item, menu bar item, tab, slider, combo box, cell, row, disclosure triangle, increment/decrement). Elements are gathered depth-first with a depth limit of 12 and a time budget of 150 ms and 2000 nodes (in a browser: 600 ms and 5000 nodes, the page's web area first after the menu bar), deduplicated by frame, capped at 200, sorted top-to-bottom then left-to-right, numbered from 1.
 - **By name:** `click <name>` finds, among those same elements, the one whose title / description / value matches `name` (case-insensitive; exact match preferred, then prefix, then contains). The executor moves the pointer there and clicks.
 - **Coordinates:** CGEvent and the accessibility API both use a top-left-origin global coordinate space; AppKit windows use bottom-left. One `CoordinateMapper` does the flip using the primary screen's height.
 
@@ -132,7 +132,7 @@ Text is typed with `CGEvent` keyboard events carrying a Unicode string, in chunk
 |---|---|
 | end-of-speech detection (silence) | 350 ms (`earlySilenceMs`, complete grammar commands and stop phrases only; anything else waits `silenceMs`, 1000 ms) |
 | Parakeet TDT v2 on a ≤ 5 s utterance, M1 Pro | ≤ 250 ms |
-| grammar + executor | ≤ 20 ms |
+| grammar + executor | ≤ 20 ms (browser `show numbers` and `click <name>` are outside this: up to about 450 ms more, and a 600 ms settle plus a second walk the first time a Chromium browser is walked) |
 | **total** | **≤ 650 ms** |
 
 Measured numbers for the early-close path are in [the NH-36 as-built](../as-built/2026-11-08-nh-36-early-grammar-endpointing.md).
