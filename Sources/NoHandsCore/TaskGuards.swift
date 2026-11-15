@@ -60,16 +60,45 @@ public struct RepeatDetector: Sendable {
 public enum Settle {
     /// `media` is compared too: media without a control (`playing` with none found) comes from Mac-wide audio.
     public static func same(_ a: ScreenObservation, _ b: ScreenObservation) -> Bool {
+        sameFrame(a, b) && signature(a.elements) == signature(b.elements)
+    }
+
+    /// Same screen state apart from element values: the same app, window, URL, surface, media and the same
+    /// elements (by role, title and states). A ticking clock or counter differs only this way.
+    static func sameExceptValues(_ a: ScreenObservation, _ b: ScreenObservation) -> Bool {
+        sameFrame(a, b) && identities(a.elements) == identities(b.elements)
+    }
+
+    /// The element identities whose values (compared as a group) differ between two readings.
+    static func changedValues(_ a: ScreenObservation, _ b: ScreenObservation) -> Set<String> {
+        let (x, y) = (valueGroups(a.elements), valueGroups(b.elements))
+        return Set(x.keys).union(y.keys).filter { x[$0] != y[$0] }
+    }
+
+    private static func sameFrame(_ a: ScreenObservation, _ b: ScreenObservation) -> Bool {
         a.app == b.app && a.windowTitle == b.windowTitle && a.url == b.url && a.surface == b.surface && a.media == b.media
-            && signature(a.elements) == signature(b.elements)
     }
 
     /// Numbers (and refs) are left out: a re-snapshot renumbers the same screen.
     private static func signature(_ elements: [ObservedElement]) -> [String: Int] {
         var counts: [String: Int] = [:]
-        for e in elements {
-            counts[e.role + "\u{1F}" + e.title + "\u{1F}" + (e.value ?? "") + "\u{1F}" + e.states.joined(separator: ","), default: 0] += 1
-        }
+        for e in elements { counts[identity(e) + "\u{1F}" + (e.value ?? ""), default: 0] += 1 }
         return counts
+    }
+
+    private static func identity(_ e: ObservedElement) -> String {
+        e.role + "\u{1F}" + e.title + "\u{1F}" + e.states.joined(separator: ",")
+    }
+
+    private static func identities(_ elements: [ObservedElement]) -> [String: Int] {
+        var counts: [String: Int] = [:]
+        for e in elements { counts[identity(e), default: 0] += 1 }
+        return counts
+    }
+
+    private static func valueGroups(_ elements: [ObservedElement]) -> [String: [String]] {
+        var groups: [String: [String]] = [:]
+        for e in elements { groups[identity(e), default: []].append(e.value ?? "") }
+        return groups.mapValues { $0.sorted() }
     }
 }

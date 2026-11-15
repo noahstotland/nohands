@@ -183,6 +183,8 @@ final class FakeHarness: DesktopHarness, @unchecked Sendable {
     private let lock = NSLock()
     let kind: HarnessKind = .agentDesktop
     var calls: [String] = []
+    /// `calls` read under the lock, for a test that polls while the harness is running.
+    var recordedCalls: [String] { lock.withLock { calls } }
     /// Snapshot results consumed in order (the last one repeats); nil means "no snapshot" (native fallback).
     var snapshotResults: [DesktopSnapshot?] = [nil]
     var findResult: DesktopFindMatch?
@@ -194,6 +196,11 @@ final class FakeHarness: DesktopHarness, @unchecked Sendable {
     /// Surfaces every `act` leaves open (as agent-desktop reports in `data.surfaces`).
     var surfacesAfterAct: [String] = []
     var sessionID: String? = "sess-1"
+    /// When set, a `wait` returns this instead of the act results, after running `onWait` and sleeping `waitDelay`
+    /// (a cancel cuts the sleep short).
+    var waitResult: HarnessActionResult?
+    var waitDelay: Duration = .zero
+    var onWait: (@Sendable () -> Void)?
 
     func snapshot(app: String, surface: DesktopSurface?, timeoutMs: Int) async -> DesktopSnapshot? {
         lock.withLock {
@@ -207,7 +214,15 @@ final class FakeHarness: DesktopHarness, @unchecked Sendable {
         lock.withLock { calls.append("find:\(surface?.rawValue ?? "window"):\(app ?? "-"):\(name)"); return findResult }
     }
     func act(_ command: DesktopCommand) async -> HarnessActionResult {
-        lock.withLock {
+        if case .wait = command, let waited = lock.withLock({ () -> HarnessActionResult? in
+            if waitResult != nil { calls.append("act:" + command.argv(headed: false, session: nil).joined(separator: " ")) }
+            return waitResult
+        }) {
+            onWait?()
+            if waitDelay > .zero { try? await Task.sleep(for: waitDelay) }
+            return waited
+        }
+        return lock.withLock {
             calls.append("act:" + command.argv(headed: false, session: nil).joined(separator: " "))
             let r = actResults.first ?? .delivered(verified: true)
             if actResults.count > 1 { actResults.removeFirst() }
