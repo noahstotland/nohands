@@ -52,17 +52,19 @@ public enum IrreversibleGuard {
         return (0...(words.count - phrase.count)).contains { Array(words[$0..<($0 + phrase.count)]) == phrase }
     }
 
-    /// The verb to confirm before `actions` run, or nil when the step may run. The first held action names it.
+    /// The verbs to confirm before `actions` run ("send", or "send and delete" when one step holds several), or nil
+    /// when the step may run. One yes then covers exactly the verbs it was asked about.
     public static func held(_ actions: [Action], labels: [Int: UIElementInfo], goal: String) -> String? {
         let goalWords = Set(words(goal))
+        var found: [String] = []
         for action in actions {
             guard let name = targetName(of: action, labels: labels) else { continue }
             let nameWords = words(name)
-            for verb in verbs where contains(nameWords, words(verb.name)) {
-                if !verb.allowedBy.allSatisfy({ !$0.isDisjoint(with: goalWords) }) { return verb.name }
+            for verb in verbs where contains(nameWords, words(verb.name)) && !found.contains(verb.name) {
+                if !verb.allowedBy.allSatisfy({ !$0.isDisjoint(with: goalWords) }) { found.append(verb.name) }
             }
         }
-        return nil
+        return found.isEmpty ? nil : found.joined(separator: " and ")
     }
 
     /// What the user would call the thing the action presses; nil for an action with no name.

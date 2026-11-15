@@ -38,8 +38,9 @@ private func el(_ id: Int, _ title: String, role: String = "AXButton", states: [
         // Return presses the focused button; no focused button or a focused text field is not held
         (enter, labels, "reply to Anna", "send"),
         (enter, labels.filter { $0.key != 9 }, "reply to Anna", nil),
-        // the first held action of the step names the verb
-        (click(6) + click(5) + click(1), labels, "reply to Anna", "place order"),
+        // every held verb in the step is named, so one yes covers exactly what was asked about
+        (click(6) + click(5) + click(1), labels, "reply to Anna", "place order and send"),
+        (click(1) + click(1) + click(5), labels, "send it", "place order"),
     ]
     for (actions, labels, goal, expected) in table {
         #expect(IrreversibleGuard.held(actions, labels: labels, goal: goal) == expected, "\(actions) / \(goal)")

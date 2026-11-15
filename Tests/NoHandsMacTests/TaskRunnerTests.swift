@@ -942,11 +942,13 @@ private func resolverForSend() -> FakeResolver {
         let runner = r.runner
         let task = Task { await runner.run(goal: goal, mode: .command) }
         if case .say(let words) = reply {
-            while !runner.isAwaitingAnswer { await Task.yield() }
+            for _ in 0..<2000 where !runner.isAwaitingAnswer { await Task.yield() }
+            #expect(runner.isAwaitingAnswer, "the step was never held")
             #expect(r.statuses.last == "step 1 · say yes to send", "\(goal) / \(words)")
             runner.answer(words)
         } else if case .stop = reply {
-            while !runner.isAwaitingAnswer { await Task.yield() }
+            for _ in 0..<2000 where !runner.isAwaitingAnswer { await Task.yield() }
+            #expect(runner.isAwaitingAnswer, "the step was never held")
             runner.cancel()
         }
         #expect(await task.value == outcome, "\(goal) / \(reply)")
