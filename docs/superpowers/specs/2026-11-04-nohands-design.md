@@ -50,7 +50,7 @@ mic (AVAudioEngine with voice processing / echo cancellation unless `echoCancell
 | Mode | Entered by | Behavior |
 |---|---|---|
 | `command` (default) | launch, "command mode", "stop dictating", "wake up" | every utterance is a command (with `attentionWord` set, only those that start with it) |
-| `dictation` | "start dictating", "dictation mode" | every utterance is typed, except "stop dictating" / "command mode", "scratch that" and "delete word" |
+| `dictation` | "start dictating", "dictation mode" | every utterance is typed, except "stop dictating" / "command mode", "scratch that", "delete word", "delete that" and the text edits (`select the last sentence`, `delete <words>`, `replace x with y`, `go to the end of the line`, `uppercase that`; a phrase edit whose words are not in the field is typed as dictation) |
 | `sleep` | "go to sleep" | everything ignored except "wake up" |
 
 Mode is shown in the menu bar: the winking-face glyph (`Resources/MenuBarIcon.png`, with an `@2x`; the `mic` symbol only when they are missing, as in an unbundled `swift run`) + `CMD` / `DICT` / `ZZZ` text.
@@ -69,7 +69,7 @@ Input is normalized first: lowercased, ASR punctuation stripped (`.,!?`), whites
 | `spell <tokens>` | `.typeText(string)`: letters, letter-name homophones, NATO words, digits, `space`/`dash`/`dot`/`underscore`/`at sign`; `capital` uppercases the next letter. One unknown token or a dangling `capital` types nothing |
 | `press <modifiers…> <key>` e.g. "press command shift s" | `.pressKey(KeyChord)` |
 | `enter`, `tab`, `escape`, `space`, `delete` / `backspace`, `forward delete`, `up`/`down`/`left`/`right` | `.pressKey` of that key |
-| `undo`, `redo`, `copy`, `paste`, `cut`, `select all`, `save`, `find`, `new tab`, `close tab`, `close window`, `quit app`, `switch app`, `spotlight`, `delete word`, `delete line` | the standard ⌘ shortcut (`redo` = ⇧⌘Z, `switch app` = ⌘⇥, `spotlight` = ⌘␣, `delete word` = ⌥⌫, `delete line` = ⌘⌫) |
+| `undo`, `redo`, `copy`, `paste`, `cut`, `select all`, `save`, `find`, `new tab`, `close tab`, `close window`, `quit app`, `switch app`, `spotlight`, `delete word` | the standard ⌘ shortcut (`redo` = ⇧⌘Z, `switch app` = ⌘⇥, `spotlight` = ⌘␣, `delete word` = ⌥⌫); `delete line` and other spoken text edits are in the README voice commands and the NH-54 spec) |
 | `find <words>`, `scroll to <words>` | `.findOnPage(words, movePointer: true)`; bare `find` stays ⌘F, and `scroll to` an end of the page or a direction goes to the LLM |
 | `click` | `.click(.cursor)` left, count 1 |
 | `double click`, `triple click` | count 2 / 3 |
