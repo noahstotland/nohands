@@ -14,7 +14,7 @@ public enum TargetResolver {
         case .cursor: return .point(cursor)
         case .point(let p): return .point(p)
         case .numbered(let n): return numbered(n, overlay: overlay, screens: screens)
-        case .element(let name): return element(name, in: elements, screens: screens)
+        case .element(let name): return element(name, in: elements, screens: screens, labels: labels)
         }
     }
 
@@ -25,7 +25,7 @@ public enum TargetResolver {
         case .label(let n): return snapshotLabel(n, labels: labels, screens: screens)
         case .point(let p): return .point(p)
         case .numbered(let n): return numbered(n, overlay: overlay, screens: screens)
-        case .element(let name): return element(name, in: elements, screens: screens)
+        case .element(let name): return element(name, in: elements, screens: screens, labels: labels)
         case .relative(let dx, let dy): return .point(CGPoint(x: cursor.x + CGFloat(dx), y: cursor.y + CGFloat(dy)))
         }
     }
@@ -48,8 +48,15 @@ public enum TargetResolver {
         }
     }
 
-    private static func element(_ name: String, in elements: [UIElementInfo], screens: [CGRect]) -> TargetResolution {
-        guard let e = LabelAssigner.find(named: name, in: elements) else { return .failure("no element named '\(name)'") }
+    /// A title match wins; only a miss reads the name as a position ("first video") over the list the model saw.
+    private static func element(_ name: String, in elements: [UIElementInfo], screens: [CGRect],
+                                labels: [Int: UIElementInfo]?) -> TargetResolution {
+        if let e = LabelAssigner.find(named: name, in: elements) { return .point(e.clickPoint(screens: screens)) }
+        guard let ordinal = OrdinalTarget.parse(name) else { return .failure("no element named '\(name)'") }
+        let shown = labels ?? LabelAssigner.assign(elements)
+        guard let n = ordinal.label(in: shown), let e = shown[n] else {
+            return .failure("no element named '\(name)'; say its label number from the list")
+        }
         return .point(e.clickPoint(screens: screens))
     }
 }
