@@ -127,6 +127,14 @@ The script installs Ollama with Homebrew if needed, starts it, pulls the model a
 | `scratch that` (dictation) | Deletes what your last dictated phrase typed |
 | `delete word` (dictation) | Deletes the previous word |
 | `go to sleep` / `wake up` | Pause and resume listening |
+| `menu <words>` | Presses the menu item of the front app that the words name, such as `menu bookmark this tab` or `menu save as`, through Accessibility; the menu does not open on screen. An exact title wins, else a title that starts with the words, else one that holds every word; a mishearing finds nothing and the row says `no menu item called <words>`. A greyed-out item says `menu item <title> is disabled`. The Apple menu is never searched (no `menu shut down`) |
+
+### Per-app commands
+
+An app can have its own phrases, which work only while it is in front and are checked before the global ones: where an app and the table above share a phrase, the app's wins in that app only. Leading `open`, `go to` and `a` / `the` are ignored when looking one up, so `open a new tab`, `go to the new tab` and `new tab` mean the same in an app that has the phrase; with no such app in front, `open <phrase>` also runs a phrase from the table above (`open a new tab` presses command-T). Each app adds its rows below.
+
+| App | Say | Does |
+|---|---|---|
 
 With `attentionWord` set (see Configuration), start each command with it: `computer, new tab`. Commands without it are ignored.
 
@@ -152,7 +160,8 @@ In dictation mode, say `period`, `comma`, `question mark`, `new line`, `new para
 | `click "<name>"` | Clicks the named element |
 | `grid` | Shows the 10×8 grid, zooms into cell 35 |
 | `labels` | Shows numbered badges on the frontmost app's elements |
-| `parse "<text>"` | Dry run: prints the actions the grammar produces (or "no match -> LLM", or "rejected: ..." for a `spell` with an unknown word, e.g. `parse "spell capital kilo nine x ray"`); executes nothing |
+| `parse "<text>" [--app <bundle id>]` | Dry run: prints the actions the grammar produces (or "no match -> LLM", or "rejected: ..." for a `spell` with an unknown word, e.g. `parse "spell capital kilo nine x ray"`); executes nothing |
+| `menu "<words>"` / `menu --list` | After 2 s (3 s for `--list`) prints the frontmost app's menu item those words name and presses it; `--list` prints the app's menu items. Dev tools for checking menu names and `AXPress` in an app |
 | `run "<phrase>"...` | Executes grammar phrases in order |
 | `observe` | Prints what the task loop sends the model about the frontmost app: window title, URL, a `Media:` line (`playing`, `paused` or `none`) and numbered elements with roles |
 | `resolve "<text>"` | Dry run: sends text and the frontmost app's labels to the configured backend and prints the step (`intent`, `status`, actions); executes nothing (Claude spends API credit) |
