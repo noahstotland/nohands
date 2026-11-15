@@ -56,6 +56,13 @@ public protocol ElementProviding: Sendable {
     func browserTabIsInFrontWindow(id: String) -> Bool
     /// Forgets the ids handed out (the end of a task).
     func resetBrowserTokens()
+    /// Whether the frontmost app's focused element takes typed text (never a password field).
+    func isTextFocused() -> Bool
+    /// The focused text field's value, selection and caret line (UTF-16); nil when there is none or it cannot be read
+    /// in time (over 200,000 units, a slow app, a password field). Blocks up to its budget: call it off the main actor.
+    func focusedText() -> FocusedText?
+    /// Selects `span` in the focused field and reads it back: true only when the field took it.
+    func setSelection(_ span: TextSpan) -> Bool
 }
 
 /// How a request to act on a browser tab or window went.
@@ -81,6 +88,9 @@ extension ElementProviding {
     public func browserTabIsSelected(id: String) -> Bool { false }
     public func browserTabIsInFrontWindow(id: String) -> Bool { false }
     public func resetBrowserTokens() {}
+    public func isTextFocused() -> Bool { false }
+    public func focusedText() -> FocusedText? { nil }
+    public func setSelection(_ span: TextSpan) -> Bool { false }
     public func focusedWindowTitle() -> String? { nil }
     public func webURL() -> String? { nil }
     public func didJustExpose() -> Bool { false }
@@ -161,6 +171,9 @@ extension OverlayController: OverlayPresenting {
     public private(set) var readings: [String] = []
     /// The element the last `findOnPage` scrolled into view, until `takeFound()`.
     public private(set) var found: UIElementInfo?
+    /// Whether the last `editText` typed its `otherwise` words instead of editing: dictation, not an edit, so the
+    /// dictation record ("scratch that") still matches the screen.
+    public internal(set) var editTypedOtherwise = false
 
     public init(input: any InputSynthesizing, ax: any ElementProviding, overlay: any OverlayPresenting,
                 config: AppConfig, frontTimeout: Duration = .seconds(1.5), windowTimeout: Duration = .seconds(6),
@@ -214,6 +227,7 @@ extension OverlayController: OverlayPresenting {
     @discardableResult
     public func execute(_ actions: [Action], labels: [Int: UIElementInfo]? = nil, tabs: TabListing? = nil) async -> String? {
         pressed = []
+        editTypedOtherwise = false
         labelSnapshot = labels
         tabSnapshot = tabs
         defer { labelSnapshot = nil; tabSnapshot = nil }
@@ -367,8 +381,8 @@ extension OverlayController: OverlayPresenting {
                 if let failure = closeOtherTabs() { return failure }
             case .listTabs:
                 if let failure = await listTabs() { return failure }
-            case .editText:
-                return "text editing not wired"   // TODO(NH-54 task 5)
+            case .editText(let edit, let otherwise):
+                if let failure = try await editText(edit, otherwise: otherwise) { return failure }
             case .setValue, .typeInto, .clearField, .selectOption, .setChecked, .setExpanded, .focusElement, .scrollTo,
                  .scrollIn, .drag, .clickIn, .menuItem, .closeApp, .windowAction, .clipboardSet, .readClipboard,
                  .readValue, .readNotifications, .dismissNotifications, .waitFor:
