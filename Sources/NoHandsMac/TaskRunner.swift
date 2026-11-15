@@ -29,6 +29,8 @@ public enum TaskOutcome: Equatable, Sendable {
     /// How long a capture may take before the step goes on without a picture.
     static let captureDeadline: Duration = .seconds(2)
     static let looking = "looking at the screen"
+    /// How long a step held for a spoken yes waits for the answer before the task stops.
+    nonisolated static let answerTimeout: Duration = .seconds(30)
 
     private let config: AppConfig
     private let resolver: any IntentResolving
@@ -43,6 +45,11 @@ public enum TaskOutcome: Equatable, Sendable {
     private var captureWait: CheckedContinuation<ScreenshotResult, Never>?
     /// Identifies the current wait, so a capture or deadline that finishes late cannot resume a newer one.
     private var captureWaitID = 0
+    /// The task paused for a spoken answer, if any. `answer(_:)` resumes it with the words, `cancel()` and the
+    /// timeout with nil. The caller decides what counts as yes.
+    private var answerWait: CheckedContinuation<String?, Never>?
+    /// Identifies the current answer wait, so a timeout that fires late cannot resume a newer one.
+    private var answerWaitID = 0
     /// agent-desktop, when installed and chosen. The task's harness kind is decided by the first observation.
     private let harness: (any DesktopHarness)?
     private var taskHarness: HarnessKind = .native
@@ -101,7 +108,14 @@ public enum TaskOutcome: Equatable, Sendable {
         cancelled = true
         inFlight?.cancel()
         endCaptureWait(with: .failed)
+        endAnswerWait(with: nil)
     }
+
+    /// True while the task is paused for a spoken answer: the pipeline then sends the user's next words to `answer`.
+    public var isAwaitingAnswer: Bool { answerWait != nil }
+
+    /// Hands the paused task the user's reply. Does nothing when no answer is awaited.
+    public func answer(_ transcript: String) { endAnswerWait(with: transcript) }
 
     private var isCancelled: Bool { cancelled || Task.isCancelled }
 
@@ -242,6 +256,17 @@ public enum TaskOutcome: Equatable, Sendable {
                 ?? MenuBarGuard.blocked(actions, labels: labels, menuBarTitles: observation.menuBarTitles, goal: goal,
                                         badgesShowing: observation.overlay == "labels") { failure = blocked }
             else {
+                // An irreversible button the request did not name waits for a spoken yes; anything else, silence or
+                // a stop ends the task before the step runs.
+                if let verb = IrreversibleGuard.held(actions, labels: labels, goal: goal) {
+                    onStatus?(.running("step \(n) · say yes to \(verb)"))
+                    let reply = await awaitAnswer(timeout: Self.answerTimeout)
+                    if isCancelled { return await finish(.stopped) }
+                    guard let reply, ConfirmAnswer.isYes(reply, attention: config.attentionGate) else {
+                        return await finish(.stopped, hud: "stopped: \(verb) not confirmed")
+                    }
+                    onStatus?(.running("step \(n) · \(step.intent)"))
+                }
                 let shown = overlay.state
                 failure = await executeCancellable(actions, labels: labels, tabs: observation.tabs)
                 // Only a step that ran clean left the task's page in front; a failed one may not have navigated.
@@ -444,6 +469,31 @@ public enum TaskOutcome: Equatable, Sendable {
         guard id == nil || id == captureWaitID, let wait = captureWait else { return }
         captureWait = nil
         wait.resume(returning: result)
+    }
+
+    /// Pauses the task until the user answers, `cancel()` is called or `timeout` passes (nil for the last two). The
+    /// timeout runs on the injected `sleep`; its task is cancelled once the wait ends.
+    private func awaitAnswer(timeout: Duration) async -> String? {
+        guard !isCancelled else { return nil }
+        answerWaitID += 1
+        let id = answerWaitID
+        let sleep = self.sleep
+        var timer: Task<Void, Never>?
+        let reply = await withCheckedContinuation { (wait: CheckedContinuation<String?, Never>) in
+            answerWait = wait
+            timer = Task { @MainActor [weak self] in
+                await sleep(timeout)
+                self?.endAnswerWait(id: id, with: nil)
+            }
+        }
+        timer?.cancel()
+        return isCancelled ? nil : reply
+    }
+
+    private func endAnswerWait(id: Int? = nil, with reply: String?) {
+        guard id == nil || id == answerWaitID, let wait = answerWait else { return }
+        answerWait = nil
+        wait.resume(returning: reply)
     }
 
     private enum Resolved { case step(IntentStep), end(TaskOutcome) }

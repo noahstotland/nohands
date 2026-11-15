@@ -416,8 +416,9 @@ import NoHandsCore
         while let task = activeTask { await task.value }
     }
 
-    /// An utterance arrived while a task runs: a stop phrase cancels the task (and drops the held job); anything
-    /// else replaces the held job.
+    /// An utterance arrived while a task runs: a stop phrase cancels the task (and drops the held job); while the
+    /// task waits for a spoken yes, the words are its answer (a yes needs the attention word when one is set; any
+    /// other reply only stops the task); anything else replaces the held job.
     private func busy(_ job: Job) {
         guard !stopped else { return }
         if attention.isStop(job.transcript) {
@@ -427,6 +428,10 @@ import NoHandsCore
             activeTask?.cancel()   // the task's row shows "stopped" when the runner unwinds
             overlay.report(job.id, text: job.transcript, status: .done(PipelineText.stopping))
             PipelineLog.utterance(trace: job.trace, transcript: job.transcript, outcome: "stop", detail: "stop")
+        } else if let runner, runner.isAwaitingAnswer {
+            runner.answer(job.transcript)
+            overlay.report(job.id, text: job.transcript, status: .done(job.transcript))
+            PipelineLog.utterance(trace: job.trace, transcript: job.transcript, outcome: "answer", detail: "answer")
         } else if isUnaddressed(job.transcript) {
             // Stray speech must not replace a real held command: drop it, silently.
             if job.shown { overlay.report(job.id, text: job.transcript, status: .ignored("")) }
