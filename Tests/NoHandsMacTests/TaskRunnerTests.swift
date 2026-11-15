@@ -53,7 +53,8 @@ private func el(_ id: Int, _ title: String, x: CGFloat = 100) -> UIElementInfo {
 }
 
 @MainActor private func rig(_ resolver: FakeResolver, maxSteps: Int = 12, settleMs: Int = 3000,
-                            vision: FakeScreenshots? = nil, visionFlag: Bool = true) -> Rig {
+                            vision: FakeScreenshots? = nil, visionFlag: Bool = true,
+                            sleep: @escaping @Sendable (Duration) async -> Void = { _ in }) -> Rig {
     let input = FakeInput(), ax = FakeElements(), overlay = FakeOverlay(), audio = FakeAudio()
     ax.front = "Safari"
     ax.elements = [el(1, "Reload")]
@@ -66,7 +67,7 @@ private func el(_ id: Int, _ title: String, x: CGFloat = 100) -> UIElementInfo {
     let executor = ActionExecutor(input: input, ax: ax, overlay: overlay, config: config, frontTimeout: .milliseconds(100), audio: audio)
     let runner = TaskRunner(config: config, resolver: resolver, executor: executor,
                             observer: ScreenObserver(ax: ax, maxElements: config.maxObservedElements, audio: audio),
-                            overlay: overlay, sleep: { _ in }, screenshots: vision)
+                            overlay: overlay, sleep: sleep, screenshots: vision)
     let log = StatusLog()
     runner.onStatus = { log.texts.append($0.text) }
     runner.onTrail = { log.trails.append($0) }
@@ -912,4 +913,45 @@ private let pageHasMaple = [el(1, "Maple"), el(2, "Pause (k)")]
     #expect(await task.value == .stopped)
     #expect(ContinuousClock.now - start < .seconds(2))
     #expect(waiting.requests.isEmpty)
+}
+
+private func resolverForSend() -> FakeResolver {
+    FakeResolver([step("send it", .done, [.click(.label(1), button: .left, count: 1)])])
+}
+
+@MainActor @Test func irreversibleStepWaitsForASpokenYes() async {
+    enum Reply { case say(String), stop, silence, notNeeded }
+    // The answer wait's timeout never fires on its own here; the other sleeps (settling) return at once.
+    let holdTimeout: @Sendable (Duration) async -> Void = { d in
+        if d == TaskRunner.answerTimeout { try? await Task.sleep(for: .seconds(30)) }
+    }
+    // (goal, what the user does, outcome, whether the click ran, the row's last line)
+    let table: [(String, Reply, TaskOutcome, Bool, String)] = [
+        ("reply to Anna", .say("yes"), .done("send it"), true, "done · send it (1 step)"),
+        ("reply to Anna", .say("no"), .stopped, false, "stopped: send not confirmed"),
+        ("reply to Anna", .say("yes and also open Safari"), .stopped, false, "stopped: send not confirmed"),
+        ("reply to Anna", .silence, .stopped, false, "stopped: send not confirmed"),
+        ("reply to Anna", .stop, .stopped, false, PipelineText.stopped),
+        ("send the reply", .notNeeded, .done("send it"), true, "done · send it (1 step)"),
+    ]
+    for (goal, reply, outcome, clicked, last) in table {
+        let instant: @Sendable (Duration) async -> Void = { _ in }
+        let r: Rig
+        if case .silence = reply { r = rig(resolverForSend(), sleep: instant) } else { r = rig(resolverForSend(), sleep: holdTimeout) }
+        r.ax.elements = [el(1, "Send")]
+        let runner = r.runner
+        let task = Task { await runner.run(goal: goal, mode: .command) }
+        if case .say(let words) = reply {
+            while !runner.isAwaitingAnswer { await Task.yield() }
+            #expect(r.statuses.last == "step 1 · say yes to send", "\(goal) / \(words)")
+            runner.answer(words)
+        } else if case .stop = reply {
+            while !runner.isAwaitingAnswer { await Task.yield() }
+            runner.cancel()
+        }
+        #expect(await task.value == outcome, "\(goal) / \(reply)")
+        #expect(r.input.calls.contains("click:140,55") == clicked, "\(goal) / \(reply)")
+        #expect(r.statuses.last == last, "\(goal) / \(reply)")
+        #expect(!runner.isAwaitingAnswer)
+    }
 }
