@@ -1,5 +1,11 @@
 # Release notes
 
+## 2026-11-15 status bar in the bottom-right corner, no idle Listening line (NH-92) (#127)
+
+Merged 2026-11-15 5:07 pm UTC.
+
+The status bar now sits in the bottom-right corner and only shows when NoHands has something to say; the always-on "Listening" line is gone. The Status Bar menu offers Off or Bottom Right, and an old Top or Bottom choice becomes Bottom Right.
+
 ## 2026-11-15 show the step number alone in the task panel (NH-110) (#125)
 
 Merged 2026-11-15 4:58 pm UTC.
