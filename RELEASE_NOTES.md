@@ -1,5 +1,13 @@
 # Release notes
 
+## 2026-11-15 read page text for the model (NH-50) (#128)
+
+Merged 2026-11-15 5:38 pm UTC.
+
+NoHands can now read the visible text of a web page when it plans a task, so on a schedule page it can tell which "Watch" link belongs to which game. Nothing to set up.
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
 ## 2026-11-15 find on page, scroll until a named element or text is visible (NH-44) (#126)
 
 Merged 2026-11-15 5:15 pm UTC.
