@@ -118,6 +118,8 @@ The script installs Ollama with Homebrew if needed, starts it, pulls the model a
 | `hold click` / `release click` | Press and release the mouse button (drag) |
 | `move up 100`, `move to 12` | Moves the pointer |
 | `scroll down 10` | Scrolls |
+| `find <words>` | Scrolls the front window until text or an element with those words (a link, button, heading or label; typed field contents never match) is on screen and leaves the pointer on it, so `click` opens it. An exact match wins over one that starts with the words, then one that contains them; a leading `the` is ignored. Bare `find` is still command-F. With nothing on the page the row says `no match for <words> on this page`. The model has the same `find` action, which does not move the pointer and lists the match first in its next step |
+| `scroll to <words>` | The same as `find <words>`. `scroll to the top` and `scroll to the bottom` are not finds: they go to the model |
 | `grid`, `zoom 35`, `show numbers`, `hide` | Targeting overlays |
 | `open safari` | Opens or focuses an app |
 | `open youtube`, `open youtube.com`, `open reddit in safari` | Opens a website in your default browser, or in the named one (known site names: YouTube, Gmail, Google, Reddit, GitHub, Wikipedia, Netflix, Amazon and others; any `name.com` works) |

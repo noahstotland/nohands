@@ -160,7 +160,10 @@ public struct CommandGrammar: Sendable {
         switch first {
         case "press": return parsePress(Array(tokens.dropFirst()))
         case "move": return parseMove(Array(tokens.dropFirst()))
-        case "scroll": return parseScroll(Array(tokens.dropFirst()))
+        case "scroll":
+            if tokens.count > 1, tokens[1] == "to" { return parseFind(tokens, transcript: transcript, skipping: 2, edgesAreWords: false) }
+            return parseScroll(Array(tokens.dropFirst()))
+        case "find": return parseFind(tokens, transcript: transcript, skipping: 1, edgesAreWords: true)
         case "zoom":
             let rest = Array(tokens.dropFirst())
             guard let n = NumberWords.parse(rest) else { return nil }
@@ -174,13 +177,7 @@ public struct CommandGrammar: Sendable {
             return [.openApp(rest.joined(separator: " "))]
         case "go", "search":
             let prefix = first == "go" ? ["go", "to"] : ["search", "for"]
-            // Raw words (speaker's casing, no DictationFormatter), trailing ASR punctuation trimmed.
-            var rawWords = transcript.split(whereSeparator: { $0.isWhitespace }).map(String.init)
-            while let last = rawWords.last?.last, ".,!?".contains(last) {
-                rawWords[rawWords.count - 1].removeLast()
-                if rawWords[rawWords.count - 1].isEmpty { rawWords.removeLast() }
-            }
-            guard rawWords.count == tokens.count else { return nil }   // punctuation-only words: leave it to the model
+            guard let rawWords = Self.rawWords(transcript, matching: tokens) else { return nil }
             // "search youtube for cats": that site (the executor searches it in place when it is open).
             if first == "search", tokens.count > 1, tokens[1] != "for" {
                 guard let at = tokens.firstIndex(of: "for"), at > 1, at < tokens.count - 1,
@@ -219,6 +216,35 @@ public struct CommandGrammar: Sendable {
             }
         }
         return nil
+    }
+
+    /// The transcript's words with the speaker's casing and no DictationFormatter, trailing ASR punctuation trimmed.
+    /// Nil when that leaves a different count from `tokens` (punctuation-only words: leave it to the model).
+    private static func rawWords(_ transcript: String, matching tokens: [String]) -> [String]? {
+        var words = transcript.split(whereSeparator: { $0.isWhitespace }).map(String.init)
+        while let last = words.last?.last, ".,!?".contains(last) {
+            words[words.count - 1].removeLast()
+            if words[words.count - 1].isEmpty { words.removeLast() }
+        }
+        return words.count == tokens.count ? words : nil
+    }
+
+    /// What "scroll to ..." can say that is not words on a page: an end of the page or a direction ("scroll to the down").
+    private static let scrollEdges: Set<String> = [
+        "top", "bottom", "top of page", "bottom of page", "top of the page", "bottom of the page",
+        "up", "down", "left", "right",
+    ]
+
+    /// "find <words>" and "scroll to <words>" (`skipping` is the words of the command itself): scroll the page to them
+    /// and leave the pointer there. Bare "find" and "find the" stay command-F (nil here, then the exact table), and
+    /// `scroll to` an edge or a direction stays with the model.
+    private func parseFind(_ tokens: [String], transcript: String, skipping: Int, edgesAreWords: Bool) -> [Action]? {
+        guard let raw = Self.rawWords(transcript, matching: tokens) else { return nil }
+        let spoken = raw.dropFirst(skipping).joined(separator: " ")
+        let normalized = PageFind.normalize(spoken)
+        guard !normalized.isEmpty else { return nil }
+        if !edgesAreWords, Self.scrollEdges.contains(normalized) { return nil }
+        return [.findOnPage(spoken, movePointer: true)]
     }
 
     private func parsePress(_ tokens: [String]) -> [Action]? {

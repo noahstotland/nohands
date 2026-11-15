@@ -9,10 +9,11 @@ import Testing
         .openApp("1Password"),
         .pressKey(KeyChord(.return, [.command])),
         .setMode(.dictation),
+        .findOnPage("Raptors game", movePointer: true),
     ]
     let s = ActionSummary.kinds(actions)
-    #expect(s == "[typeText(len=18), click, moveCursor, openApp, pressKey, setMode(dictation)]")
-    for leak in ["secret", "password", "Send", "Payment", "Bank", "Login", "1Password", "return", "command"] {
+    #expect(s == "[typeText(len=18), click, moveCursor, openApp, pressKey, setMode(dictation), findOnPage(len=12, movePointer=true)]")
+    for leak in ["secret", "password", "Send", "Payment", "Bank", "Login", "1Password", "return", "command", "Raptors"] {
         #expect(!s.contains(leak))
     }
 }

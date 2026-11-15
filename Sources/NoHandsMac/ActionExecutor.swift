@@ -306,6 +306,8 @@ extension OverlayController: OverlayPresenting {
                 try? await Task.sleep(for: .milliseconds(ms))
             case .checkMedia:
                 addReading("Media", await mediaState().rawValue)
+            case .findOnPage:
+                return "find on page is not wired up yet"   // replaced in the Mac task
             case .ignore, .look:
                 break
             case .closeTab(let n):

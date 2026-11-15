@@ -182,3 +182,10 @@ private func decode(_ actions: String) throws -> [Action] {
     #expect(s.contains("Overlay: grid"))
     #expect(IntentSchema.systemPrompt.contains("grid_cell"))
 }
+
+@Test func findDecodesOnlyWithWords() throws {
+    #expect(try decode(#"{"kind":"find","target_name":"Raptors game"}"#) == [.findOnPage("Raptors game", movePointer: false)])
+    for json in [#"{"kind":"find","target_name":"  "}"#, #"{"kind":"find","target_name":""}"#, #"{"kind":"find"}"#] {
+        #expect(try decode(json) == [], "\(json)")
+    }
+}
