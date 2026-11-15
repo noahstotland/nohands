@@ -6,13 +6,19 @@ public struct TaskStepRecord: Equatable, Sendable {
     public let number: Int
     public let intent: String
     public var state: State
+    /// The step's actions (after the typed-address rewrite), so the panel can name what is being done.
+    public let actions: [Action]
 
-    public init(number: Int, intent: String, state: State) {
+    public init(number: Int, intent: String, state: State, actions: [Action] = []) {
         self.number = number
         self.intent = intent
         self.state = state
+        self.actions = actions
     }
 }
+
+/// What a running task is doing right now. Set by the runner, shown as one line on the corner panel.
+public enum TaskPhase: Equatable, Sendable { case reading, planning, thinking, acting }
 
 /// The steps a task has taken so far. Rides on the prompt's board row; the corner panel reads it.
 public struct TaskTrail: Equatable, Sendable {
@@ -22,14 +28,16 @@ public struct TaskTrail: Equatable, Sendable {
     public let maxSteps: Int
     public private(set) var steps: [TaskStepRecord] = []
     public var ending: Ending?
+    /// Nil when the task is not running.
+    public var phase: TaskPhase?
 
     public init(maxSteps: Int) {
         self.maxSteps = maxSteps
     }
 
     /// Appends a running step.
-    public mutating func begin(number: Int, intent: String) {
-        steps.append(TaskStepRecord(number: number, intent: intent, state: .running))
+    public mutating func begin(number: Int, intent: String, actions: [Action] = []) {
+        steps.append(TaskStepRecord(number: number, intent: intent, state: .running, actions: actions))
     }
 
     /// Running becomes done, or failed with the reason. An unknown number changes nothing.
@@ -58,12 +66,13 @@ public struct TaskPanelContent: Equatable, Sendable {
     public let lines: [Line]
     public let progress: Progress?
     public let footer: StatusLine?
+    /// True while the task is in flight with a phase: the panel shows its spinner and the footer is the phase line.
+    public let busy: Bool
 }
 
 /// Picks the board row the corner panel shows and builds its content. Pure; the overlay only draws it.
 public enum TaskPanelText {
     public static let maxLines = 8
-    static let thinking = "Working out the next step\u{2026}"
 
     /// nil when no row should show: the panel hides. `rows` is the board's visible rows.
     public static func content(rows: [PromptRow]) -> TaskPanelContent? {
@@ -79,9 +88,10 @@ public enum TaskPanelText {
         func newest(_ matching: (PromptStatus) -> Bool) -> PromptRow? {
             rows.filter { matching($0.status) }.max(by: older)
         }
+        // A stopped task has no panel: a spoken stop clears it at once.
         let outcome = newest {
             switch $0 {
-            case .done, .failed, .stopped: true
+            case .done, .failed: true
             default: false
             }
         }
@@ -91,7 +101,11 @@ public enum TaskPanelText {
         if let r = newest({ $0 == .listening }) { return r }
         if let r = newest({ $0 == .held }) { return r }
         if let r = outcome { return r }
-        return newest { $0.isFinal }
+        return newest { $0.isFinal && !isStopped($0) }
+    }
+
+    private static func isStopped(_ s: PromptStatus) -> Bool {
+        if case .stopped = s { true } else { false }
     }
 
     /// True when `a` is older than `b` (ties go to the later prompt).
@@ -104,7 +118,7 @@ public enum TaskPanelText {
     private static func build(_ row: PromptRow) -> TaskPanelContent {
         let status = StatusLine(text: row.status.text, tone: row.status.tone)
         guard let trail = row.trail else {
-            return TaskPanelContent(phrase: row.text, earlierSteps: 0, lines: [], progress: nil, footer: status)
+            return TaskPanelContent(phrase: row.text, earlierSteps: 0, lines: [], progress: nil, footer: status, busy: false)
         }
         let steps = trail.steps
         let final = row.status.isFinal
@@ -117,6 +131,7 @@ public enum TaskPanelText {
         }
 
         let footer: StatusLine?
+        let busy = !final && trail.phase != nil
         switch row.status {
         case .failed:
             switch trail.ending {
@@ -131,12 +146,39 @@ public enum TaskPanelText {
         case _ where final:
             footer = status
         default:
-            // Still going: between steps the model is thinking, which is the slow part.
-            footer = steps.last?.state == .running ? nil : StatusLine(text: thinking, tone: .active)
+            footer = phaseLine(trail).map { StatusLine(text: $0, tone: .active) }
         }
         return TaskPanelContent(
             phrase: row.text, earlierSteps: steps.count - shown.count, lines: lines, progress: progress,
-            footer: footer)
+            footer: footer, busy: busy)
+    }
+
+    /// The one line that says what a running task is doing, in plain words. Payload-free: no typed text, URLs or
+    /// search words. Nil when the trail has no phase.
+    public static func phaseLine(_ trail: TaskTrail) -> String? {
+        guard let phase = trail.phase else { return nil }
+        let last = trail.steps.last
+        switch phase {
+        case .reading:
+            return last == nil ? "Reading \u{00B7} looking at the screen" : "Reading \u{00B7} checking what changed"
+        case .planning:
+            return "Thinking \u{00B7} planning the steps"
+        case .thinking:
+            if last == nil { return "Thinking \u{00B7} working out the first step" }
+            if case .failed? = last?.state { return "Thinking \u{00B7} finding another way" }
+            return "Thinking \u{00B7} picking the next step"
+        case .acting:
+            guard let step = last else { return "Acting" }
+            let doing = step.actions.first { $0 != .look && !isWait($0) }
+            return "Acting \u{00B7} " + (doing.map(ActionSummary.verb) ?? "step \(step.number)")
+        }
+    }
+
+    private static func isWait(_ a: Action) -> Bool {
+        switch a {
+        case .wait, .waitFor: true
+        default: false
+        }
     }
 
     private static func bar(_ n: Int, of m: Int) -> TaskPanelContent.Progress {
