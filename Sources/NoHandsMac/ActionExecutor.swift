@@ -211,6 +211,15 @@ extension OverlayController: OverlayPresenting {
                 hideStaleOverlay()
             case .click(let target, let button, let count):
                 guard (1...3).contains(count) else { return "bad click count" }
+                var target = target
+                var named: [UIElementInfo]?
+                if case .element(let name) = target {
+                    named = await freshElements()
+                    if Task.isCancelled { return Self.cancelled }
+                    // A title match wins; a position ("first video") that maps to a shown label clicks as that label.
+                    if LabelAssigner.find(named: name, in: named ?? []) == nil, let shown = labelSnapshot,
+                       let n = OrdinalTarget.parse(name)?.label(in: shown) { target = .label(n) }
+                }
                 // A numbered element with a ref is clicked semantically; a point click is the fallback.
                 if case .label(let n) = target, let e = labelSnapshot?[n], let ref = e.ref, let harness {
                     switch await harness.act(.click(ref: ref, button: button, count: count)) {
@@ -223,7 +232,7 @@ extension OverlayController: OverlayPresenting {
                 }
                 let usedOverlay: Bool
                 if case .numbered = target { usedOverlay = overlay.state != .none } else { usedOverlay = false }
-                let named = await namedElements(for: target)
+                if named == nil { named = await namedElements(for: target) }
                 if Task.isCancelled { return Self.cancelled }   // a spoken stop during the settle wait must not click
                 switch resolveClick(target, elements: named) {
                 case .failure(let m): return m
