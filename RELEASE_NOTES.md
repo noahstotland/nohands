@@ -1,5 +1,11 @@
 # Release notes
 
+## 2026-11-15 log Claude token usage and show a session total in the menu (NH-112) (#134)
+
+Merged 2026-11-15 7:58 pm UTC.
+
+The menu now shows how many tokens Claude has used this session (calls, input, cached and output), and each Claude call logs its output tokens. Nothing to do; it resets when you restart NoHands.
+
 ## 2026-11-15 command log and View Logs window (NH-111) (#132)
 
 Merged 2026-11-15 7:48 pm UTC.
