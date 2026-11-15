@@ -114,6 +114,7 @@ The script installs Ollama with Homebrew if needed, starts it, pulls the model a
 | `click`, `double click`, `right click`, `middle click` | Clicks at the pointer |
 | `click 42` | Clicks label or grid cell 42 |
 | `click save` | Clicks the element named "save" |
+| `click first video`, `click the second result`, `click the 3rd link`, `click last video` | When no element has that title, a position among the numbered elements: `video`, `result`, `item` and `one` count the page's links with a title of three or more words (a thumbnail and title link with the same name count once); `link`, `button`, `tab`, `field` and `menu item` count elements of that role. Ordinals run `first` to `tenth`, `1st`, `2nd`, … and `last`. With too few matches it fails with `no element named …; say its label number from the list`. Only `click` and `move`; a model step that sends a position is clicked the same way |
 | `hold click` / `release click` | Press and release the mouse button (drag) |
 | `move up 100`, `move to 12` | Moves the pointer |
 | `scroll down 10` | Scrolls |
