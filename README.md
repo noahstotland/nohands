@@ -147,6 +147,16 @@ An app can have its own phrases, which work only while it is in front and are ch
 
 | App | Say | Does |
 |---|---|---|
+| Terminal | `new window` | Opens a new Terminal window |
+| Terminal | `clear`, `clear all` | Clears the screen and the scrollback (command-K) |
+| Terminal | `clear screen` | Clears the screen only |
+| Terminal | `clear scrollback`, `clear history` | Clears the scrollback only |
+| Terminal | `scroll to top`, `scroll to bottom` | Jumps to the start or end of the scrollback |
+| Terminal | `split pane`, `close pane` | Splits the window, or closes the split pane |
+| Terminal | `bigger font`, `smaller font`, `default font size` | Changes the font size |
+| Terminal | `interrupt`, `cancel command` | Sends control-C to the running command |
+
+The global `new tab`, `close tab`, `close window`, `next tab`, `previous tab`, `find`, `page up` and `page down` also work in Terminal. Closing a tab or window with a running command shows Terminal's own confirm, which NoHands does not answer (say `enter` or `escape`). `stop` never interrupts a shell command; say `interrupt`.
 
 ## CLI tools
 
