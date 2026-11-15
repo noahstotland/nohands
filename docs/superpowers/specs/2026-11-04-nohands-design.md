@@ -57,6 +57,8 @@ Mode is shown in the menu bar: the winking-face glyph (`Resources/MenuBarIcon.pn
 
 The menu ends with a group above Quit: **Start at Login** (a checkbox backed by `SMAppService.mainApp`, read from the system each time the menu opens), **Status Bar** (a submenu Off / Bottom Right for the status bar, kept in user defaults), **Model** (a submenu that shows the backend in use as `Model: Claude|Local|Off`, switches between Claude and the local model with no restart, and saves `intentBackend` to config.json) and **Open config.json…** (creates the file with mode 600 if missing, opens it in the default editor, and says to restart NoHands to apply changes).
 
+Below the last transcript the menu has **Recent commands** (a submenu of the last 50 commands, newest first) and **View Logs…** (a window listing each command with every step's action, result and timing, and Claude token counts). The log is `~/.config/nohands/command-log.json`, owner-only (folder 700, file 600), local only.
+
 ## 6. Command grammar (deterministic)
 
 Input is normalized first: lowercased, ASR punctuation stripped (`.,!?`), whitespace collapsed. Numbers may be digits or words ("forty two"); in a number slot, "to"/"too" → 2 and "for" → 4 (common ASR homophones).

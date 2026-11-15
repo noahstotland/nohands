@@ -8,12 +8,18 @@ public struct TaskStepRecord: Equatable, Sendable {
     public var state: State
     /// The step's actions (after the typed-address rewrite), so the panel can name what is being done.
     public let actions: [Action]
+    /// When the step began, and how long it took once it ended. Feed the command log.
+    public let startedAt: Date?
+    public var duration: Duration?
 
-    public init(number: Int, intent: String, state: State, actions: [Action] = []) {
+    public init(number: Int, intent: String, state: State, actions: [Action] = [],
+                startedAt: Date? = nil, duration: Duration? = nil) {
         self.number = number
         self.intent = intent
         self.state = state
         self.actions = actions
+        self.startedAt = startedAt
+        self.duration = duration
     }
 }
 
@@ -36,14 +42,16 @@ public struct TaskTrail: Equatable, Sendable {
     }
 
     /// Appends a running step.
-    public mutating func begin(number: Int, intent: String, actions: [Action] = []) {
-        steps.append(TaskStepRecord(number: number, intent: intent, state: .running, actions: actions))
+    public mutating func begin(number: Int, intent: String, actions: [Action] = [], at date: Date = Date()) {
+        steps.append(TaskStepRecord(number: number, intent: intent, state: .running, actions: actions, startedAt: date))
     }
 
-    /// Running becomes done, or failed with the reason. An unknown number changes nothing.
-    public mutating func end(number: Int, failure: String?) {
-        guard let i = steps.firstIndex(where: { $0.number == number }) else { return }
+    /// Running becomes done, or failed with the reason, and the step's duration is set. An unknown number, or a step
+    /// that already ended, changes nothing.
+    public mutating func end(number: Int, failure: String?, at date: Date = Date()) {
+        guard let i = steps.firstIndex(where: { $0.number == number }), steps[i].duration == nil else { return }
         steps[i].state = failure.map { .failed($0) } ?? .done
+        steps[i].duration = steps[i].startedAt.map { .seconds(max(0, date.timeIntervalSince($0))) }
     }
 }
 

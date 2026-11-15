@@ -136,7 +136,7 @@ private func trail(_ steps: [(String, String)], max: Int = 12, ending: TaskTrail
 @Test func taskTrailTransitions() {
     var t = TaskTrail(maxSteps: 3)
     t.begin(number: 1, intent: "a")
-    #expect(t.steps == [TaskStepRecord(number: 1, intent: "a", state: .running)])
+    #expect(t.steps.map(\.state) == [.running] && t.steps[0].intent == "a")
     t.end(number: 9, failure: nil)
     #expect(t.steps.map(\.state) == [.running])
     t.end(number: 1, failure: nil)
