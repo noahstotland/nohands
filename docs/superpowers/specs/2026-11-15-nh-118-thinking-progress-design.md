@@ -1,7 +1,8 @@
 # NH-118: Show what the model is thinking, with a progress indicator that fades out: Design
 
 **Date:** 2026-11-15  **Ticket:** [NH-118](https://github.com/noahstotland/nohands/issues/118)
-**Status:** Draft
+**Status:** Shipped
+**Shipped:** in PR #123, as specified
 
 ## Intent
 
