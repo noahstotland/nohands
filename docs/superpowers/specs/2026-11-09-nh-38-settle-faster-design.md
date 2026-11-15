@@ -2,7 +2,7 @@
 
 **Date:** 2026-11-09  **Ticket:** [NH-38](https://github.com/noahstotland/nohands/issues/38)
 **Status:** Shipped
-**Shipped:** in PR #124, as specified
+**Shipped:** in PR #124, with differences: [as-built](../as-built/2026-11-15-nh-38-settle-faster.md)
 
 Written in team mode without a brainstorming session. Every choice the ticket left open is under
 [Calls I made](#calls-i-made).
@@ -44,7 +44,7 @@ exhaustive with no `default`, so a new action kind must choose a level.
 | Policy | What the loop does | Actions |
 |---|---|---|
 | `none` | One observation with no sleep | `wait`, `look`, `check_media`, `ignore`, the reads (`read_clipboard`, `read_value`, `read_notifications`), `clipboard_set`, and an empty list |
-| `oneLook` | Sleep `minSettleMs` (300 ms, capped at `settleMs`), then one observation, no polling | `type_text`, `type_into`, `set_value`, `clear`, `scroll`, `scroll_element`, `scroll_to`, `focus`, `move_cursor`, `move_window`, `check`, `uncheck`, `wait_for`, a key with no modifier other than Return |
+| `oneLook` | Sleep `minSettleMs` (300 ms, capped at `settleMs`), then one observation, no polling | `type_text`, `type_into` (text with a newline is `full`), `set_value`, `clear`, `scroll`, `scroll_element`, `scroll_to`, `focus`, `move_cursor`, `move_window`, `check`, `uncheck`, `wait_for`, a key with no modifier other than Return |
 | `full` | Today's polling, up to `settleMs` | `open_url`, `open_app`, `click`, Return, a key with Command, Control or Option, `search`, `search_site`, `menu_item`, `click_in`, `window`, and everything else (`select_option`, `expand`, `drag`, tab and window closes, mouse press and release, overlays, mode changes) |
 
 `settleMs == 0` still means one observation with no sleep, for every policy. A step that failed or was blocked uses
@@ -125,7 +125,7 @@ Existing tests `settleWaitsForTwoEqualObservations` and `settleStopsAtMax` call 
 passing unchanged.
 
 Manual, needs Accessibility and a model: the before and after settle totals on a real 3-step YouTube task with
-`nohands-cli task`, in the as-built note. If it can't be run from this environment, the PR lists it under Not proven.
+`nohands-cli task`. If it can't be run from this environment, the PR lists it under Not proven.
 
 ## Docs
 

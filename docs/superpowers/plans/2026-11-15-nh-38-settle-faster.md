@@ -12,7 +12,7 @@ The spec is the source of truth; this plan only orders the work and names the fi
   modifiers are empty (shift alone and function alone also count as no Command, Control or Option) and the key is not
   Return; `full` for Return or any chord with command, control or option.
 - `SettleWatch` in the same file: a struct fed one `ScreenObservation` at a time (`mutating func feed(_:) -> Bool`,
-  true when settled), keeping the last four readings. Settled when `Settle.same` holds for the last two, or when the last
+  true when settled), keeping the last three readings. Settled when `Settle.same` holds for the last two, or when the last
   two differ only in element values and every element identity (role + title + states, grouped, values compared as a
   group) whose values changed between them also changed between the two before them. Any change to app, window title,
   URL, surface, media, or the set of identities is real. Make `Settle` expose what `SettleWatch` needs (for example an
