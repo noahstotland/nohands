@@ -36,6 +36,7 @@ private let packed = CommandGrammar(packs: [chrome])
     // No pack in front: "open <global phrase>" is that phrase, an unknown app is still opened, "go to" keeps its meaning.
     #expect(g.parse("open a new tab") == cmdT)
     #expect(g.parse("open notes") == [.openApp("notes")])
+    #expect(g.parse("open home") == [.openApp("home")])
     #expect(g.parse("go to the new tab") == [.pressKey(KeyChord(.l, [.command])), .typeText("the new tab"), .pressKey(KeyChord(.return))])
     #expect(g.parse("go to youtube") == [.openURL(URL(string: "https://www.youtube.com")!, app: nil)])
 }

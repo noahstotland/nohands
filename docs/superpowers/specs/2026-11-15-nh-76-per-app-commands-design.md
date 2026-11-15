@@ -74,7 +74,7 @@ rejected by a test over `AppPacks.all` (a stop must always reach the stop path).
 2. **Pack lookup** for the frontmost bundle ID, on the phrase after the shared normalization below.
 3. **"menu <words>"** becomes `[.menuItem(words)]` in any app (raw words, so "Save As…" punctuation from ASR is
    kept for the matcher).
-4. Global exact table on the shared normalization, **only when the stripped lead was "open"**: "open a new tab" is
+4. Global exact table on the shared normalization, **only when the stripped lead was "open" and more than one word is left**: "open a new tab" is
    command-T everywhere. "go to <x>" keeps its meaning (a site, or the address bar) unless a pack has `<x>`.
 5. Patterns (`parsePattern`), then the filler-stripped exact match, as today. An unknown "open <x>" still becomes
    `.openApp(x)`.
@@ -160,8 +160,8 @@ Manual (listed in the PR): "menu bookmark this tab" in Chrome and "menu new fold
   Chrome") are searched, like the existing "quit app".
 - **"Closest match" means starts-with, then contains-every-word, never edit distance**, so a misheard word fails
   with "no menu item called …" instead of pressing a neighbour.
-- **"open" + a global phrase now runs the global phrase everywhere** ("open a new tab" is command-T in any app, as
-  is "open spotlight"); "go to" + a global phrase does not, because "go to <x>" already means a site or the address
+- **"open" + a multi-word global phrase now runs the global phrase everywhere** ("open a new tab" is command-T in
+  any app). A single word stays an app name ("open home" opens the Home app, not the Home key); "go to" + a global phrase does not, because "go to <x>" already means a site or the address
   bar. Without this, #74's bug stays for every app without a pack.
 - **The registry ships empty.** Tests use their own packs; Chrome's pack is #74.
 - **Global exact phrases win over packs except when the pack has the same phrase**, so a pack can override

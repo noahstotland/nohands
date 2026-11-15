@@ -149,7 +149,8 @@ public struct CommandGrammar: Sendable {
         if !stripped.isEmpty {
             let phrase = stripped.joined(separator: " ")
             if let hit = pack?.phrases[phrase] { return hit }
-            if dropped == .open, let hit = Self.exact[phrase] { return hit }
+            // Multi-word only: "open home" stays the Home app, not the Home key.
+            if dropped == .open, stripped.count > 1, let hit = Self.exact[phrase] { return hit }
         }
         if tokens.count > 1, tokens[0] == "menu" {
             let words = Self.rawWords(transcript, matching: tokens) ?? tokens
