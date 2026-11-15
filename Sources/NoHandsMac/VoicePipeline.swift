@@ -46,6 +46,10 @@ import NoHandsCore
     private let executor: ActionExecutor
     private let overlay: any OverlayPresenting
     private let ax: any ElementProviding
+    /// Where each command that ran is recorded for the View Logs window; nil records nothing.
+    private let commandLog: CommandLogStore?
+    /// Which model a task is attributed to in the log. The app sets it when it builds or switches the resolver.
+    public var resolverKind: CommandLogEntry.Resolver = .claude
 
     private var modeMachine: ModeMachine
     private var vad: VoiceActivity?
@@ -102,8 +106,10 @@ import NoHandsCore
     /// resolver, executor, observer and overlay.
     public init(config: AppConfig, transcriber: any Transcribing, resolver: (any IntentResolving)?,
                 executor: ActionExecutor, overlay: any OverlayPresenting, ax: any ElementProviding = AXQuery(),
-                observer: ScreenObserver? = nil, taskRunner: TaskRunner? = nil, harness: (any DesktopHarness)? = nil) {
+                observer: ScreenObserver? = nil, taskRunner: TaskRunner? = nil, harness: (any DesktopHarness)? = nil,
+                commandLog: CommandLogStore? = nil) {
         self.config = config
+        self.commandLog = commandLog
         self.attention = config.attentionGate
         self.transcriber = transcriber
         let observer = observer ?? ScreenObserver(ax: ax, maxElements: config.observedElementCap, harness: harness,
@@ -491,6 +497,9 @@ import NoHandsCore
             return nil
         }
         lastTranscript = text
+        let modeBefore = modeMachine.mode
+        // Words typed in dictation mode are typing, not a command; its own commands ("stop dictating") are commands.
+        let isCommand = modeBefore != .dictation || ModeMachine.isDictationCommand(text, attention: attention)
         var routing = modeMachine.route(text, frontmost: NSWorkspace.shared.frontmostApplication?.bundleIdentifier)
         // A stop phrase with no task running must not start one (held jobs never get here: busy() intercepts them).
         if case .resolveWithLLM(let phrase) = routing, StopWords.isStop(phrase) { routing = .ignore(reason: "stop") }
@@ -504,13 +513,20 @@ import NoHandsCore
             if job.shown { overlay.report(job.id, text: text, status: .ignored(reason == "sleeping" ? "asleep" : "")) }
         case .reject(let message):
             overlay.report(job.id, text: text, status: .failed(message))
+            recordCommand(CommandLogEntry(date: Date(), phrase: text, resolver: .grammar, steps: [],
+                                          outcome: .failed(message), durationMs: 0))
         case .execute(let actions):
             overlay.report(job.id, text: text, status: .heard)
             guard canExecute else {
                 overlay.report(job.id, text: text, status: .dropped(PipelineText.cancelled))
                 outcome += " (cancelled)"; detail += " (cancelled)"; break
             }
+            let began = Date(), clock = ContinuousClock.now
             let failure = await executor.execute(actions)
+            if isCommand {
+                recordCommand(.grammar(date: began, phrase: text, action: PipelineText.describe(actions), failure: failure,
+                                       durationMs: CommandLogEntry.milliseconds(clock.duration(to: .now))))
+            }
             let reading = executor.takeReadings().first   // "is it playing" answers on the row
             if let failure {
                 overlay.report(job.id, text: text, status: .failed(failure))
@@ -522,7 +538,10 @@ import NoHandsCore
         case .resolveWithLLM(let phrase):
             overlay.report(job.id, text: text, status: .heard)
             if runner == nil {
-                overlay.report(job.id, text: text, status: .ignored(noResolverHint()))
+                let hint = noResolverHint()
+                overlay.report(job.id, text: text, status: .ignored(hint))
+                recordCommand(CommandLogEntry(date: Date(), phrase: text, resolver: .none, steps: [],
+                                              outcome: .ignored(hint), durationMs: 0))
                 outcome += " (no resolver)"; detail += " (no resolver)"
             } else if !canExecute {
                 overlay.report(job.id, text: text, status: .dropped(PipelineText.cancelled))
@@ -570,7 +589,12 @@ import NoHandsCore
         let id = pending.id, text = pending.transcript
         runner.onStatus = { [weak self] status in self?.overlay.report(id, text: text, status: status) }
         runner.onTrail = { [weak self] trail in self?.overlay.report(id, trail: trail) }
+        let kind = resolverKind
+        _ = await runner.takeUsage()   // a cancelled earlier task's calls must not count here
+        let began = Date(), clock = ContinuousClock.now
         let outcome = await runner.run(goal: pending.goal, mode: modeMachine.mode)
+        recordTask(pending, runner: runner, outcome: outcome, kind: kind, began: began,
+                   durationMs: CommandLogEntry.milliseconds(clock.duration(to: .now)), usage: await runner.takeUsage())
         runner.onStatus = nil
         runner.onTrail = nil
         lastTaskOutcome = outcome
@@ -583,6 +607,26 @@ import NoHandsCore
                               outcome: "task(\(Self.kind(outcome)), steps=\(steps)\(settle))",
                               detail: "task(\(Self.kind(outcome, detailed: true)), steps=\(steps)\(settle))")
         publishStatus()
+    }
+
+    private func recordCommand(_ entry: CommandLogEntry) {
+        commandLog?.append(entry)
+    }
+
+    /// Writes the finished task into the command log: its steps with times, how it ended and its Claude tokens.
+    /// The file write is not awaited.
+    private func recordTask(_ pending: PendingTask, runner: TaskRunner, outcome: TaskOutcome,
+                            kind: CommandLogEntry.Resolver, began: Date, durationMs: Int, usage: [ClaudeUsage]) {
+        guard let commandLog else { return }
+        let ended: CommandLogEntry.Outcome
+        switch outcome {
+        case .done: ended = .done
+        case .stuck(let why), .failed(let why): ended = .failed(why)
+        case .ignored: ended = .ignored("")
+        case .stopped: ended = .stopped
+        }
+        commandLog.append(.fromTrail(runner.currentTrail, date: began, phrase: pending.transcript, resolver: kind,
+                                     outcome: ended, durationMs: durationMs, usage: .sum(usage)))
     }
 
     /// Why an unmatched utterance ran nothing: the LLM-off hint once, then "didn't catch that".
