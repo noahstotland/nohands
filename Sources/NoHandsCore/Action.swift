@@ -108,6 +108,11 @@ public enum Action: Equatable, Codable, Sendable {
     case closeOtherTabs
     case listTabs
 
+    /// Edit the focused text field by voice ("select the last sentence", "replace meeting with call"). Grammar only,
+    /// like the tab commands: the model has no kind for it. `otherwise` is dictation's own words, typed when the edit
+    /// names a phrase that is not in the field ("Delete the old files." still dictates); nil in command mode.
+    case editText(TextEdit, otherwise: String?)
+
     /// Ask for a picture of the focused window on the next step. Only the task loop gives it meaning; anywhere
     /// else the executor runs it as a successful no-op.
     case look

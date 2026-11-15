@@ -20,6 +20,7 @@ extension Action {
         case .goToTab(let target):
             if case .named = target { return true }
             return false
+        case .editText(let edit, _): return edit.targetsPhrase
         case .pressKey, .pressMouse, .releaseMouse, .scroll, .showGrid, .zoomGrid, .showLabels, .hideOverlay, .setMode,
              .moveWindow, .wait, .checkMedia, .ignore, .clearField, .setChecked, .setExpanded, .focusElement, .scrollTo,
              .scrollIn, .drag, .readClipboard, .readPage, .readValue, .readNotifications, .dismissNotifications, .waitFor,

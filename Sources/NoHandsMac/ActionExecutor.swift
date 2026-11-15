@@ -367,6 +367,8 @@ extension OverlayController: OverlayPresenting {
                 if let failure = closeOtherTabs() { return failure }
             case .listTabs:
                 if let failure = await listTabs() { return failure }
+            case .editText:
+                return "text editing not wired"   // TODO(NH-54 task 5)
             case .setValue, .typeInto, .clearField, .selectOption, .setChecked, .setExpanded, .focusElement, .scrollTo,
                  .scrollIn, .drag, .clickIn, .menuItem, .closeApp, .windowAction, .clipboardSet, .readClipboard,
                  .readValue, .readNotifications, .dismissNotifications, .waitFor:

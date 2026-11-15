@@ -59,7 +59,6 @@ public struct CommandGrammar: Sendable {
             "switch app": chord(.tab, [.command]),
             "spotlight": chord(.space, [.command]),
             "delete word": chord(.delete, [.option]),
-            "delete line": chord(.delete, [.command]),
 
             "is it playing": [.checkMedia], "is the video playing": [.checkMedia],
             "is anything playing": [.checkMedia],
@@ -138,8 +137,10 @@ public struct CommandGrammar: Sendable {
     /// nil when no rule matches (caller falls back to the LLM). `bundleID` is the frontmost app: its pack, if any,
     /// is checked before the global table. In order: a pack phrase that is also a global phrase, the global table on
     /// the whole phrase, the pack on the phrase without its lead ("open", "go to", an article), "menu <words>", the
-    /// global table after an "open" lead, the patterns, the filler-stripped table. A stop phrase never reaches a pack.
-    public func parse(_ transcript: String, frontmost bundleID: String? = nil) -> [Action]? {
+    /// global table after an "open" lead, the text edits, the patterns, the filler-stripped table. A stop phrase never
+    /// reaches a pack. `textFocused` is whether the front app has a text field focused: only then do edits that name
+    /// words in the field ("delete the old files") belong to the grammar; without it they go to the model as before.
+    public func parse(_ transcript: String, frontmost bundleID: String? = nil, textFocused: Bool = false) -> [Action]? {
         let tokens = Self.normalize(transcript)
         guard !tokens.isEmpty else { return nil }
         let whole = tokens.joined(separator: " ")
@@ -157,6 +158,7 @@ public struct CommandGrammar: Sendable {
             return [.menuItem(words.dropFirst().joined(separator: " "))]
         }
         if let hit = Self.parseTab(tokens, transcript: transcript) { return hit }
+        if let edit = Self.parseEdit(transcript, textFocused: textFocused) { return [.editText(edit, otherwise: nil)] }
         if let hit = parsePattern(tokens, transcript: transcript) { return hit }
         return Self.strippedExactMatch(tokens)
     }
@@ -199,6 +201,69 @@ public struct CommandGrammar: Sendable {
         // `rest` is a suffix of `tokens`; the raw words line up with it.
         let words = raw[(tokens.count - rest.count)...].dropLast().joined(separator: " ")
         return [.goToTab(.named(words))]
+    }
+
+    private static let editUnits: [String: TextUnit] = ["word": .word, "line": .line, "sentence": .sentence, "paragraph": .paragraph]
+    /// Words that alone are not something to look up in the field ("select all", "delete that").
+    private static let notAPhrase: Set<String> = ["all", "that", "this", "it"]
+    private static let maxPhraseWords = 12
+    private static let caseWords: [String: CaseChange] = ["capitalize": .capitalize, "uppercase": .upper, "lowercase": .lower]
+
+    /// Text editing in the focused field: "select the last sentence", "delete line", "replace meeting with call",
+    /// "go before the budget", "go to the end of the line", "capitalize that". "the" is optional wherever it can appear.
+    /// Phrases (`<phrase>`, `<a>`, `<b>`) keep the speaker's raw words and need `textFocused`; the unit, caret and case
+    /// commands parse regardless and fail at run time with "no text field". nil for anything else, so "select all",
+    /// "delete that", "go to the end" and "replace x" keep their rules. Public so dictation mode can ask too.
+    public static func parseEdit(_ transcript: String, textFocused: Bool) -> TextEdit? {
+        let tokens = normalize(transcript)
+        guard tokens.count >= 2 else { return nil }
+        func the(_ words: ArraySlice<String>) -> ArraySlice<String> { words.first == "the" ? words.dropFirst() : words }
+        /// The speaker's own words from `from` up to `to`, or nil when they are not a phrase to look up.
+        func phrase(_ from: Int, _ to: Int) -> String? {
+            let spoken = the(tokens[from..<to])
+            guard !spoken.isEmpty, spoken.count <= maxPhraseWords, textFocused,
+                  spoken.count > 1 || !(notAPhrase.contains(spoken[spoken.startIndex]) || editUnits[spoken[spoken.startIndex]] != nil),
+                  let raw = rawWords(transcript, matching: tokens) else { return nil }
+            var words = Array(raw[from..<to])
+            while let last = words.last?.last, ".,!?".contains(last) { words[words.count - 1].removeLast() }
+            return words.joined(separator: " ")
+        }
+        switch tokens[0] {
+        case "select", "delete":
+            let remove = tokens[0] == "delete"
+            let body = Array(the(tokens.dropFirst()))
+            if body.count == 1, let unit = editUnits[body[0]] { return remove ? .delete(unit, last: false) : .select(unit, last: false) }
+            if body.count == 2, body[0] == "last", let unit = editUnits[body[1]], unit == .word || unit == .sentence {
+                return remove ? .delete(unit, last: true) : .select(unit, last: true)
+            }
+            guard let words = phrase(1, tokens.count) else { return nil }
+            return remove ? .deletePhrase(words) : .selectPhrase(words)
+        case "replace":
+            // The first "with" splits the two: "replace coffee with tea with milk" types "tea with milk".
+            guard let at = tokens.firstIndex(of: "with"), at > 1, at < tokens.count - 1,
+                  let old = phrase(1, at), let raw = rawWords(transcript, matching: tokens) else { return nil }
+            return .replace(old, with: raw[(at + 1)...].joined(separator: " "))
+        case "go":
+            if tokens[1] == "before" || tokens[1] == "after" {
+                guard let words = phrase(2, tokens.count) else { return nil }
+                return tokens[1] == "before" ? .caretBefore(words) : .caretAfter(words)
+            }
+            guard tokens[1] == "to" else { return nil }
+            let place = Array(the(tokens.dropFirst(2)))
+            guard place.count >= 3, place[1] == "of" else { return nil }
+            let target = Array(the(place.dropFirst(2)))
+            guard target.count == 1 else { return nil }
+            switch (target[0], place[0]) {
+            case ("line", "start"), ("line", "beginning"): return .caret(.lineStart)
+            case ("line", "end"): return .caret(.lineEnd)
+            case ("document", "start"), ("document", "beginning"), ("document", "top"): return .caret(.documentStart)
+            case ("document", "end"), ("document", "bottom"): return .caret(.documentEnd)
+            default: return nil
+            }
+        default:
+            guard tokens.count == 2, tokens[1] == "that", let change = caseWords[tokens[0]] else { return nil }
+            return .changeCase(change)
+        }
     }
 
     private func pack(for bundleID: String) -> AppPack? { packs.first { $0.bundleIDs.contains(bundleID) } }

@@ -57,6 +57,7 @@ public enum ActionSummary {
         case .goToTab: "goToTab"
         case .closeOtherTabs: "closeOtherTabs"
         case .listTabs: "listTabs"
+        case .editText: "editText"
         case .look: "look"
         }
     }
@@ -87,6 +88,7 @@ public enum ActionSummary {
         case .selectTab, .goToTab: "switching tabs"
         case .closeOtherTabs: "closing tabs"
         case .listTabs: "listing tabs"
+        case .editText: "editing text"
         case .clipboardSet, .readClipboard: "using the clipboard"
         case .readValue, .readNotifications, .dismissNotifications, .checkMedia, .look, .readPage: "reading the screen"
         case .wait, .waitFor, .ignore: "waiting"
