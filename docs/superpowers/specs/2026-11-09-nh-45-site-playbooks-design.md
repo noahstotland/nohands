@@ -1,7 +1,8 @@
 # NH-45: Site playbooks — Design
 
 **Date:** 2026-11-09  **Ticket:** [NH-45](https://github.com/noahstotland/nohands/issues/45)
-**Status:** Draft
+**Status:** Shipped
+**Shipped:** in PR #122, with differences: [as-built](../as-built/2026-11-15-nh-45-site-playbooks.md)
 
 ## Intent
 
