@@ -56,6 +56,36 @@ public enum ActionSummary {
         }
     }
 
+    /// A plain-words verb for the corner panel ("clicking"). Payload-free, like `kind`: never the text, address,
+    /// search words or names.
+    public static func verb(_ action: Action) -> String {
+        switch action {
+        case .typeText, .typeInto: "typing"
+        case .pressKey: "pressing keys"
+        case .click, .clickIn, .pressMouse, .releaseMouse, .setChecked, .setExpanded, .focusElement: "clicking"
+        case .moveCursor: "moving the pointer"
+        case .scroll, .scrollTo, .scrollIn: "scrolling"
+        case .showGrid, .zoomGrid: "showing the grid"
+        case .showLabels: "showing numbers"
+        case .hideOverlay: "hiding overlays"
+        case .setMode: "switching mode"
+        case .openApp: "opening an app"
+        case .openURL: "opening a page"
+        case .search, .searchSite: "searching"
+        case .moveWindow, .windowAction: "moving a window"
+        case .closeApp: "closing an app"
+        case .setValue, .clearField: "filling in a field"
+        case .selectOption, .menuItem: "picking from a menu"
+        case .drag: "dragging"
+        case .closeTab: "closing a tab"
+        case .closeWindow: "closing a window"
+        case .selectTab: "switching tabs"
+        case .clipboardSet, .readClipboard: "using the clipboard"
+        case .readValue, .readNotifications, .dismissNotifications, .checkMedia, .look: "reading the screen"
+        case .wait, .waitFor, .ignore: "waiting"
+        }
+    }
+
     static func waitKind(_ c: WaitCondition) -> String {
         switch c {
         case .text: "text"

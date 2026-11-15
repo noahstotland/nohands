@@ -422,11 +422,15 @@ import NoHandsCore
     private func busy(_ job: Job) {
         guard !stopped else { return }
         if attention.isStop(job.transcript) {
-            if let held = heldJob { droppedJobs.append(held) }
+            if let held = heldJob {
+                // Shown as stopped, not dropped: the corner panel must stay clear after a stop (`TaskPanelText`).
+                overlay.report(held.id, text: held.transcript, status: .stopped(PipelineText.dropped))
+                PipelineLog.utterance(trace: held.trace, transcript: held.transcript, outcome: "dropped", detail: "dropped")
+            }
             heldJob = nil
             runner?.cancel()
             activeTask?.cancel()   // the task's row shows "stopped" when the runner unwinds
-            overlay.report(job.id, text: job.transcript, status: .done(PipelineText.stopping))
+            overlay.report(job.id, text: job.transcript, status: .stopped(PipelineText.stopping))
             PipelineLog.utterance(trace: job.trace, transcript: job.transcript, outcome: "stop", detail: "stop")
         } else if let runner, runner.isAwaitingAnswer {
             runner.answer(job.transcript)

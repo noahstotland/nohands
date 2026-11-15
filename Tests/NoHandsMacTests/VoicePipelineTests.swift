@@ -324,8 +324,9 @@ private func step(_ intent: String, _ status: StepStatus, _ actions: [Action] = 
     await r.pipeline.waitForTask()
     #expect(r.pipeline.lastTaskOutcome == .stopped)
     #expect(!r.input.calls.contains("scroll"))
-    #expect(Array(r.overlay.statuses.suffix(2)) == [PipelineText.stopped, PipelineText.dropped])
-    #expect(r.overlay.reports.last?.text == "scroll down")
+    // shown as stopped (not dropped) so the corner panel stays clear after a stop
+    #expect(r.overlay.reports.contains { $0.text == "scroll down" && $0.status == .stopped(PipelineText.dropped) })
+    #expect(!r.overlay.reports.contains { $0.text == "scroll down" && $0.status == .dropped(PipelineText.dropped) })
 }
 
 @MainActor @Test func stopRightAfterHandleCancelsBeforeTheFirstResolve() async {

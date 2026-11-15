@@ -127,7 +127,8 @@ final class FakeElements: ElementProviding, @unchecked Sendable {
     /// Every prompt report, in order.
     var reports: [(id: Int, text: String, status: PromptStatus)] = []
     /// The status cell of every report, in order (what the user reads).
-    var statuses: [String] { reports.map { $0.status.text } }
+    /// The status texts the rows read, without the runner's phase lines ("Thinking · ...").
+    var statuses: [String] { reports.map { $0.status.text }.filter { !isPhaseLine($0) } }
     func showGrid(_ grid: GridModel) { state = .grid(grid) }
     func showLabels(_ labels: [Int: UIElementInfo]) { state = .labels(labels) }
     func hide() { state = .none }
@@ -266,3 +267,6 @@ final class FakeScreenshots: ScreenshotProviding, @unchecked Sendable {
         return result
     }
 }
+
+/// True for the line a running task shows before its first step ("Reading · looking at the screen").
+func isPhaseLine(_ text: String) -> Bool { text.hasPrefix("Reading \u{00B7} ") || text.hasPrefix("Thinking \u{00B7} ") }

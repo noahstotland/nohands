@@ -91,8 +91,9 @@ public struct PromptBoard: Equatable, Sendable {
     public private(set) var notice: PromptNotice?
     /// At most this many prompts are kept; the oldest finished one goes first.
     public var maxRows = 4
-    /// How long a finished prompt stays on the board.
-    public var finalLinger: Duration = .seconds(6)
+    /// How long a finished prompt stays on the board: a failure needs reading time, the rest a moment.
+    public var doneLinger: Duration = .milliseconds(1500)
+    public var failedLinger: Duration = .seconds(3)
     /// A "listening" row whose words never arrived (the speech was abandoned) leaves after this long.
     public var listeningLinger: Duration = .seconds(10)
     /// A safety net for a prompt that never reaches a final status.
@@ -133,7 +134,8 @@ public struct PromptBoard: Equatable, Sendable {
         switch row.status {
         case .listening: row.updatedAt.advanced(by: listeningLinger)
         case .heard, .running, .held: row.updatedAt.advanced(by: activeLinger)
-        case .done, .failed, .stopped, .dropped, .ignored: row.updatedAt.advanced(by: finalLinger)
+        case .done, .stopped, .ignored: row.updatedAt.advanced(by: doneLinger)
+        case .failed, .dropped: row.updatedAt.advanced(by: failedLinger)
         }
     }
 
