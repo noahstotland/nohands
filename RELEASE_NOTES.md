@@ -1,5 +1,11 @@
 # Release notes
 
+## 2026-11-15 show the step number alone in the task panel (NH-110) (#125)
+
+Merged 2026-11-15 4:58 pm UTC.
+
+The task panel now shows just the step you are on ("step 2") instead of "step 2 of 12", because NoHands cannot know how many steps a task will need.
+
 ## 2026-11-15 action-aware settle waits after each task step (NH-38) (#124)
 
 Merged 2026-11-15 4:50 pm UTC.
