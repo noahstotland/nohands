@@ -43,14 +43,17 @@ public actor ClaudeIntentResolver: IntentResolving {
     private let session: URLSession
     private let baseURL: URL
     private let deadline: Duration
+    private let meter: ClaudeUsageMeter
     /// Usage of each call since the last `takeUsage`. A command's tokens are read once, when its task ends.
     private var usage: [ClaudeUsage] = []
 
     /// `baseURL` and `deadline` exist for tests; production uses the defaults.
     public init(config: AppConfig, session: URLSession = .shared,
                 baseURL: URL = ClaudeIntentResolver.endpoint,
-                deadline: Duration? = nil) {
+                deadline: Duration? = nil,
+                meter: ClaudeUsageMeter = .shared) {
         self.config = config
+        self.meter = meter
         self.session = session
         self.baseURL = baseURL
         self.deadline = deadline ?? .milliseconds(config.llmDeadlineMs)
@@ -76,6 +79,7 @@ public actor ClaudeIntentResolver: IntentResolving {
         // Counts and timing only; logged before decoding so a malformed step still shows its cache numbers.
         let ms = Int(started.duration(to: .now) / .milliseconds(1))
         let used = ClaudeUsage.from(response: data)
+        meter.record(used)
         if let used { usage.append(used) }
         PipelineLog.info("claude: step \(stepRequest.step) \(ms)ms \(ClaudeUsage.logFragment(used))")
         do {
@@ -94,6 +98,7 @@ public actor ClaudeIntentResolver: IntentResolving {
         let ms = Int(started.duration(to: .now) / .milliseconds(1))
         let plan = TaskPlan.decode(fromResponse: data)
         let used = ClaudeUsage.from(response: data)
+        meter.record(used)
         if let used { usage.append(used) }
         PipelineLog.info("claude: plan \(ms)ms \(plan.map { "\($0.steps.count) steps" } ?? "none") \(ClaudeUsage.logFragment(used))")
         return plan

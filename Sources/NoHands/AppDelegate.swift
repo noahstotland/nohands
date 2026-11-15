@@ -20,6 +20,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let micItem = NSMenuItem(title: "Microphone denied — open Settings", action: #selector(openMicrophoneSettings), keyEquivalent: "")
     private let harnessItem = NSMenuItem(title: "Harness: checking…", action: nil, keyEquivalent: "")
     private let claudeItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
+    private let claudeUsageItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
     private let checkClaudeItem = NSMenuItem(title: "Check Claude connection", action: #selector(checkClaude), keyEquivalent: "")
     private let loginItem = NSMenuItem(title: "Start at Login", action: #selector(loginItemClicked), keyEquivalent: "")
     private let statusBarItem = NSMenuItem(title: "Status Bar", action: nil, keyEquivalent: "")
@@ -103,6 +104,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         transcriptItem.isEnabled = false
         harnessItem.isEnabled = false
         claudeItem.isEnabled = false
+        claudeUsageItem.isEnabled = false
+        claudeUsageItem.isHidden = true
         for item in [viewLogsItem, checkClaudeItem, localModelItem, pauseItem, retryItem, accessibilityItem, screenRecordingItem, micItem, loginItem, claudeKeyItem, openConfigItem] { item.target = self }
         let title = NSMutableAttributedString(string: "● ", attributes: [.foregroundColor: NSColor.systemRed])
         title.append(NSAttributedString(string: "Grant Accessibility…"))
@@ -130,7 +133,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         recentItem.submenu = recentMenu
         rebuildRecentMenu()
-        for item in [stateItem, configItem, NSMenuItem.separator(), transcriptItem, recentItem, viewLogsItem, localModelItem, harnessItem, claudeItem, checkClaudeItem, NSMenuItem.separator(),
+        for item in [stateItem, configItem, NSMenuItem.separator(), transcriptItem, recentItem, viewLogsItem, localModelItem, harnessItem, claudeItem, claudeUsageItem, checkClaudeItem, NSMenuItem.separator(),
                      pauseItem, retryItem, accessibilityItem, screenRecordingItem, micItem, NSMenuItem.separator(), loginItem, statusBarItem, backendItem, claudeKeyItem, openConfigItem,
                      NSMenuItem.separator(), quit] {
             menu.addItem(item)
@@ -200,6 +203,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         } else {
             claudeItem.attributedTitle = nil
         }
+        // The session's token total: counts only, no network. Hidden until the first call (and with no key or LLM off).
+        let usageLine = config.effectiveBackend == .claude ? ClaudeUsageMeter.shared.total.menuLine : nil
+        claudeUsageItem.title = usageLine ?? ""
+        claudeUsageItem.isHidden = usageLine == nil
         checkClaudeItem.action = claudeChecking || !ClaudeStatus.hasKey(config) ? nil : #selector(checkClaude)
     }
 
@@ -432,6 +439,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     func menuWillOpen(_ menu: NSMenu) {
+        refreshClaudeItems()
         refreshLoginItem()
         rebuildRecentMenu()
         guard !harnessProbeInFlight else { return }

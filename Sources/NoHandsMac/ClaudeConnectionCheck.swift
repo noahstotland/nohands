@@ -9,11 +9,14 @@ public struct ClaudeConnectionCheck: Sendable {
     private let session: URLSession
     private let baseURL: URL
     private let deadline: Duration
+    private let meter: ClaudeUsageMeter
 
     /// `session`, `baseURL` and `deadline` exist for tests, like `ClaudeIntentResolver`'s.
     public init(config: AppConfig, session: URLSession = .shared,
-                baseURL: URL = ClaudeIntentResolver.endpoint, deadline: Duration? = nil) {
+                baseURL: URL = ClaudeIntentResolver.endpoint, deadline: Duration? = nil,
+                meter: ClaudeUsageMeter = .shared) {
         self.config = config
+        self.meter = meter
         self.session = session
         self.baseURL = baseURL
         self.deadline = deadline ?? .milliseconds(config.llmDeadlineMs)
@@ -28,6 +31,8 @@ public struct ClaudeConnectionCheck: Sendable {
             let body = try builder.connectionCheckBody()
             let request = ClaudeIntentResolver.makeRequest(url: baseURL, key: key, deadline: deadline, body: body)
             let (data, http) = try await IntentHTTP.send(request, session: session, deadline: deadline)
+            // A 2xx check is a real billed call, so it counts toward the session total.
+            if (200..<300).contains(http.statusCode) { meter.record(ClaudeUsage.from(response: data)) }
             result = .from(status: http.statusCode, body: data, apiKey: key)
         } catch let e as IntentError {
             switch e {
