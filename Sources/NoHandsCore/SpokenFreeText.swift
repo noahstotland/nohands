@@ -19,7 +19,7 @@ extension Action {
         case .windowAction(_, let app, let title): return app != nil || title != nil
         case .pressKey, .pressMouse, .releaseMouse, .scroll, .showGrid, .zoomGrid, .showLabels, .hideOverlay, .setMode,
              .moveWindow, .wait, .checkMedia, .ignore, .clearField, .setChecked, .setExpanded, .focusElement, .scrollTo,
-             .scrollIn, .drag, .readClipboard, .readValue, .readNotifications, .dismissNotifications, .waitFor,
+             .scrollIn, .drag, .readClipboard, .readPage, .readValue, .readNotifications, .dismissNotifications, .waitFor,
              .closeTab, .closeWindow, .selectTab, .look:
             return false
         }

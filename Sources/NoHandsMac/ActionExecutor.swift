@@ -33,6 +33,9 @@ public protocol ElementProviding: Sendable {
     /// Walks the focused window, offscreen parts included, for an element or text matching `words` (see
     /// `PageFind.Matcher`); the match is remembered for `scrollIntoView`. Honors the calling task's cancellation.
     func findOnPage(words: String) -> UIElementInfo?
+    /// The visible text of the focused window's page in reading order (see `AXQuery.pageText`); empty when there is
+    /// none. Honors the calling task's cancellation.
+    func pageText() -> [String]
     /// Scrolls the element `findOnPage` just returned into view and returns its frame (CG coordinates) once it is on
     /// a screen; nil when it cannot be scrolled or never arrives.
     func scrollIntoView(_ element: UIElementInfo) async -> CGRect?
@@ -68,6 +71,7 @@ public enum BrowserActionResult: Equatable, Sendable {
 extension ElementProviding {
     public func searchFieldFrame() -> CGRect? { nil }
     public func findOnPage(words: String) -> UIElementInfo? { nil }
+    public func pageText() -> [String] { [] }
     public func scrollIntoView(_ element: UIElementInfo) async -> CGRect? { nil }
     public func frontmostIsBrowser() -> Bool { false }
     public func browserWindows() -> (app: String, windows: [BrowserWindow])? { nil }
@@ -126,6 +130,7 @@ extension OverlayController: OverlayPresenting {
     static let needsHarness = "needs agent-desktop"
     public static let elementChanged = "element changed, look again"
     static let readingLimit = 300
+    static let noPageText = "no text on this page"
 
     let input: any InputSynthesizing
     let ax: any ElementProviding
@@ -191,7 +196,16 @@ extension OverlayController: OverlayPresenting {
     }
 
     func addReading(_ label: String, _ text: String) {
-        readings.append(String("\(label): \(text)".prefix(Self.readingLimit)))
+        // A label can come from the page (an element's title), so it can never spell the page reading's `page: `
+        // prefix: colons go, and a bare "page" is renamed.
+        var safe = label.replacingOccurrences(of: ":", with: " ").trimmingCharacters(in: .whitespaces)
+        if safe.lowercased() == PageText.readingLabel { safe = "\(safe) value" }
+        readings.append(String("\(safe): \(text)".prefix(Self.readingLimit)))
+    }
+
+    /// The page reading, the only long one. Only code calls this, so page content can't choose the long limit.
+    func addPageReading(_ text: String) {
+        readings.append(String("\(PageText.readingLabel): \(text)".prefix(PageText.limit)))
     }
 
     /// Executes in order; stops at the first failure. Returns the failure message if any (the caller shows it on
@@ -334,6 +348,8 @@ extension OverlayController: OverlayPresenting {
                 hideStaleOverlay()
             case .ignore, .look:
                 break
+            case .readPage:
+                if let failure = await readPage() { return failure }
             case .closeTab(let n):
                 guard let tab = tabSnapshot?.tab(n) else { return "no tab \(n)" }
                 if let failure = try await closeTab(id: tab.id) { return failure }
@@ -576,6 +592,25 @@ extension OverlayController: OverlayPresenting {
             return nil
         }
         return Task.isCancelled ? Self.cancelled : PageFind.failure(words)
+    }
+
+    /// "read_page": the focused window's visible text as one `page:` reading for the next step. A cancel (a spoken
+    /// stop) is seen after the walk, before anything is kept. Always the native walk: an agent-desktop snapshot holds
+    /// no static text.
+    private func readPage() async -> String? {
+        _ = ax.didJustExpose()
+        var runs = ax.pageText()
+        if ax.didJustExpose() {
+            try? await Task.sleep(for: exposureSettle)
+            if !Task.isCancelled { runs = ax.pageText() }
+        }
+        if Task.isCancelled { return Self.cancelled }
+        // Room for the label, so the cut mark is never trimmed off the end.
+        let text = PageText.join(runs, limit: PageText.limit - PageText.readingLabel.count - 2)
+        guard !text.isEmpty else { return Self.noPageText }
+        PipelineLog.info("read_page: \(text.count) characters", detail: text)
+        addPageReading(text)
+        return nil
     }
 
     private func namedElements(for target: ClickTarget) async -> [UIElementInfo]? {

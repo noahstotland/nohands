@@ -46,6 +46,7 @@ public enum ActionSummary {
         case .windowAction(let op, _, _): "windowAction(\(op.rawValue))"
         case .clipboardSet(let t): "clipboardSet(len=\(t.count))"
         case .readClipboard: "readClipboard"
+        case .readPage: "readPage"
         case .readValue: "readValue"
         case .readNotifications: "readNotifications"
         case .dismissNotifications: "dismissNotifications"
@@ -82,7 +83,7 @@ public enum ActionSummary {
         case .closeWindow: "closing a window"
         case .selectTab: "switching tabs"
         case .clipboardSet, .readClipboard: "using the clipboard"
-        case .readValue, .readNotifications, .dismissNotifications, .checkMedia, .look: "reading the screen"
+        case .readValue, .readNotifications, .dismissNotifications, .checkMedia, .look, .readPage: "reading the screen"
         case .wait, .waitFor, .ignore: "waiting"
         }
     }
