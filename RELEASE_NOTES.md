@@ -1,5 +1,11 @@
 # Release notes
 
+## 2026-11-15 confirm before irreversible task steps (NH-61) (#120)
+
+Merged 2026-11-15 4:18 pm UTC.
+
+NoHands now asks "say yes to send" before a multi-step task clicks Send, Delete, Pay, Place order and similar buttons you didn't mention in your request. Say "yes" to go ahead; saying anything else, or nothing for 30 seconds, stops the task. If you use an attention word, start your yes with it.
+
 ## 2026-11-15 resolve ordinal click targets like "first video" (NH-93) (#121)
 
 Merged 2026-11-15 4:03 pm UTC.
