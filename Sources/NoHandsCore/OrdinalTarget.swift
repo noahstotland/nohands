@@ -38,12 +38,11 @@ public struct OrdinalTarget: Equatable, Sendable {
         if let roles {
             candidates = ordered.filter { roles.contains(Self.role($0.1)) }
         } else {
-            var previous: String?
+            var seen: Set<String> = []
             for (n, e) in ordered where Self.role(e) == "link" {
                 let title = e.title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
                 guard title.split(whereSeparator: { $0.isWhitespace }).count >= Self.minResultTitleWords else { continue }
-                if title == previous { continue }
-                previous = title
+                guard seen.insert(title).inserted else { continue }   // a thumbnail and its title link are one result
                 candidates.append((n, e))
             }
         }

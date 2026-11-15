@@ -82,7 +82,13 @@ private let browser: [UIElementInfo] = [
     }
     let hint = "; say its label number from the list"
     let realTitle = browser + [el(18, 0, 500, "First video", "AXLink")]
+    // A grid lists the thumbnails in one row and the titles in the next; a title only contains the spoken words.
+    let grid = browser.filter { $0.id < 12 } + [el(12, 0, 200, "Alpha Beta Gamma", "AXLink"), el(13, 300, 200, "Delta Epsilon Zeta", "AXLink"),
+        el(14, 0, 300, "Alpha Beta Gamma", "AXLink"), el(15, 300, 300, "Delta Epsilon Zeta", "AXLink")]
+    let containing = browser + [el(18, 0, 500, "Reacting to my first video", "AXLink")]
     let cases: [(String, [UIElementInfo], TargetResolution)] = [
+        ("second video", grid, at(13, in: grid)),   // each video counts once even when its two links are not adjacent
+        ("first video", containing, at(12, in: containing)),   // only an exact title beats the position
         ("first video", browser, at(12)),           // not the menu bar, toolbar, tabs, nav links or the "Videos" chip
         ("the second result", browser, at(14)),     // the title link repeating the thumbnail's name is not a result
         ("3rd link", browser, at(10)),

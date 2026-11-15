@@ -216,8 +216,8 @@ extension OverlayController: OverlayPresenting {
                 if case .element(let name) = target {
                     named = await freshElements()
                     if Task.isCancelled { return Self.cancelled }
-                    // A title match wins; a position ("first video") that maps to a shown label clicks as that label.
-                    if LabelAssigner.find(named: name, in: named ?? []) == nil, let shown = labelSnapshot,
+                    // An exact title wins; a position ("first video") that maps to a shown label clicks as that label.
+                    if LabelAssigner.find(exactly: name, in: named ?? []) == nil, let shown = labelSnapshot,
                        let n = OrdinalTarget.parse(name)?.label(in: shown) { target = .label(n) }
                 }
                 // A numbered element with a ref is clicked semantically; a point click is the fallback.
