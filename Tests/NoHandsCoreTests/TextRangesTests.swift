@@ -65,6 +65,22 @@ private func slice(_ text: String, _ r: TextSpan?) -> String? {
     for (phrase, caret, want) in table {
         #expect(TextRanges.find(phrase, in: text, caret: caret)?.location == want, "\(phrase) @\(caret)")
     }
+    // A leading "the", "a", "an" or "my" is optional: the phrase as spoken first, then without it.
+    let article = "The budget is late. Review my plan, a draft."
+    let articleTable: [(String, Int?)] = [
+        ("the budget", 0), ("budget", 4), ("the plan", 30), ("my plan", 27), ("a draft", 36), ("an draft", 38), ("the lunch", nil),
+    ]
+    for (phrase, want) in articleTable { #expect(TextRanges.find(phrase, in: article, caret: 0)?.location == want, "\(phrase)") }
+    // A selection: a match inside it does not count as after the caret. Before the selection wins, then after it, and
+    // the selected match itself only when nothing else matches.
+    let sel = "one meeting, two meeting, three meeting"   // the three matches start at 4, 17 and 32
+    let selTable: [(Int, Int, Int?)] = [
+        (17, 7, 4), (4, 7, 17), (32, 7, 17), (0, 3, 4), (0, 0, 4), (0, 24, 32),
+    ]
+    for (caret, length, want) in selTable {
+        #expect(TextRanges.find("meeting", in: sel, caret: caret, selectionLength: length)?.location == want, "\(caret)+\(length)")
+    }
+    #expect(TextRanges.find("two", in: "one two", caret: 4, selectionLength: 3)?.location == 4)
     #expect(slice("it's Bob's, ok", TextRanges.find("bob's", in: "it's Bob's, ok", caret: 0)) == "Bob's")
     #expect(slice("it’s Bob’s", TextRanges.find("it's", in: "it’s Bob’s", caret: 10)) == "it’s")   // curly apostrophe
     #expect(slice("😀 meeting 😀", TextRanges.find("meeting", in: "😀 meeting 😀", caret: 0)) == "meeting")

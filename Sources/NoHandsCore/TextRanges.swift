@@ -145,9 +145,21 @@ public enum TextRanges {
 
     /// Where the speaker's words are in the text: case-insensitive, on word boundaries, any whitespace run matching a
     /// space, the phrase's trailing ASR punctuation dropped. The nearest match that ends at or before the caret wins;
-    /// with none before, the nearest after. nil when the words are not there. No fuzzy matching.
-    public static func find(_ phrase: String, in text: String, caret: Int) -> TextSpan? {
-        var words = phrase.split(whereSeparator: { $0.isWhitespace }).map(String.init)
+    /// with none before, the nearest after. When a selection of `selectionLength` starts at `caret`, "after" means
+    /// after the selection, so a match inside it does not count (it is the last resort, when nothing else matches).
+    /// The phrase as spoken is tried first, then without a leading "the", "a", "an" or "my". nil when the words are
+    /// not there. No fuzzy matching.
+    public static func find(_ phrase: String, in text: String, caret: Int, selectionLength: Int = 0) -> TextSpan? {
+        let words = phrase.split(whereSeparator: { $0.isWhitespace }).map(String.init)
+        if let hit = search(words, in: text, caret: caret, selectionLength: selectionLength) { return hit }
+        guard let first = words.first?.lowercased(), determiners.contains(first), words.count > 1 else { return nil }
+        return search(Array(words.dropFirst()), in: text, caret: caret, selectionLength: selectionLength)
+    }
+
+    private static let determiners: Set<String> = ["the", "a", "an", "my"]
+
+    private static func search(_ spoken: [String], in text: String, caret: Int, selectionLength: Int) -> TextSpan? {
+        var words = spoken
         while let last = words.last, let c = last.last, ".,!?".contains(c) {
             words[words.count - 1].removeLast()
             if words[words.count - 1].isEmpty { words.removeLast() }
@@ -163,8 +175,12 @@ public enum TextRanges {
         guard let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]) else { return nil }
         let length = (text as NSString).length
         let caret = clamp(caret, length)
+        let selectionEnd = min(caret + max(selectionLength, 0), length)
+        let hasSelection = selectionEnd > caret
         let hits = regex.matches(in: text, range: NSRange(location: 0, length: length)).map(\.range)
-        let pick = hits.last(where: { $0.location + $0.length <= caret }) ?? hits.first
+        let pick = hits.last(where: { $0.location + $0.length <= caret })
+            ?? (hasSelection ? hits.first(where: { $0.location >= selectionEnd }) : nil)
+            ?? hits.first
         return pick.map { TextSpan(location: $0.location, length: $0.length) }
     }
 
