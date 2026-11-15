@@ -1,5 +1,11 @@
 # Release notes
 
+## 2026-11-15 action-aware settle waits after each task step (NH-38) (#124)
+
+Merged 2026-11-15 4:50 pm UTC.
+
+Multi-step tasks now wait less after each step: typing, scrolling and similar local steps re-check the screen once instead of polling for up to 3 seconds, and a changing value such as a clock or counter no longer holds the task. Page loads still wait as before. Nothing to configure; `settleMs` is still the most a step can wait.
+
 ## 2026-11-15 show the model's phase while it works, with a spinner and fades (NH-118) (#123)
 
 Merged 2026-11-15 4:40 pm UTC.
