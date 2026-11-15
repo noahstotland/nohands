@@ -103,12 +103,17 @@ public struct ClaudeRequestBuilder: Sendable {
             s += "  \(e.number) [\(role)] \(sanitize(e.title))"
             let states = shownStates.filter { e.states.contains($0) }
             if !states.isEmpty { s += " (" + states.joined(separator: ", ") + ")" }
+            if let n = e.near, !n.isEmpty { s += " near: \"\(sanitize(n.replacingOccurrences(of: "\"", with: "'"), limit: PageText.nearLimit))\"" }
             if let v = e.value, !v.isEmpty { s += " = \"\(sanitize(v, limit: valueLimit))\"" }
             s += "\n"
         }
         if !o.readings.isEmpty {
             s += "Read:\n"
-            for r in o.readings { s += "  \(sanitize(r, limit: readingLimit))\n" }
+            for r in o.readings {
+                // The label is set by code (never page content), so only a page reading gets the long limit.
+                let long = r.hasPrefix(PageText.readingLabel + ": ")
+                s += "  \(sanitize(r, limit: long ? PageText.limit : readingLimit))\n"
+            }
         }
         switch r.vision {
         case .image(let shot)?:

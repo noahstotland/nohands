@@ -180,6 +180,7 @@ public enum IntentDecoder {
             return .windowAction(op, app: nonBlank(o["app_name"]), title: op == .focus ? nonBlank(o["title"]) : nil)
         case "clipboard_set": return misfiled(o) ? nil : (o["value"] as? String).map(Action.clipboardSet)
         case "read_clipboard": return .readClipboard
+        case "read_page": return .readPage
         case "read_value": return elementTarget(o).map(Action.readValue)
         case "read_notifications": return .readNotifications
         case "close_tab": return number(o["target_number"]).map(Action.closeTab)

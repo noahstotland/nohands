@@ -554,6 +554,18 @@ private func harnessSnapshot() -> DesktopSnapshot {
     #expect(r.resolver.requests.allSatisfy { $0.observation.harness == .agentDesktop && $0.observation.elements.first?.title == "Reload" })
 }
 
+@MainActor @Test func pageTextReachesTheNextRequestOnceAndEmptyPagesFailTheStep() async {
+    let h = FakeHarness(); h.snapshotResults = [harnessSnapshot()]
+    let r = harnessRig(FakeResolver([step("read", .continue, [.readPage]), step("look", .continue, [.wait(ms: 100)]),
+                                     step("done", .done)]), harness: h)
+    r.ax.pageRuns = ["Raptors vs Celtics", "7:30 PM", "Watch"]
+    #expect(await r.runner.run(goal: "open the raptors game", mode: .command) == .done("done"))
+    #expect(r.resolver.requests.map(\.observation.readings) == [[], ["page: Raptors vs Celtics | 7:30 PM | Watch"], []])
+    let empty = harnessRig(FakeResolver([step("read", .continue, [.readPage]), step("stuck", .stuck)]), harness: h)
+    _ = await empty.runner.run(goal: "open the raptors game", mode: .command)
+    #expect(empty.resolver.requests[1].history.first?.failure == ActionExecutor.noPageText)
+}
+
 @MainActor @Test func doneWithReadingsShowsTheFirstOneInTheHUD() async {
     let h = FakeHarness(); h.snapshotResults = [harnessSnapshot()]; h.readResult = "hello world"
     let r = harnessRig(FakeResolver([step("read it", .done, [.readClipboard])]), harness: h)
