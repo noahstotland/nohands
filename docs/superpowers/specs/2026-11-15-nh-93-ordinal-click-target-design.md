@@ -1,7 +1,8 @@
 # NH-93: Resolve an ordinal click target like "first video": Design
 
 **Date:** 2026-11-15  **Ticket:** [NH-93](https://github.com/noahstotland/nohands/issues/93)
-**Status:** Draft
+**Status:** Shipped
+**Shipped:** in PR #121, as specified
 
 ## Intent
 
