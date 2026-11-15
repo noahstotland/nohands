@@ -1,4 +1,5 @@
 import AppKit
+import QuartzCore
 import NoHandsCore
 
 @MainActor
@@ -118,7 +119,7 @@ public final class OverlayController {
         renderStatusBar()
         renderTaskPanel(rows: rows)
         guard !rows.isEmpty || notice != nil else {
-            boardPanel?.orderOut(nil)
+            if let boardPanel { fadeOut(boardPanel) }
             return
         }
         let screenCG = Self.visibleBoundsCG(containing: Self.pointerCG())
@@ -131,7 +132,7 @@ public final class OverlayController {
         boardPanel = panel
         panel.setFrame(frame, display: false)
         panel.contentView = BoardView(frame: CGRect(origin: .zero, size: size), rows: rows, notice: notice)
-        panel.orderFrontRegardless()
+        show(panel)
         if let next = board.nextChange(now: now) {
             boardTask = Task { [weak self] in
                 try? await Task.sleep(until: next.advanced(by: .milliseconds(20)), clock: .continuous)
@@ -151,7 +152,7 @@ public final class OverlayController {
     /// Draws the bar centred on the screen the pointer is on, 8 pt below the menu bar or above the Dock.
     private func renderStatusBar() {
         guard statusBarShown else {
-            statusPanel?.orderOut(nil)
+            if let statusPanel { hideNow(statusPanel) }   // the grid or a badge is up: never sit over it
             shownStatus = nil
             shownStatusFrame = nil
             return
@@ -172,16 +173,23 @@ public final class OverlayController {
             panel.contentView = StatusBarView(frame: CGRect(origin: .zero, size: size), line: line)
             shownStatus = (line, size)
         }
-        panel.orderFrontRegardless()
+        show(panel)
     }
 
     static let taskPanelInset: CGFloat = 16
 
     /// Draws the corner panel 16 pt from the bottom-right of the pointer's screen, above the status bar if that is
-    /// there too. Hidden while the grid or number badges are up, or when no prompt has anything to show.
+    /// there too. Hidden at once while the grid or number badges are up and after a spoken stop; faded out when the
+    /// result has been shown long enough or no prompt has anything to show.
     private func renderTaskPanel(rows: [PromptRow]) {
-        guard state == .none, let content = TaskPanelText.content(rows: rows) else {
-            taskPanel?.orderOut(nil)
+        guard state == .none else {
+            if let taskPanel { hideNow(taskPanel) }
+            return
+        }
+        guard let content = TaskPanelText.content(rows: rows) else {
+            guard let taskPanel else { return }
+            let stopped = rows.contains { if case .stopped = $0.status { true } else { false } }
+            if stopped { hideNow(taskPanel) } else { fadeOut(taskPanel) }
             return
         }
         let screenCG = Self.visibleBoundsCG(containing: Self.pointerCG())
@@ -201,7 +209,72 @@ public final class OverlayController {
             panel.contentView = TaskPanelView(frame: CGRect(origin: .zero, size: size), content: content)
             shownTask = (content, size)
         }
-        panel.orderFrontRegardless()
+        show(panel)
+    }
+
+    // MARK: Fades
+
+    private static let fadeInSeconds = 0.15
+    private static let fadeOutSeconds = 0.35
+    /// Panels on their way out. A `show` that comes first cancels the fade (the generation no longer matches).
+    private var fadingOut: Set<ObjectIdentifier> = []
+    private var fadeGeneration: [ObjectIdentifier: Int] = [:]
+
+    private func bumpGeneration(_ panel: NSPanel) -> Int {
+        let id = ObjectIdentifier(panel)
+        let g = (fadeGeneration[id] ?? 0) + 1
+        fadeGeneration[id] = g
+        return g
+    }
+
+    private func animateAlpha(_ panel: NSPanel, to alpha: CGFloat, seconds: TimeInterval) {
+        NSAnimationContext.runAnimationGroup { ctx in
+            ctx.duration = seconds
+            panel.animator().alphaValue = alpha
+        }
+    }
+
+    /// Puts the panel on screen: a hidden one fades in, one that is fading out is brought back and its fade cancelled.
+    private func show(_ panel: NSPanel) {
+        let id = ObjectIdentifier(panel)
+        if !panel.isVisible {
+            _ = bumpGeneration(panel)
+            fadingOut.remove(id)
+            animateAlpha(panel, to: 0, seconds: 0)
+            panel.orderFrontRegardless()
+            animateAlpha(panel, to: 1, seconds: Self.fadeInSeconds)
+        } else if fadingOut.contains(id) {
+            _ = bumpGeneration(panel)
+            fadingOut.remove(id)
+            animateAlpha(panel, to: 1, seconds: Self.fadeInSeconds)
+            panel.orderFrontRegardless()
+        } else {
+            panel.orderFrontRegardless()
+        }
+    }
+
+    /// Fades the panel out, then takes it off screen unless a `show` came first. Repeat calls keep the first fade.
+    private func fadeOut(_ panel: NSPanel) {
+        let id = ObjectIdentifier(panel)
+        guard panel.isVisible, !fadingOut.contains(id) else { return }
+        fadingOut.insert(id)
+        let g = bumpGeneration(panel)
+        animateAlpha(panel, to: 0, seconds: Self.fadeOutSeconds)
+        Task { [weak self, weak panel] in
+            try? await Task.sleep(for: .seconds(Self.fadeOutSeconds + 0.02))
+            guard let self, let panel, self.fadeGeneration[id] == g else { return }
+            self.fadingOut.remove(id)
+            panel.orderOut(nil)
+        }
+    }
+
+    /// Takes the panel off screen with no animation, cancelling any fade in flight.
+    private func hideNow(_ panel: NSPanel) {
+        let id = ObjectIdentifier(panel)
+        _ = bumpGeneration(panel)
+        fadingOut.remove(id)
+        animateAlpha(panel, to: 1, seconds: 0)
+        panel.orderOut(nil)
     }
 
     /// CG-space (top-left origin) bounds of the screen containing `point`; primary screen if none does.
@@ -426,15 +499,54 @@ private final class StatusBarView: NSView {
 /// The corner panel: the phrase, one line per step, a progress bar and a closing line on the board's dark fill.
 private final class TaskPanelView: NSView {
     let content: TaskPanelContent
-    init(frame: CGRect, content: TaskPanelContent) { self.content = content; super.init(frame: frame) }
+    init(frame: CGRect, content: TaskPanelContent) {
+        self.content = content
+        super.init(frame: frame)
+        wantsLayer = content.busy   // the spinner is a layer animation, so the panel is not redrawn to move it
+    }
     required init?(coder: NSCoder) { fatalError() }
     override var isFlipped: Bool { true }
+
+    /// The one moving thing: an open arc turning once a second. Made on first draw, positioned on every draw.
+    private var spinner: CAShapeLayer?
+
+    private func placeSpinner(at center: CGPoint) {
+        guard let host = layer else { return }
+        let size = Self.spinnerSize
+        let arc = spinner ?? {
+            let l = CAShapeLayer()
+            l.bounds = CGRect(x: 0, y: 0, width: size, height: size)
+            let path = CGMutablePath()
+            path.addArc(center: CGPoint(x: size / 2, y: size / 2), radius: (size - 1.5) / 2,
+                        startAngle: 0, endAngle: 1.5 * .pi, clockwise: false)
+            l.path = path
+            l.fillColor = nil
+            l.strokeColor = BoardView.color(.active).cgColor
+            l.lineWidth = 1.5
+            l.lineCap = .round
+            let turn = CABasicAnimation(keyPath: "transform.rotation.z")
+            turn.fromValue = 0
+            turn.toValue = 2 * Double.pi
+            turn.duration = 1
+            turn.repeatCount = .infinity
+            turn.isRemovedOnCompletion = false
+            l.add(turn, forKey: "turn")
+            host.addSublayer(l)
+            spinner = l
+            return l
+        }()
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        arc.position = center
+        CATransaction.commit()
+    }
 
     private static let hPad: CGFloat = 14
     private static let vPad: CGFloat = 10
     private static let gap: CGFloat = 6
     private static let markWidth: CGFloat = 16
-    private static let trackHeight: CGFloat = 6
+    private static let trackHeight: CGFloat = 3
+    private static let spinnerSize: CGFloat = 10
     private static let phraseFont = NSFont.systemFont(ofSize: 14, weight: .medium)
     private static let smallFont = NSFont.systemFont(ofSize: 12, weight: .regular)
     private static let currentFont = NSFont.systemFont(ofSize: 12, weight: .medium)
@@ -471,7 +583,7 @@ private final class TaskPanelView: NSView {
         h += CGFloat(content.lines.count) * stepHeight()
         if content.progress != nil { h += gap + stepHeight() }
         if let footer = content.footer {
-            h += gap + wrappedHeight(footer.text, font: smallFont, width: inner, maxLines: 2)
+            h += gap + wrappedHeight(footer.text, font: smallFont, width: inner - (content.busy ? markWidth : 0), maxLines: 2)
         }
         return h + vPad
     }
@@ -480,7 +592,7 @@ private final class TaskPanelView: NSView {
         switch m {
         case .done: ("\u{2713}", BoardView.color(.good))
         case .failed: ("\u{2717}", BoardView.color(.bad))
-        case .current: ("\u{25B8}", BoardView.color(.active))
+        case .current: ("", BoardView.color(.active))   // drawn as a dot
         case .stopped: ("\u{25A0}", BoardView.color(.muted))
         }
     }
@@ -513,7 +625,12 @@ private final class TaskPanelView: NSView {
             let m = Self.mark(line.mark)
             let current = line.mark == .current
             let font = current ? Self.currentFont : Self.smallFont
-            draw(Self.tail(m.glyph, font: font, color: m.color), x: hPad, y: y, width: Self.markWidth, height: textH)
+            if current {
+                m.color.setFill()
+                NSBezierPath(ovalIn: CGRect(x: hPad + 3, y: y + (textH - 6) / 2, width: 6, height: 6)).fill()
+            } else {
+                draw(Self.tail(m.glyph, font: font, color: m.color), x: hPad, y: y, width: Self.markWidth, height: textH)
+            }
             let color = NSColor(white: current ? 1 : 0.8, alpha: 1)
             draw(Self.tail(line.text, font: font, color: color),
                  x: hPad + Self.markWidth, y: y, width: inner - Self.markWidth, height: textH)
@@ -542,9 +659,13 @@ private final class TaskPanelView: NSView {
 
         if let footer = content.footer {
             y += gap
-            let h = Self.wrappedHeight(footer.text, font: Self.smallFont, width: inner, maxLines: 2)
+            let indent = content.busy ? Self.markWidth : 0
+            let h = Self.wrappedHeight(footer.text, font: Self.smallFont, width: inner - indent, maxLines: 2)
             draw(Self.tail(footer.text, font: Self.smallFont, color: BoardView.color(footer.tone), wrap: true),
-                 x: hPad, y: y, width: inner, height: h)
+                 x: hPad + indent, y: y, width: inner - indent, height: h)
+            if content.busy {
+                placeSpinner(at: CGPoint(x: hPad + Self.markWidth / 2 - 1, y: y + Self.lineHeight(Self.smallFont) / 2))
+            }
         }
     }
 }
