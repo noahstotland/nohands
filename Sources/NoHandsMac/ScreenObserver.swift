@@ -72,8 +72,11 @@ public struct ScreenObserver: Sendable {
     /// `surfaces` are the overlays the last action left open (`DesktopHarness.takeOpenSurfaces()`, read once per
     /// settle by the caller so every poll of that settle targets the same surface); nil reads them here.
     /// `limit` replaces the usual element cap for this observation (a running plan reads more than the model is sent).
+    /// `found` is the element a find just scrolled to: it is listed first, as number 1 (see `PageFind.pinFirst`),
+    /// unless number badges are showing, whose numbers the user can see.
     public func observe(mode: Mode, overlay: OverlayState, screens: [CGRect]? = nil, harnessKind: HarnessKind,
-                        readings: [String] = [], surfaces: [String]? = nil, limit: Int? = nil) async -> (observation: ScreenObservation, labels: [Int: UIElementInfo], fromHarness: Bool) {
+                        readings: [String] = [], surfaces: [String]? = nil, limit: Int? = nil,
+                        found: UIElementInfo? = nil) async -> (observation: ScreenObservation, labels: [Int: UIElementInfo], fromHarness: Bool) {
         var result: (observation: ScreenObservation, labels: [Int: UIElementInfo])
         var every: [UIElementInfo]
         var fromHarness = false
@@ -94,6 +97,7 @@ public struct ScreenObserver: Sendable {
             let native = observeNative(mode: mode, overlay: overlay, screens: screens, menuBarLast: true, limit: limit)
             (result, every) = ((native.observation, native.labels), native.all)
         }
+        if let found, overlay.kindName != "labels" { result = Self.pinned(result, found: found, limit: limit ?? maxElements) }
         // Player controls are looked for among every element found; the audio hint only when there is none.
         result.observation.media = MediaSignal.state(elements: every, audioPlaying: audio.isPlaying)
         result.observation.harness = harnessKind
@@ -102,6 +106,20 @@ public struct ScreenObserver: Sendable {
         result.observation.browserApp = browser?.app
         result.observation.readings = readings
         return (result.observation, result.labels, fromHarness)
+    }
+
+    /// The listed elements with `found` as number 1 and the rest after it in order, cut at `limit`.
+    static func pinned(_ r: (observation: ScreenObservation, labels: [Int: UIElementInfo]), found: UIElementInfo,
+                       limit: Int) -> (observation: ScreenObservation, labels: [Int: UIElementInfo]) {
+        let labels = PageFind.pinFirst(r.labels, found: found, limit: limit)
+        var observation = r.observation
+        observation.elements = labels.keys.sorted().compactMap { n in
+            guard let e = labels[n] else { return nil }
+            var role = e.role.lowercased()
+            if role.hasPrefix("ax") { role.removeFirst(2) }
+            return ObservedElement(number: n, role: role, title: e.title, value: e.value, states: e.states)
+        }
+        return (observation, labels)
     }
 
     /// The usual element cap.

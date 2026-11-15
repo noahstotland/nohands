@@ -990,3 +990,12 @@ private func resolverForSend() -> FakeResolver {
         #expect(!runner.isAwaitingAnswer)
     }
 }
+
+@MainActor @Test func aFindInATaskPutsTheMatchFirstInTheNextRequestWithoutMovingThePointer() async {
+    let r = rig(FakeResolver([step("find it", .continue, [.findOnPage("raptors", movePointer: false)]), step("done", .done)]))
+    r.ax.pageMatch = UIElementInfo(id: 1_000_001, frame: CGRect(x: 100, y: 5000, width: 200, height: 20), title: "Raptors vs Celtics", role: "AXLink")
+    #expect(await r.runner.run(goal: "open the raptors game", mode: .command) == .done("done"))
+    #expect(r.resolver.requests[1].observation.elements.first?.title == "Raptors vs Celtics")
+    #expect(r.resolver.requests[1].observation.elements.first?.number == 1)
+    #expect(!r.input.calls.contains { $0.hasPrefix("move:") })
+}
