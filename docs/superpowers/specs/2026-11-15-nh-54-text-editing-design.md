@@ -1,7 +1,8 @@
 # NH-54: Text editing by voice: Design
 
 **Date:** 2026-11-15  **Ticket:** [NH-54](https://github.com/noahstotland/nohands/issues/54)
-**Status:** Draft
+**Status:** Shipped
+**Shipped:** in PR #136, with differences: [as-built](../as-built/2026-11-15-nh-54-text-editing.md)
 
 ## Intent
 
