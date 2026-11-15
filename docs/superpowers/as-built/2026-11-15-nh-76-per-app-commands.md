@@ -17,4 +17,4 @@
 - The menu walk is breadth first: every top-level menu is read before any submenu.
 - A model step must equal the menu title as written (case and a trailing "…" aside), checked by `MenuMatch.plain`, so characters the looser matching fold deletes cannot slip a name past the irreversible guard. The same check applies to agent-desktop's find result.
 - `ShortcutGuard` now covers `menuItem`: a title with a close word or a quit word needs the goal to ask for it, like command-W and command-Q. (The spec listed this as a follow-up; the native loop now runs `menu_item`, so it ships here.)
-- Apple menu titles (Shut Down, Restart, Log Out, Sleep, Lock Screen, Force Quit, …) are refused on the agent-desktop fallback too.
+- Apple menu titles (Shut Down, Restart, Log Out <name>, Sleep, Lock Screen, Force Quit, …) are refused on the agent-desktop fallback too, by the spoken name and by the item agent-desktop found.

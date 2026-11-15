@@ -143,10 +143,11 @@ extension ActionExecutor {
                 guard harness != nil else { return "couldn't press menu item \(title)" }
             case .noMatch: break
             }
-            guard let harness, !MenuMatch.appleMenuTitles.contains(MenuMatch.plain(last)) else { return "no menu item called \(last)" }
+            guard let harness, !MenuMatch.isAppleMenuTitle(last) else { return "no menu item called \(last)" }
             guard let m = await harness.find(app: ax.frontmostAppName(), surface: .menubar, name: last) else {
                 return "no menu item called \(last)"
             }
+            if MenuMatch.isAppleMenuTitle(m.name) { return "no menu item called \(last)" }
             // agent-desktop falls back to a contains match; a model step may press only the title it named.
             if labelSnapshot != nil, MenuMatch.plain(m.name) != MenuMatch.plain(last) { return "no menu item called \(last)" }
             if m.disabled { return "menu item \(last) is disabled" }

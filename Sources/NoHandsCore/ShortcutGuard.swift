@@ -1,13 +1,19 @@
 import Foundation
 
 /// Code-level safety net for the task loop: a model step may not close a tab/window (command-w) or quit an app
-/// (command-q) unless the user's goal asks for that specific thing. Words are matched exactly (no prefixes), so
+/// (command-q), or run the same through its menu item ("Close Window", "Quit Safari"), unless the user's goal asks for that specific thing. Words are matched exactly (no prefixes), so
 /// "quite" or "closet" allow nothing, and "close this tab" allows command-w but not command-q.
 public enum ShortcutGuard {
     /// Goal words that allow each guarded key. "shut" allows both ("shut the tab", "shut down Slack").
     private static let allowWords: [Key: Set<String>] = [
         .w: ["close", "closes", "closing", "closed", "shut"],
         .q: ["quit", "quits", "quitting", "exit", "exiting", "shut"],
+    ]
+
+    /// Words in a menu item's title that make it the menu form of each guarded chord.
+    private static let titleWordsFor: [Key: Set<String>] = [
+        .w: ["close", "closes", "closing", "shut"],
+        .q: ["quit", "quits", "quitting", "shut"],
     ]
 
     /// `close_app` quits: it needs a quit word or a close word.
@@ -33,8 +39,11 @@ public enum ShortcutGuard {
                 if closeAppWords.isDisjoint(with: words) { return "blocked: close_app not allowed for this request" }
             case .menuItem(let title):
                 // "Close Window", "Quit Chrome": the menu form of the guarded chords asks the same of the goal.
-                let titleWords = Set(CommandGrammar.normalize(title))
-                for (key, allowed) in allowWords where !allowed.isDisjoint(with: titleWords) && allowed.isDisjoint(with: words) {
+                // Split like IrreversibleGuard does (every non letter or digit is a break), so "File>Close Window"
+                // and "Close…" are seen. "Exit Full Screen" and "Reopen Closed Tab" are not close or quit commands.
+                let titleWords = Set(title.lowercased().map { $0.isLetter || $0.isNumber ? $0 : " " }
+                    .reduce(into: "") { $0.append($1) }.split(separator: " ").map(String.init))
+                for (key, allowed) in allowWords where !titleWordsFor[key]!.isDisjoint(with: titleWords) && allowed.isDisjoint(with: words) {
                     return "blocked: menu item \(title) not allowed for this request"
                 }
             default:

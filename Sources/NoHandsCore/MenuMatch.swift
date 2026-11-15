@@ -34,6 +34,7 @@ public enum MenuMatch {
     /// character the fold deletes can turn a word the guards would catch ("Emp'ty Trash", "Se...nd") into a match.
     public static func plain(_ text: String) -> String {
         var t = text.lowercased().trimmingCharacters(in: .whitespaces)
+            .replacingOccurrences(of: "’", with: "'").replacingOccurrences(of: "‘", with: "'")
         for tail in ["…", "..."] where t.hasSuffix(tail) { t = String(t.dropLast(tail.count)).trimmingCharacters(in: .whitespaces) }
         return t.split(whereSeparator: { $0.isWhitespace }).joined(separator: " ")
     }
@@ -43,6 +44,12 @@ public enum MenuMatch {
         "about this mac", "system settings", "system preferences", "app store", "recent items", "force quit",
         "sleep", "restart", "shut down", "lock screen", "log out",
     ]
+
+    /// Whether a title is an Apple menu item. "Log Out <name>…" carries the user's name, so it is matched by prefix.
+    public static func isAppleMenuTitle(_ title: String) -> Bool {
+        let t = plain(title)
+        return appleMenuTitles.contains(t) || t.hasPrefix("log out ")
+    }
 
     /// The index in `entries` of the item `spoken` names, or nil. `spoken` may be a path ("file > save as"): that
     /// limits the search to that menu and matches the last part.

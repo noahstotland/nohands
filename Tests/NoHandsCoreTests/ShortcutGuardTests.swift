@@ -45,6 +45,9 @@ import Testing
         ("Quit Google Chrome", "play music", true), ("File > Close Window", "open the latest video", true),
         ("Close Tab", "close this tab", false), ("Quit Spotify", "quit spotify", false),
         ("Bookmark This Tab…", "open the latest video", false),
+        ("File>Close Window", "open the latest video", true), ("Safari>Quit Safari", "play music", true),
+        ("Close…", "play music", true), ("Exit Full Screen", "watch it small", false),
+        ("Reopen Closed Tab", "open the latest video", false),
     ]
     for (title, goal, blocked) in cases {
         #expect((ShortcutGuard.blocked([.menuItem(title)], goal: goal) != nil) == blocked, Comment(rawValue: title))
