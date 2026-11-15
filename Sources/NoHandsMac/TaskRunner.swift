@@ -239,7 +239,7 @@ public enum TaskOutcome: Equatable, Sendable {
                 if isCancelled { return await finish(.stopped) }
                 onStatus?(.running("step \(n) · ? \(question)"))
                 trail.begin(number: n, intent: question)
-                trail.phase = .acting
+                trail.phase = .reading
                 onTrail?(trail)
                 let reply = await awaitAnswer(.question, timeout: Self.answerTimeout)
                 if isCancelled { return await finish(.stopped) }
@@ -250,7 +250,7 @@ public enum TaskOutcome: Equatable, Sendable {
                 trail.end(number: n, failure: nil)
                 trail.phase = .reading
                 onTrail?(trail)
-                history.append(StepRecord(intent: "\(StepRecord.askedPrefix) \(question) User answered: \(said.prefix(Self.answerLimit))", actions: []))
+                history.append(StepRecord(intent: question, actions: [], userAnswer: String(said.prefix(Self.answerLimit))))
                 if n < maxSteps {
                     settleStart = ContinuousClock.now
                     pendingSurfaces = harness?.takeOpenSurfaces() ?? []

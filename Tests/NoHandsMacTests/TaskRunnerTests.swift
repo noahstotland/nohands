@@ -1012,9 +1012,9 @@ private func resolverForSend() -> FakeResolver {
     // (question, what the user does, outcome, the row while waiting, the History record step 2 gets (nil: no step 2))
     let table: [(String, Reply, TaskOutcome, String, String?)] = [
         ("Which game?", .say("the knicks one"), .done("open it"), "step 1 · ? Which game?",
-         "Asked: Which game? User answered: the knicks one"),
+         "Which game?|the knicks one"),
         (longQuestion, .say(longAnswer), .done("open it"), "step 1 · ? " + String(repeating: "q", count: 79) + "…",
-         "Asked: " + String(repeating: "q", count: 79) + "… User answered: " + String(repeating: "a", count: 200)),
+         String(repeating: "q", count: 79) + "…|" + String(repeating: "a", count: 200)),
         ("Which game?", .stop, .stopped, "step 1 · ? Which game?", nil),
         ("Which game?", .silence, .stuck("no answer"), "step 1 · ? Which game?", nil),
         ("Which game?", .say("   "), .stuck("no answer"), "step 1 · ? Which game?", nil),
@@ -1041,7 +1041,7 @@ private func resolverForSend() -> FakeResolver {
             }
         }
         #expect(await task.value == outcome, "\(reply)")
-        #expect(r.resolver.requests.dropFirst().first?.history.map(\.intent).first == record, "\(reply)")
+        #expect(r.resolver.requests.dropFirst().first?.history.first.map { "\($0.intent)|\($0.userAnswer ?? "")" } == record, "\(reply)")
         #expect(r.resolver.requests.dropFirst().first?.history.first?.actions.isEmpty ?? true)
         #expect(r.input.calls.contains("click:140,55") == (record != nil))
         #expect(runner.awaitedAnswer == nil)

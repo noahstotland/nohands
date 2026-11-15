@@ -249,7 +249,7 @@ private func step(_ intent: String, _ status: StepStatus, _ actions: [Action] = 
         }
         await r.pipeline.waitForTask()
         #expect(r.overlay.reports.allSatisfy { $0.status != .held }, "the answer was held")
-        #expect(r.resolver?.requests.dropFirst().first?.history.first?.intent == "Asked: Which game? User answered: \(answer)")
+        #expect(r.resolver?.requests.dropFirst().first?.history.first?.userAnswer == answer)
         #expect(r.pipeline.lastTaskOutcome == .done("type a"))
     }
 }

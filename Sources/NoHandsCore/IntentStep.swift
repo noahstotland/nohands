@@ -70,10 +70,11 @@ public struct StepRecord: Equatable, Sendable {
     public var intent: String
     public var actions: [Action]
     public var failure: String?
-    /// Starts the record of a question the task asked and the user's answer; the request builder keeps its answer whole.
-    public static let askedPrefix = "Asked:"
-    public init(intent: String, actions: [Action], failure: String? = nil) {
-        self.intent = intent; self.actions = actions; self.failure = failure
+    /// Set only by the task loop on a step where the model asked a question (`intent` is the question): what the user
+    /// said back. The request builder alone writes the `User answered:` marker, so no model text can carry it.
+    public var userAnswer: String?
+    public init(intent: String, actions: [Action], failure: String? = nil, userAnswer: String? = nil) {
+        self.intent = intent; self.actions = actions; self.failure = failure; self.userAnswer = userAnswer
     }
 }
 

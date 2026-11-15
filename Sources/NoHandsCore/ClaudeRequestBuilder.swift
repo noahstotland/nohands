@@ -78,14 +78,20 @@ public struct ClaudeRequestBuilder: Sendable {
     /// `History:` header), then, after two identical steps, a note to change approach, then, when the goal or page names a
     /// known site, its routes (`SitePlaybooks`; `playbooks: false` leaves them out, for the few-shot examples), then the
     /// observation through the `Request:` line. Joined, they are `userMessage`.
+    /// `text` without the "User answered:" marker (any case), which only the builder may write.
+    static func unmarked(_ text: String) -> String {
+        text.replacingOccurrences(of: "answered:", with: "answered", options: .caseInsensitive)
+    }
+
     public static func userBlocks(request r: StepRequest, playbooks: Bool = true) -> [String] {
         let o = r.observation
         let goal = sanitize(r.goal, limit: 300)
         var blocks = ["Goal: \(goal)\nStep: \(r.step) of \(r.maxSteps)\n"]
         for (i, h) in r.history.enumerated() {
-            let outcome = h.failure.map { "FAILED: \(sanitize($0))" } ?? "ok"
-            // A question and the user's answer (up to 80 + 200 characters) are kept whole; any other intent is one sentence.
-            let intent = sanitize(h.intent, limit: h.intent.hasPrefix(StepRecord.askedPrefix) ? 320 : 80)
+            let outcome = h.failure.map { "FAILED: \(unmarked(sanitize($0)))" } ?? "ok"
+            // Model text never carries the marker the prompt trusts as the user's words: only `userAnswer` is written after it.
+            var intent = unmarked(sanitize(h.intent, limit: 80))
+            if let answer = h.userAnswer { intent = "Asked: \(intent) User answered: \(sanitize(answer, limit: 200))" }
             blocks.append((i == 0 ? "History:\n" : "") + "  \(i + 1). \(intent) -> \(ActionSummary.kinds(h.actions)) (\(outcome))\n")
         }
         // Two identical steps in a row: say so while a third (which ends the task) can still be avoided.
