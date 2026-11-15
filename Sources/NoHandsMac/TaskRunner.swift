@@ -26,6 +26,9 @@ public enum TaskOutcome: Equatable, Sendable {
     static let notPlaying = "not playing yet"
     static let pollInterval = 250
     static let minSettleMs = 300
+    /// The most a wait for a new window may take. The event can miss a window that appears before the wait starts,
+    /// so the rest of `settleMs` is polled instead of spent waiting.
+    static let windowWaitMs = 1500
     /// How long a capture may take before the step goes on without a picture.
     static let captureDeadline: Duration = .seconds(2)
     static let looking = "looking at the screen"
@@ -73,6 +76,8 @@ public enum TaskOutcome: Equatable, Sendable {
     private var planLimit: Int?
     /// Steps whose actions were executed in the current (or last) `run`.
     public private(set) var stepsRun = 0
+    /// Each step's settle wait in ms, in the order `onStep` reported them, for the current (or last) `run`.
+    public private(set) var settleTimes: [Int] = []
     /// The in-flight resolve or execute; `cancel()` cancels it so an HTTP request or `wait` aborts.
     private var inFlight: Task<Void, Never>?
     /// Diagnostics hook (the CLI prints steps with it; the app leaves it nil). Called after each executed step with
@@ -123,6 +128,7 @@ public enum TaskOutcome: Equatable, Sendable {
         cancelled = false
         planLimit = nil
         stepsRun = 0
+        settleTimes = []
         // A goal about playing media gets a longer budget: stream sites throw overlays and pop-unders first.
         let maxSteps = max(1, MediaGoal.matches(goal) ? config.maxMediaTaskSteps : config.maxTaskSteps)
         trail = TaskTrail(maxSteps: maxSteps)
@@ -287,6 +293,7 @@ public enum TaskOutcome: Equatable, Sendable {
                 trail.phase = .reading   // the settle and the next look at the screen
                 onTrail?(trail)
             }
+            settleTimes.append(Int(settled / .milliseconds(1)))
             onStep?(n, step, settled, failure)
             if let failure, failure != ActionExecutor.cancelled { onStatus?(.running("step \(n) · \(step.intent) ✗ \(failure)")) }
             if isCancelled { return await finish(.stopped) }
@@ -315,8 +322,8 @@ public enum TaskOutcome: Equatable, Sendable {
             if n < maxSteps {
                 settleStart = ContinuousClock.now
                 pendingSurfaces = harness?.takeOpenSurfaces() ?? []
-                (observation, labels) = await settle(mode: mode, readings: readings, found: found)
-                await annotateTabs(&observation)
+                (observation, labels) = await settle(mode: mode, readings: readings, after: step.actions, found: found)
+                if !isCancelled { await annotateTabs(&observation) }
                 settled = settleStart.duration(to: .now)
             }
         }
@@ -386,28 +393,73 @@ public enum TaskOutcome: Equatable, Sendable {
 
     typealias Observed = (observation: ScreenObservation, labels: [Int: UIElementInfo])
 
-    /// Observes until two consecutive observations are the same (after at least 300 ms), or `settleMs` elapses.
-    /// Elapsed time is the injected sleeps plus the measured wall time of each observation, so production is
-    /// bounded by `settleMs` in wall time while tests with instant fakes run instantly. `settleMs == 0` observes
-    /// once. `first` is an observation just taken (counted from its own duration) instead of a fresh one.
+    /// Waits for the screen after a step, as long as what the step did calls for (`SettlePolicy`), never longer than
+    /// `settleMs` of wall time. `none` observes once, `oneLook` sleeps 300 ms and observes once, and `full` observes
+    /// until two consecutive observations are the same (after at least 300 ms) or a value that keeps ticking is the
+    /// only difference. Elapsed time is the injected sleeps plus the measured wall time of each observation, so
+    /// tests with instant fakes run instantly. `settleMs == 0` observes once with no sleep, for every policy.
+    /// `actions` is the step just run; nil (the first step's Chromium exposure, the playback check) polls as `full`.
+    /// `first` is an observation just taken (counted from its own duration) instead of a fresh one.
     func settle(mode: Mode, from first: (result: Observed, ms: Int, fromHarness: Bool)? = nil, readings: [String] = [],
-                found: UIElementInfo? = nil) async -> Observed {
-        var taken: (result: Observed, ms: Int, fromHarness: Bool)
-        if let first { taken = first } else { taken = await observeTimed(mode: mode, readings: readings, found: found) }
-        var current = taken.result
+                after actions: [Action]? = nil, found: UIElementInfo? = nil) async -> Observed {
         let limit = max(0, config.settleMs)
-        var elapsed = taken.ms
+        let policy = actions.map(SettlePolicy.for) ?? .full
+        if limit == 0 || policy == .none {
+            if let first { return first.result }
+            return await observeTimed(mode: mode, readings: readings, found: found).result
+        }
+        if policy == .oneLook {
+            await sleep(.milliseconds(min(Self.minSettleMs, limit)))
+            return await observeTimed(mode: mode, readings: readings, found: found).result
+        }
+        var elapsed = 0
+        var windowWait: WindowWait?
+        if first == nil, let actions, let wait = await waitForNewWindow(after: actions, limit: limit) {
+            windowWait = wait
+            elapsed = wait.ms
+            // A stop during the wait: the caller ends the task, so skip the observation nobody will read.
+            if isCancelled { return (ScreenObservation(app: "", mode: mode), [:]) }
+        }
+        let taken: (result: Observed, ms: Int, fromHarness: Bool)
+        if let first { taken = first } else { taken = await observeTimed(mode: mode, readings: readings, found: found) }
+        elapsed += taken.ms
+        var current = taken.result
+        if let windowWait, windowWait.delivered, windowWait.appOnly { return current }
+        var watch = SettleWatch()
+        _ = watch.feed(current.observation)
         while elapsed < limit, !isCancelled {
             let step = min(Self.pollInterval, limit - elapsed)
             await sleep(.milliseconds(step))
             elapsed += step
             let next = await observeTimed(mode: mode, readings: readings, found: found)
             elapsed += next.ms
-            let same = Settle.same(current.observation, next.result.observation)
             current = next.result
-            if same && elapsed >= Self.minSettleMs { break }
+            if watch.feed(current.observation) && elapsed >= Self.minSettleMs { break }
         }
         return current
+    }
+
+    private struct WindowWait { var delivered: Bool; var appOnly: Bool; var ms: Int }
+
+    /// After a step that opened a URL or an app, with agent-desktop and no window in the front app yet: blocks until
+    /// agent-desktop sees a window open, for at most `limit` ms (the wait counts against `settleMs`). Nil when there
+    /// is nothing to wait for, in which case the step just polls. A failed or timed-out wait never fails the step.
+    /// The wait goes through `runCancellable`, so a spoken stop ends it.
+    private func waitForNewWindow(after actions: [Action], limit: Int) async -> WindowWait? {
+        guard taskHarness == .agentDesktop, let harness,
+              actions.contains(where: { if case .openURL = $0 { true } else if case .openApp = $0 { true } else { false } })
+        else { return nil }
+        let front = observer.frontWindow()
+        guard front.frame == nil, !front.app.isEmpty else { return nil }
+        let appOnly = !actions.contains { if case .openURL = $0 { true } else { false } }
+        let command = DesktopCommand.wait(.event, value: DesktopEvent.windowOpened.rawValue, app: front.app, ref: nil, timeoutMs: min(limit, Self.windowWaitMs))
+        var result: HarnessActionResult = .failed("cancelled")
+        let start = now()
+        await runCancellable { result = await harness.act(command) }
+        _ = harness.takeOpenSurfaces()   // the wait's own report must not reach the next step
+        let ms = Int(start.duration(to: now()) / .milliseconds(1))
+        if case .delivered = result { return WindowWait(delivered: true, appOnly: appOnly, ms: ms) }
+        return WindowWait(delivered: false, appOnly: appOnly, ms: ms)
     }
 
     /// One observation, run off the main actor (an AX walk can take up to its budget, ~1-2 s on a busy page),
