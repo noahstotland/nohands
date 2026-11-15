@@ -62,7 +62,7 @@ public struct CommandGrammar: Sendable {
             "delete line": chord(.delete, [.command]),
 
             "play": [.media(.play)], "resume": [.media(.play)],
-            "play the video": [.media(.play)], "play the music": [.media(.play)],
+            "play the music": [.media(.play)],
             "pause": [.media(.pause)], "pause the video": [.media(.pause)], "pause the music": [.media(.pause)],
             "play pause": [.media(.playPause)], "toggle play": [.media(.playPause)],
             "next track": [.media(.next)], "next song": [.media(.next)], "next video": [.media(.next)],
@@ -250,9 +250,7 @@ public struct CommandGrammar: Sendable {
 
     /// "[n] [percent]" after "volume up/down": n steps of 10 points (1 to 10), or n points with "percent" (1 to 100).
     private static func volumeStep(_ words: [String], sign: Int) -> [Action]? {
-        var count = words
-        let percent = count.last == "percent"
-        if percent { count.removeLast() }
+        let (count, percent) = splitPercent(words)
         if count.isEmpty { return percent ? nil : [.volume(.by(sign * 10))] }
         guard let n = NumberWords.parse(count), (1...(percent ? 100 : 10)).contains(n) else { return nil }
         return [.volume(.by(sign * (percent ? n : n * 10)))]
@@ -260,10 +258,17 @@ public struct CommandGrammar: Sendable {
 
     /// "<n> [percent]": an absolute level, clamped to 0 to 100.
     private static func volumeLevel(_ words: [String]) -> [Action]? {
-        var count = words
-        if count.last == "percent" { count.removeLast() }
-        guard let n = NumberWords.parse(count) else { return nil }
+        guard let n = NumberWords.parse(splitPercent(words).count) else { return nil }
         return [.volume(.set(min(n, 100)))]
+    }
+
+    /// The words without a closing "percent", "%" or "30%" sign, and whether there was one.
+    private static func splitPercent(_ words: [String]) -> (count: [String], percent: Bool) {
+        var count = words
+        guard let last = count.last else { return (count, false) }
+        if last == "percent" || last == "%" { count.removeLast(); return (count, true) }
+        if last.hasSuffix("%") { count[count.count - 1] = String(last.dropLast()); return (count, true) }
+        return (count, false)
     }
 
     private func pack(for bundleID: String) -> AppPack? { packs.first { $0.bundleIDs.contains(bundleID) } }

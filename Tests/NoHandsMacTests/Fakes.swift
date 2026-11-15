@@ -27,10 +27,11 @@ final class FakeInput: InputSynthesizing, @unchecked Sendable {
 final class FakeVolume: VolumeControlling, @unchecked Sendable {
     var current: Int? = 50
     var muted = false
+    var canMute = true
     var set: [Int] = []
     func level() -> Int? { current }
     func setLevel(_ level: Int) throws { set.append(level); current = level }
-    func setMuted(_ muted: Bool) throws { self.muted = muted }
+    func setMuted(_ muted: Bool) throws { guard canMute else { throw VolumeError.noMute }; self.muted = muted }
 }
 
 final class FakeAudio: AudioOutputProbing, @unchecked Sendable {
@@ -100,7 +101,9 @@ final class FakeElements: ElementProviding, @unchecked Sendable {
     var walkScreens: [[CGRect]?] = []
     var fullScreen: Bool? = nil
     var textFocused = false
-    func focusedWindowIsFullScreen() -> Bool? { fullScreen }
+    /// Set to make the window leave full screen after the first read (Escape worked).
+    var fullScreenAfterFirstRead: Bool?
+    func focusedWindowIsFullScreen() -> Bool? { defer { fullScreenAfterFirstRead.map { fullScreen = $0 } }; return fullScreen }
     func focusedElementIsTextInput() -> Bool { textFocused }
     func focusedWindowTitle() -> String? { windowTitle }
     func webURL() -> String? { url }

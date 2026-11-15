@@ -12,6 +12,7 @@ public protocol VolumeControlling: Sendable {
 public struct VolumeError: Error, CustomStringConvertible, Equatable {
     public let description: String
     public static let noControl = VolumeError(description: "this speaker has no volume control")
+    public static let noMute = VolumeError(description: "this speaker can't be muted")
 }
 
 /// CoreAudio on the default output device, no permission needed. A device with a main volume gets it; one with only
@@ -66,18 +67,19 @@ public struct CoreAudioVolume: VolumeControlling {
     }
 
     public func setMuted(_ muted: Bool) throws {
-        try set(kAudioDevicePropertyMute, to: UInt32(muted ? 1 : 0))
+        try set(kAudioDevicePropertyMute, to: UInt32(muted ? 1 : 0), missing: .noMute)
     }
 
-    private func set<T: BitwiseCopyable>(_ selector: AudioObjectPropertySelector, to value: T) throws {
+    private func set<T: BitwiseCopyable>(_ selector: AudioObjectPropertySelector, to value: T,
+                                         missing: VolumeError = .noControl) throws {
         guard let device = Self.defaultOutput() else { throw VolumeError.noControl }
         let elements = Self.settableElements(selector, on: device)
-        guard !elements.isEmpty else { throw VolumeError.noControl }
+        guard !elements.isEmpty else { throw missing }
         for element in elements {
             var address = Self.address(selector, element: element)
             var value = value
             guard AudioObjectSetPropertyData(device, &address, 0, nil, UInt32(MemoryLayout<T>.size), &value) == noErr else {
-                throw VolumeError.noControl
+                throw missing
             }
         }
     }

@@ -120,7 +120,12 @@ public final class AXQuery: @unchecked Sendable {
     /// Whether the focused element takes typed text (a text field, text area, search field or combo box), so a
     /// player's letter key would be typed into it.
     public func focusedElementIsTextInput() -> Bool {
-        guard let f = focusedWindow(), let element = Self.element(f.appEl, kAXFocusedUIElementAttribute) else { return false }
+        guard let f = focusedWindow() else { return false }
+        exposeChromiumTree(f.app, f.appEl)
+        // Chromium may not have built the page tree yet: an unreadable focus there could be the search box.
+        guard let element = Self.element(f.appEl, kAXFocusedUIElementAttribute) else {
+            return f.app.bundleIdentifier.map(Self.chromiumBundleIDs.contains) ?? false
+        }
         AXUIElementSetMessagingTimeout(element, 0.05)
         return ["AXTextField", "AXTextArea", "AXComboBox", "AXSearchField"].contains(Self.string(element, kAXRoleAttribute))
             || Self.string(element, kAXSubroleAttribute) == "AXSearchField"

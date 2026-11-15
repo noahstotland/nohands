@@ -152,6 +152,8 @@ extension OverlayController: OverlayPresenting {
     private let audio: any AudioOutputProbing
     private let mediaPoll: Duration
     private let volume: any VolumeControlling
+    /// How long a window gets to leave full screen after Escape before the window chord is pressed.
+    private let fullScreenSettle: Duration
     /// The accessibility layer the media walk uses: one with a larger budget than `ax`, which does not reach a
     /// browser player's buttons. Nil walks with `ax`.
     private let mediaAX: (any ElementProviding)?
@@ -174,7 +176,9 @@ extension OverlayController: OverlayPresenting {
                 harness: (any DesktopHarness)? = nil, clipboard: any ClipboardAccess = PasteboardClipboard(),
                 audio: any AudioOutputProbing = AudioOutputProbe(), mediaPoll: Duration = .milliseconds(500),
                 mediaAX: (any ElementProviding)? = nil, exposureSettle: Duration = .milliseconds(600),
-                menus: any MenuReading = AXMenuReader(), volume: any VolumeControlling = CoreAudioVolume()) {
+                menus: any MenuReading = AXMenuReader(), volume: any VolumeControlling = CoreAudioVolume(),
+                fullScreenSettle: Duration = .milliseconds(800)) {
+        self.fullScreenSettle = fullScreenSettle
         self.menus = menus
         self.volume = volume
         self.audio = audio
@@ -521,10 +525,16 @@ extension OverlayController: OverlayPresenting {
             }
             for chord in chords { try input.press(chord) }
         case .systemKey(let key): try input.pressMediaKey(key)
-        case .windowFullScreen: try input.press(Self.windowFullScreen)
+        case .windowFullScreen:
+            if ax.focusedWindowIsFullScreen() == true { overlay.showHUD("already full screen"); return nil }
+            try input.press(Self.windowFullScreen)
         case .exitFullScreen(let siteEscape):
             guard ax.focusedWindowIsFullScreen() == true else { overlay.showHUD("not in full screen"); return nil }
-            try input.press(siteEscape ? KeyChord(.escape) : Self.windowFullScreen)
+            guard siteEscape else { try input.press(Self.windowFullScreen); return nil }
+            // Escape leaves a video's full screen but not the window's: if the window is still full screen, use the chord.
+            try input.press(KeyChord(.escape))
+            try? await Task.sleep(for: fullScreenSettle)
+            if ax.focusedWindowIsFullScreen() == true { try input.press(Self.windowFullScreen) }
         case .unsupported(let message): return message
         }
         return nil

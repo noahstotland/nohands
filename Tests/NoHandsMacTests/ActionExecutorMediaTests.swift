@@ -9,7 +9,7 @@ import NoHandsCore
     let i = FakeInput(), e = FakeElements(), o = FakeOverlay(), v = FakeVolume(), a = FakeAudio()
     a.playing = playing
     if youTube { e.isBrowser = true; e.url = "https://www.youtube.com/watch?v=abc" }
-    let x = ActionExecutor(input: i, ax: e, overlay: o, config: AppConfig(), audio: a, volume: v)
+    let x = ActionExecutor(input: i, ax: e, overlay: o, config: AppConfig(), audio: a, volume: v, fullScreenSettle: .zero)
     return (x, i, e, o, v)
 }
 
@@ -50,18 +50,25 @@ import NoHandsCore
 }
 
 @MainActor @Test func exitFullScreenPressesOnlyFromFullScreen() async {
-    // (window full screen, on YouTube, expected key chord)
-    let table: [(Bool?, Bool, KeyChord?)] = [
-        (false, true, nil), (nil, false, nil), (true, true, KeyChord(.escape)),
-        (true, false, KeyChord(.f, [.command, .control])),
+    let escape = KeyChord(.escape), window = KeyChord(.f, [.command, .control])
+    // (window full screen, on YouTube, full screen after Escape, expected chords)
+    let table: [(Bool?, Bool, Bool?, [KeyChord])] = [
+        (false, true, nil, []), (nil, false, nil, []), (true, true, false, [escape]),
+        (true, true, nil, [escape, window]), (true, false, nil, [window]),
     ]
-    for (fullScreen, youTube, chord) in table {
+    for (fullScreen, youTube, after, chords) in table {
         let (x, i, e, o, _) = media(youTube: youTube)
-        e.fullScreen = fullScreen
+        e.fullScreen = fullScreen; e.fullScreenAfterFirstRead = after
         #expect(await x.execute([.media(.exitFullScreen)]) == nil)
-        #expect(i.chords == (chord.map { [$0] } ?? []), "\(String(describing: fullScreen)) \(youTube)")
-        #expect(o.huds == (chord == nil ? ["not in full screen"] : []))
+        #expect(i.chords == chords, "\(String(describing: fullScreen)) \(youTube)")
+        #expect(o.huds == (chords.isEmpty ? ["not in full screen"] : []))
     }
+    // Off YouTube, "full screen video" in a full screen window does nothing instead of leaving it.
+    let (x, i, e, o, _) = media()
+    e.fullScreen = true
+    #expect(await x.execute([.media(.fullScreen)]) == nil && i.chords.isEmpty && o.huds == ["already full screen"])
+    e.fullScreen = false
+    #expect(await x.execute([.media(.fullScreen)]) == nil && i.chords == [window])
 }
 
 @MainActor @Test func volumeChangesClampUnmuteAndFailWithoutAControl() async {
@@ -79,6 +86,8 @@ import NoHandsCore
     let (x, _, _, o, v) = media()
     #expect(await x.execute([.volume(.mute(true))]) == nil && v.muted && v.set.isEmpty && o.huds == ["muted"])
     #expect(await x.execute([.volume(.mute(false))]) == nil && !v.muted && o.huds.last == "volume 50%")
+    v.canMute = false
+    #expect(await x.execute([.volume(.mute(true))]) == "this speaker can't be muted")
     v.current = nil
     #expect(await x.execute([.volume(.set(30))]) == "this speaker has no volume control")
 }
