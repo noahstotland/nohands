@@ -27,7 +27,11 @@ func usage() -> Never {
       nohands-cli grid               (10x8 grid 4 s, zoom into cell 35 for 4 s, HUD "done")
       nohands-cli labels             (waits 3 s, badges for frontmost app's elements for 5 s)
       nohands-cli observe            (waits 3 s, prints the task-loop observation of the frontmost app)
-      nohands-cli parse "<text>"     (dry run: prints the grammar's actions, or "no match -> LLM"; executes nothing)
+      nohands-cli parse "<text>" [--app <bundle id>]
+                                     (dry run: prints the grammar's actions, or "no match -> LLM"; executes nothing;
+                                      --app parses with that app in front, so its pack applies)
+      nohands-cli menu "<words>"     (waits 2 s, then prints the frontmost app's menu item those words name and presses it)
+      nohands-cli menu --list        (waits 3 s, prints the frontmost app's menu items, without the Apple menu)
       nohands-cli run "<phrase>"...  (waits 2 s, executes each phrase in order, 0.8 s apart)
       nohands-cli resolve "<text>"   (waits 3 s, sends text + frontmost app's labels to the configured backend;
                                       prints the step's intent, status and actions; executes nothing)
@@ -324,13 +328,33 @@ var exitStatus: Int32 = 0
             print("snapshot \(snap.snapshotID): \(snap.elements.count) refs, \(obs.elements.count) listed, complete=\(snap.complete)")
             print(ClaudeRequestBuilder.userMessage(request: StepRequest(goal: "-", step: 1, maxSteps: 12, history: [], observation: shown)))
         case "parse":
-            guard rest.count == 1 else { usage() }
-            if let actions = CommandGrammar().parse(rest[0]) {
+            guard rest.count == 1 || (rest.count == 3 && rest[1] == "--app") else { usage() }
+            let bundleID: String? = rest.count == 3 ? rest[2] : nil
+            if let actions = CommandGrammar().parse(rest[0], frontmost: bundleID) {
                 print("\(actions)")
             } else if let message = CommandGrammar().rejection(rest[0]) {
                 print("rejected: \(message)")
             } else {
                 print("no match -> LLM")
+            }
+        case "menu":
+            guard rest.count == 1 else { usage() }
+            guard Permissions.accessibilityGranted(prompt: false) else {
+                fail("Accessibility permission is not granted to this process (or its terminal).")
+            }
+            let listing = rest[0] == "--list"
+            try await Task.sleep(for: .seconds(listing ? 3 : 2))
+            let reader = AXMenuReader()
+            let entries = reader.entries()
+            print("app: \(AXQuery().frontmostAppName() ?? ""), \(entries.count) menu items")
+            if listing {
+                for e in entries { print("\((e.path + [e.title]).joined(separator: " > "))\(e.enabled ? "" : "  (disabled)")") }
+            } else {
+                guard let i = MenuMatch.firstMatch(rest[0], in: entries) else { fail("no menu item called \(rest[0])") }
+                let e = entries[i]
+                print("match: \((e.path + [e.title]).joined(separator: " > "))\(e.enabled ? "" : "  (disabled)")")
+                guard e.enabled else { fail("menu item \(e.title) is disabled") }
+                print(reader.press(i) ? "pressed" : "the app ignored AXPress")
             }
         case "run":
             guard !rest.isEmpty else { usage() }

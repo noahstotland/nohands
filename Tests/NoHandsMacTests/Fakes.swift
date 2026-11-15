@@ -298,3 +298,13 @@ final class FakeScreenshots: ScreenshotProviding, @unchecked Sendable {
 
 /// True for the line a running task shows before its first step ("Reading · looking at the screen").
 func isPhaseLine(_ text: String) -> Bool { text.hasPrefix("Reading \u{00B7} ") || text.hasPrefix("Thinking \u{00B7} ") }
+
+/// A `MenuReading` over a fixed list; records the indexes pressed.
+@MainActor final class FakeMenus: MenuReading {
+    var items: [MenuEntry]
+    var pressed: [Int] = []
+    var pressWorks = true
+    init(_ items: [MenuEntry]) { self.items = items }
+    func entries() -> [MenuEntry] { items }
+    func press(_ index: Int) -> Bool { pressed.append(index); return pressWorks }
+}

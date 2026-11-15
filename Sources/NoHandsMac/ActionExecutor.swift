@@ -138,6 +138,8 @@ extension OverlayController: OverlayPresenting {
     private let config: AppConfig
     /// agent-desktop, when installed and chosen; nil runs every action natively.
     let harness: (any DesktopHarness)?
+    /// Where "menu <words>" looks for the item to press, before agent-desktop.
+    let menus: any MenuReading
     let clipboard: any ClipboardAccess
     public var onModeChange: ((Mode) -> Void)?
     private let frontTimeout: Duration
@@ -164,7 +166,9 @@ extension OverlayController: OverlayPresenting {
                 config: AppConfig, frontTimeout: Duration = .seconds(1.5), windowTimeout: Duration = .seconds(6),
                 harness: (any DesktopHarness)? = nil, clipboard: any ClipboardAccess = PasteboardClipboard(),
                 audio: any AudioOutputProbing = AudioOutputProbe(), mediaPoll: Duration = .milliseconds(500),
-                mediaAX: (any ElementProviding)? = nil, exposureSettle: Duration = .milliseconds(600)) {
+                mediaAX: (any ElementProviding)? = nil, exposureSettle: Duration = .milliseconds(600),
+                menus: any MenuReading = AXMenuReader()) {
+        self.menus = menus
         self.audio = audio
         self.mediaAX = mediaAX
         self.mediaPoll = mediaPoll

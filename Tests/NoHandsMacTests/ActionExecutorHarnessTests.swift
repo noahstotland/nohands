@@ -21,7 +21,7 @@ private let labels: [Int: UIElementInfo] = [
     let i = FakeInput(), e = FakeElements(), o = FakeOverlay(), c = FakeClipboard()
     e.front = "Notes"
     let x = ActionExecutor(input: i, ax: e, overlay: o, config: AppConfig(), frontTimeout: .milliseconds(150),
-                           windowTimeout: .milliseconds(300), harness: harness, clipboard: c)
+                           windowTimeout: .milliseconds(300), harness: harness, clipboard: c, menus: FakeMenus([]))
     return (x, i, e, o, harness, c)
 }
 
@@ -102,11 +102,23 @@ private let labels: [Int: UIElementInfo] = [
     #expect(await x.execute([.menuItem("File > Save As…")]) == nil)
     #expect(h!.calls == ["find:menubar:Notes:Save As…", "act:click @s1:e5"])
     h!.findResult = DesktopFindMatch(ref: "@s1:e5", role: "menuitem", name: "Paste", path: [], disabled: true)
-    #expect(await x.execute([.menuItem("Paste")]) == "menu item is disabled")
+    #expect(await x.execute([.menuItem("Paste")]) == "menu item Paste is disabled")
     h!.findResult = nil
-    #expect(await x.execute([.menuItem("Nothing")]) == "no menu item named 'Nothing'")
+    #expect(await x.execute([.menuItem("Nothing")]) == "no menu item called Nothing")
+    // agent-desktop's contains fallback may not widen a model step: "trash" must not click "Empty Trash…".
+    h!.findResult = DesktopFindMatch(ref: "@s1:e9", role: "menuitem", name: "Empty Trash…", path: [], disabled: false)
+    #expect(await x.execute([.menuItem("trash")], labels: [:]) == "no menu item called trash")
+    #expect(h!.calls.last == "find:menubar:Notes:trash")
+    // The Apple menu is out of reach by name even through agent-desktop.
+    h!.findResult = DesktopFindMatch(ref: "@s1:e1", role: "menuitem", name: "Shut Down…", path: [], disabled: false)
+    #expect(await x.execute([.menuItem("shut down")]) == "no menu item called shut down")
+    // ...also when agent-desktop's contains match widens a word, or the title carries the user's name.
+    #expect(await x.execute([.menuItem("shut")]) == "no menu item called shut")
+    h!.findResult = DesktopFindMatch(ref: "@s1:e2", role: "menuitem", name: "Log Out Noah Stotland…", path: [], disabled: false)
+    #expect(await x.execute([.menuItem("Log Out Noah Stotland…")], labels: [:]) == "no menu item called Log Out Noah Stotland…")
+    #expect(h!.calls.last == "find:menubar:Notes:shut")
     let (native, _, _, _, _, _) = makeHarnessed(harness: nil)
-    #expect(await native.execute([.menuItem("Paste")]) == "needs agent-desktop")
+    #expect(await native.execute([.menuItem("Paste")]) == "no menu item called Paste")
 }
 
 @MainActor @Test func clickInDockFindsWithoutApp() async {

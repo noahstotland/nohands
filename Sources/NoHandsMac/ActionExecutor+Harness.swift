@@ -71,6 +71,17 @@ extension ActionExecutor {
     private func clickCentre(_ p: CGPoint) throws { try input.click(at: p, button: .left, count: 1) }
     private func selectAll() throws { try input.press(KeyChord(.a, [.command])) }
 
+    enum MenuPress { case pressed, disabled(String), refused(String), noMatch }
+
+    /// The frontmost app's own menu, pressed through Accessibility (the menu does not open on screen). `noMatch`
+    /// when no item is named so; `refused` when the app ignored the press. Either way the caller tries agent-desktop.
+    func pressMenuItem(_ spoken: String, exactOnly: Bool = false) -> MenuPress {
+        let entries = menus.entries()
+        guard let i = MenuMatch.firstMatch(spoken, in: entries, exactOnly: exactOnly) else { return .noMatch }
+        guard entries[i].enabled else { return .disabled(entries[i].title) }
+        return menus.press(i) ? .pressed : .refused(entries[i].title)
+    }
+
     func runHarnessAction(_ action: Action) async throws -> String? {
         switch action {
         case .setValue(let t, let text):
@@ -122,12 +133,24 @@ extension ActionExecutor {
             if m.disabled { return "'\(name)' is disabled" }
             return outcome(await harness.act(.click(ref: m.ref, button: .left, count: 1)))
         case .menuItem(let name):
-            guard let harness else { return Self.needsHarness }
             let last = name.split(separator: ">").last.map { $0.trimmingCharacters(in: .whitespaces) } ?? name
-            guard let m = await harness.find(app: ax.frontmostAppName(), surface: .menubar, name: last) else {
-                return "no menu item named '\(last)'"
+            // A model step (the task loop passes labels) presses only the exact title, natively or through agent-desktop; the
+            // user's own "menu <words>" may be closest.
+            switch pressMenuItem(name, exactOnly: labelSnapshot != nil) {
+            case .pressed: return nil
+            case .disabled(let title): return "menu item \(title) is disabled"
+            case .refused(let title):
+                guard harness != nil else { return "couldn't press menu item \(title)" }
+            case .noMatch: break
             }
-            if m.disabled { return "menu item is disabled" }
+            guard let harness, !MenuMatch.isAppleMenuTitle(last) else { return "no menu item called \(last)" }
+            guard let m = await harness.find(app: ax.frontmostAppName(), surface: .menubar, name: last) else {
+                return "no menu item called \(last)"
+            }
+            if MenuMatch.isAppleMenuTitle(m.name) { return "no menu item called \(last)" }
+            // agent-desktop falls back to a contains match; a model step may press only the title it named.
+            if labelSnapshot != nil, MenuMatch.plain(m.name) != MenuMatch.plain(last) { return "no menu item called \(last)" }
+            if m.disabled { return "menu item \(last) is disabled" }
             return outcome(await harness.act(.click(ref: m.ref, button: .left, count: 1)))
         case .closeApp(let app):
             if let harness { return outcome(await harness.act(.closeApp(app))) }

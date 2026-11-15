@@ -9,9 +9,11 @@ public struct GrammarConfig: Sendable {
 
 public struct CommandGrammar: Sendable {
     private let config: GrammarConfig
+    private let packs: [AppPack]
 
-    public init(config: GrammarConfig = GrammarConfig()) {
+    public init(config: GrammarConfig = GrammarConfig(), packs: [AppPack] = AppPacks.all) {
         self.config = config
+        self.packs = packs
     }
 
     /// Lowercases, strips ASR punctuation (.,!?), collapses whitespace, splits on spaces.
@@ -133,14 +135,32 @@ public struct CommandGrammar: Sendable {
         "middle click": (.middle, 1),
     ]
 
-    /// nil when no rule matches (caller falls back to the LLM).
-    public func parse(_ transcript: String) -> [Action]? {
+    /// nil when no rule matches (caller falls back to the LLM). `bundleID` is the frontmost app: its pack, if any,
+    /// is checked before the global table. In order: a pack phrase that is also a global phrase, the global table on
+    /// the whole phrase, the pack on the phrase without its lead ("open", "go to", an article), "menu <words>", the
+    /// global table after an "open" lead, the patterns, the filler-stripped table. A stop phrase never reaches a pack.
+    public func parse(_ transcript: String, frontmost bundleID: String? = nil) -> [Action]? {
         let tokens = Self.normalize(transcript)
-        guard let first = tokens.first else { return nil }
-        if let hit = Self.exact[tokens.joined(separator: " ")] { return hit }
+        guard !tokens.isEmpty else { return nil }
+        let whole = tokens.joined(separator: " ")
+        let pack = StopWords.isStop(transcript) ? nil : bundleID.flatMap(pack(for:))
+        if let hit = pack?.phrases[whole] ?? Self.exact[whole] { return hit }
+        let (stripped, dropped) = PhraseLead.strip(tokens)
+        if !stripped.isEmpty {
+            let phrase = stripped.joined(separator: " ")
+            if let hit = pack?.phrases[phrase] { return hit }
+            // Multi-word only: "open home" stays the Home app, not the Home key.
+            if dropped == .open, stripped.count > 1, let hit = Self.exact[phrase] { return hit }
+        }
+        if tokens.count > 1, tokens[0] == "menu" {
+            let words = Self.rawWords(transcript, matching: tokens) ?? tokens
+            return [.menuItem(words.dropFirst().joined(separator: " "))]
+        }
         if let hit = parsePattern(tokens, transcript: transcript) { return hit }
         return Self.strippedExactMatch(tokens)
     }
+
+    private func pack(for bundleID: String) -> AppPack? { packs.first { $0.bundleIDs.contains(bundleID) } }
 
     /// The HUD line for a `spell` phrase that can't be typed; nil for anything else. Such a phrase is
     /// the grammar's own, so it must never fall through to the model, which could guess at what to type.
