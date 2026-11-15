@@ -1,7 +1,8 @@
 # NH-44: Find on page: Design
 
 **Date:** 2026-11-15  **Ticket:** [NH-44](https://github.com/noahstotland/nohands/issues/44)
-**Status:** Draft
+**Status:** Shipped
+**Shipped:** in PR #126, with differences: [as-built](../as-built/2026-11-15-nh-44-find-on-page.md)
 
 ## Intent
 
