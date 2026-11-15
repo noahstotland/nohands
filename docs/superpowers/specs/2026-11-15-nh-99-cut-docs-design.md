@@ -1,7 +1,8 @@
 # NH-99: Cut the repo docs to a fraction of their length
 
 **Date:** 2026-11-15
-**Status:** Draft
+**Status:** Shipped
+**Shipped:** in PR #135, with differences: [as-built](../as-built/2026-11-15-nh-99-cut-docs.md)
 **Ticket:** [NH-99](https://github.com/noahstotland/nohands/issues/99)
 
 ## Goal
