@@ -68,6 +68,18 @@ public enum ConfigFile {
         try replaceFile(url.path, in: dir.path, with: merged, mode: keepMode ? (existing?.mode ?? 0o600) : 0o600)
     }
 
+    /// Writes `data` to `url` the way the config is saved: the folder made private (700), the file replaced through a
+    /// private temp file and a rename, so it ends mode 600 and is never half written. A symlinked folder or file, or a
+    /// file that is not a regular file, is refused with nothing changed. For the command log.
+    public static func writePrivateFile(_ data: Data, at url: URL) throws {
+        try save(at: url, keepMode: false) { _ in data }
+    }
+
+    /// The bytes of the regular file at `url`, or nil when it is missing. A symlink or other kind of file is refused.
+    public static func readPrivateFile(at url: URL) throws -> Data? {
+        try readRegularFile(url.path)?.data
+    }
+
     private static func errnoCode() -> POSIXErrorCode { POSIXErrorCode(rawValue: errno) ?? .EIO }
 
     private static func posixCode(_ error: Error) -> POSIXErrorCode {
