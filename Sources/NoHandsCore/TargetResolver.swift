@@ -14,7 +14,7 @@ public enum TargetResolver {
         case .cursor: return .point(cursor)
         case .point(let p): return .point(p)
         case .numbered(let n): return numbered(n, overlay: overlay, screens: screens)
-        case .element(let name): return element(name, in: elements, screens: screens)
+        case .element(let name): return element(name, in: elements, screens: screens, labels: labels)
         }
     }
 
@@ -25,7 +25,7 @@ public enum TargetResolver {
         case .label(let n): return snapshotLabel(n, labels: labels, screens: screens)
         case .point(let p): return .point(p)
         case .numbered(let n): return numbered(n, overlay: overlay, screens: screens)
-        case .element(let name): return element(name, in: elements, screens: screens)
+        case .element(let name): return element(name, in: elements, screens: screens, labels: labels)
         case .relative(let dx, let dy): return .point(CGPoint(x: cursor.x + CGFloat(dx), y: cursor.y + CGFloat(dy)))
         }
     }
@@ -48,8 +48,17 @@ public enum TargetResolver {
         }
     }
 
-    private static func element(_ name: String, in elements: [UIElementInfo], screens: [CGRect]) -> TargetResolution {
-        guard let e = LabelAssigner.find(named: name, in: elements) else { return .failure("no element named '\(name)'") }
-        return .point(e.clickPoint(screens: screens))
+    /// An exact title wins; then a position ("first video") over the list the model saw; then a looser title match
+    /// (prefix, contains), so a video titled "Reacting to my first video" cannot take over "first video".
+    private static func element(_ name: String, in elements: [UIElementInfo], screens: [CGRect],
+                                labels: [Int: UIElementInfo]?) -> TargetResolution {
+        if let e = LabelAssigner.find(exactly: name, in: elements) { return .point(e.clickPoint(screens: screens)) }
+        let ordinal = OrdinalTarget.parse(name)
+        if let ordinal {
+            let shown = labels ?? LabelAssigner.assign(elements)
+            if let n = ordinal.label(in: shown), let e = shown[n] { return .point(e.clickPoint(screens: screens)) }
+        }
+        if let e = LabelAssigner.find(named: name, in: elements) { return .point(e.clickPoint(screens: screens)) }
+        return .failure("no element named '\(name)'" + (ordinal == nil ? "" : "; say its label number from the list"))
     }
 }
