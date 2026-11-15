@@ -61,6 +61,19 @@ public struct CommandGrammar: Sendable {
             "delete word": chord(.delete, [.option]),
             "delete line": chord(.delete, [.command]),
 
+            "play": [.media(.play)], "resume": [.media(.play)],
+            "play the video": [.media(.play)], "play the music": [.media(.play)],
+            "pause": [.media(.pause)], "pause the video": [.media(.pause)], "pause the music": [.media(.pause)],
+            "play pause": [.media(.playPause)], "toggle play": [.media(.playPause)],
+            "next track": [.media(.next)], "next song": [.media(.next)], "next video": [.media(.next)],
+            "previous track": [.media(.previous)], "previous song": [.media(.previous)],
+            "previous video": [.media(.previous)],
+            "full screen video": [.media(.fullScreen)], "video full screen": [.media(.fullScreen)],
+            "make the video full screen": [.media(.fullScreen)],
+            "exit full screen": [.media(.exitFullScreen)], "leave full screen": [.media(.exitFullScreen)],
+            "mute": [.volume(.mute(true))], "mute sound": [.volume(.mute(true))],
+            "unmute": [.volume(.mute(false))], "unmute sound": [.volume(.mute(false))],
+
             "is it playing": [.checkMedia], "is the video playing": [.checkMedia],
             "is anything playing": [.checkMedia],
 
@@ -157,6 +170,7 @@ public struct CommandGrammar: Sendable {
             return [.menuItem(words.dropFirst().joined(separator: " "))]
         }
         if let hit = Self.parseTab(tokens, transcript: transcript) { return hit }
+        if let hit = Self.parseMedia(tokens) { return hit }
         if let hit = parsePattern(tokens, transcript: transcript) { return hit }
         return Self.strippedExactMatch(tokens)
     }
@@ -199,6 +213,57 @@ public struct CommandGrammar: Sendable {
         // `rest` is a suffix of `tokens`; the raw words line up with it.
         let words = raw[(tokens.count - rest.count)...].dropLast().joined(separator: " ")
         return [.goToTab(.named(words))]
+    }
+
+    /// Numbered media phrases: "volume up [n] [percent]", "volume <n> [percent]", "set (the) volume to <n> [percent]",
+    /// "turn it up/down [n]" and "skip ahead/forward/back/backward [n [seconds]]". Out-of-range counts are nil (the
+    /// model gets them); a set level clamps. A volume step is 10 points.
+    private static func parseMedia(_ tokens: [String]) -> [Action]? {
+        var rest = tokens[...]
+        switch rest.first {
+        case "set":
+            rest = rest.dropFirst()
+            if rest.first == "the" { rest = rest.dropFirst() }
+            guard rest.first == "volume", rest.dropFirst().first == "to" else { return nil }
+            return volumeLevel(Array(rest.dropFirst(2)))
+        case "volume":
+            rest = rest.dropFirst()
+            if let sign = rest.first.flatMap({ volumeSigns[$0] }) { return volumeStep(Array(rest.dropFirst()), sign: sign) }
+            return volumeLevel(Array(rest))
+        case "turn":
+            guard rest.dropFirst().first == "it", let sign = rest.dropFirst(2).first.flatMap({ volumeSigns[$0] }) else { return nil }
+            return volumeStep(Array(rest.dropFirst(3)), sign: sign)
+        case "skip":
+            guard let sign = rest.dropFirst().first.flatMap({ skipSigns[$0] }) else { return nil }
+            var count = Array(rest.dropFirst(2))
+            let hasUnit = count.last == "seconds" || count.last == "second"
+            if hasUnit { count.removeLast() }
+            if count.isEmpty { return hasUnit ? nil : [.media(.skip(seconds: sign * 10))] }
+            guard let n = NumberWords.parse(count), (1...600).contains(n) else { return nil }
+            return [.media(.skip(seconds: sign * n))]
+        default: return nil
+        }
+    }
+
+    private static let volumeSigns = ["up": 1, "down": -1]
+    private static let skipSigns = ["ahead": 1, "forward": 1, "back": -1, "backward": -1]
+
+    /// "[n] [percent]" after "volume up/down": n steps of 10 points (1 to 10), or n points with "percent" (1 to 100).
+    private static func volumeStep(_ words: [String], sign: Int) -> [Action]? {
+        var count = words
+        let percent = count.last == "percent"
+        if percent { count.removeLast() }
+        if count.isEmpty { return percent ? nil : [.volume(.by(sign * 10))] }
+        guard let n = NumberWords.parse(count), (1...(percent ? 100 : 10)).contains(n) else { return nil }
+        return [.volume(.by(sign * (percent ? n : n * 10)))]
+    }
+
+    /// "<n> [percent]": an absolute level, clamped to 0 to 100.
+    private static func volumeLevel(_ words: [String]) -> [Action]? {
+        var count = words
+        if count.last == "percent" { count.removeLast() }
+        guard let n = NumberWords.parse(count) else { return nil }
+        return [.volume(.set(min(n, 100)))]
     }
 
     private func pack(for bundleID: String) -> AppPack? { packs.first { $0.bundleIDs.contains(bundleID) } }
