@@ -38,6 +38,14 @@ private func el(_ id: Int, _ title: String, role: String = "AXButton", states: [
         // Return presses the focused button; no focused button or a focused text field is not held
         (enter, labels, "reply to Anna", "send"),
         (enter, labels.filter { $0.key != 9 }, "reply to Anna", nil),
+        // the executor matches a partial name ("order" finds "Place order"), so the element it will press is checked
+        ([.click(.element(named: "order"), button: .left, count: 1)], labels, "reply to Anna", "place order"),
+        ([.click(.element(named: "Sen"), button: .left, count: 1)], labels, "reply to Anna", "send"),
+        // moving the cursor or focus onto the button is the first half of pressing it
+        ([.moveCursor(.label(1))], labels, "reply to Anna", "send"),
+        ([.focusElement(.named("Send"))], labels, "reply to Anna", "send"),
+        // a negated verb does not allow itself
+        (click(1), labels, "reply to Anna but don't send it", "send"), (click(1), labels, "send it, don't delete", nil),
         // every held verb in the step is named, so one yes covers exactly what was asked about
         (click(6) + click(5) + click(1), labels, "reply to Anna", "place order and send"),
         (click(1) + click(1) + click(5), labels, "send it", "place order"),
@@ -52,9 +60,11 @@ private func el(_ id: Int, _ title: String, role: String = "AXButton", states: [
     let table: [(String, Bool)] = [
         ("yes", true), ("Yes.", true), ("confirm", true), ("do it", true), ("yes please", true), ("please do it", true),
         ("yeah", false), ("sure", false), ("no", false), ("", false), ("yes and also open Safari", false), ("stop", false),
-        ("computer, yes", true), ("computer", false),
     ]
     for (text, expected) in table {
-        #expect(ConfirmAnswer.isYes(text, attention: gate) == expected, "\(text)")
+        #expect(ConfirmAnswer.isYes(text, attention: .off) == expected, "\(text)")
     }
+    // with an attention word set the yes needs it, so a "yes" from a TV in the room cannot press Send
+    let addressed: [(String, Bool)] = [("computer, yes", true), ("computer do it", true), ("yes", false), ("computer", false)]
+    for (text, expected) in addressed { #expect(ConfirmAnswer.isYes(text, attention: gate) == expected, "\(text)") }
 }

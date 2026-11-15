@@ -52,19 +52,45 @@ public enum IrreversibleGuard {
         return (0...(words.count - phrase.count)).contains { Array(words[$0..<($0 + phrase.count)]) == phrase }
     }
 
+    /// The goal's words, minus any word right after a negation ("don't send it" does not allow Send).
+    private static func goalVerbs(_ goal: String) -> Set<String> {
+        let negations: Set<String> = ["not", "never", "dont", "didnt", "wont", "cant", "no", "without"]
+        var out = Set<String>()
+        var negated = false
+        for word in words(goal.replacingOccurrences(of: "\u{2019}", with: "").replacingOccurrences(of: "'", with: "")) {
+            if negations.contains(word) { negated = true; continue }
+            if !negated { out.insert(word) }
+            negated = false
+        }
+        return out
+    }
+
     /// The verbs to confirm before `actions` run ("send", or "send and delete" when one step holds several), or nil
     /// when the step may run. One yes then covers exactly the verbs it was asked about.
     public static func held(_ actions: [Action], labels: [Int: UIElementInfo], goal: String) -> String? {
-        let goalWords = Set(words(goal))
+        let goalWords = goalVerbs(goal)
         var found: [String] = []
         for action in actions {
             guard let name = targetName(of: action, labels: labels) else { continue }
-            let nameWords = words(name)
+            // A named target is looked up by the executor with a partial match ("order" finds "Place order"), so the
+            // element it will press is checked too, not only the words the model wrote.
+            var nameWords = words(name)
+            if isNamed(action), let found = LabelAssigner.find(named: name, in: labels.keys.sorted().compactMap { labels[$0] }) {
+                nameWords += words(found.title)
+            }
             for verb in verbs where contains(nameWords, words(verb.name)) && !found.contains(verb.name) {
                 if !verb.allowedBy.allSatisfy({ !$0.isDisjoint(with: goalWords) }) { found.append(verb.name) }
             }
         }
         return found.isEmpty ? nil : found.joined(separator: " and ")
+    }
+
+    private static func isNamed(_ action: Action) -> Bool {
+        switch action {
+        case .click(.element, _, _), .moveCursor(.element), .focusElement(.named), .setValue(.named, _), .selectOption(.named, _),
+             .typeInto(.named, _), .setChecked(.named, _): return true
+        default: return false
+        }
     }
 
     /// What the user would call the thing the action presses; nil for an action with no name.
@@ -74,7 +100,11 @@ public enum IrreversibleGuard {
         case .click(.element(let name), _, _), .clickIn(_, let name): return name
         case .menuItem(let path): return path
         case .setValue(.label(let n), _): return labels[n]?.title
-        case .setValue(.named(let name), _): return name
+        case .setValue(.named(let name), _), .selectOption(.named(let name), _), .typeInto(.named(let name), _),
+             .setChecked(.named(let name), _): return name
+        // Moving the cursor or focus onto the button is the first half of pressing it (click at the cursor, Return, Space).
+        case .moveCursor(.label(let n)), .focusElement(.label(let n)): return labels[n]?.title
+        case .moveCursor(.element(let name)), .focusElement(.named(let name)): return name
         case .pressKey(let chord) where chord.key == .return:
             return labels.keys.sorted().compactMap { labels[$0] }
                 .first { $0.states.contains("focused") && $0.role.lowercased().contains("button") }?.title
@@ -86,10 +116,15 @@ public enum IrreversibleGuard {
 /// Whether a spoken reply to "say yes to <verb>" is a yes. Only "yes", "confirm" and "do it" count, with "please"
 /// before or after; "yeah", "sure" or a yes with more words after it do not, so a stray word cannot confirm a payment.
 public enum ConfirmAnswer {
-    /// `attention` is the configured attention word, stripped when the reply starts with it (it is not required).
+    /// `attention` is the configured attention word: when one is set, the reply must start with it.
     public static func isYes(_ transcript: String, attention: AttentionGate = .off) -> Bool {
         var text = transcript
-        if case .addressed(let rest) = attention.check(transcript) { text = rest }
+        // With an attention word set, a yes needs it: a "yes" from a TV or another room must not press Send.
+        switch attention.check(transcript) {
+        case .addressed(let rest): text = rest
+        case .off: break
+        case .wordOnly, .notAddressed: return false
+        }
         var words = CommandGrammar.normalize(text)
         if words.first == "please" { words.removeFirst() }
         if words.last == "please" { words.removeLast() }
