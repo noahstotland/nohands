@@ -1,5 +1,11 @@
 # Release notes
 
+## 2026-11-15 media controls by voice (NH-51) (#137)
+
+Merged 2026-11-15 8:47 pm UTC.
+
+You can now say "pause", "play", "next track", "skip ahead 30 seconds", "mute", "volume up", "volume 30 percent", "full screen video" and "exit full screen" to control video and music without touching anything. On YouTube, play, pause, next, skip and full screen use the player's keys; elsewhere play, pause and next use the Mac's media keys and full screen uses the window's. Volume and mute set the Mac's output volume anywhere. Skip works on YouTube only.
+
 ## 2026-11-15 Terminal voice commands (NH-84) (#138)
 
 Merged 2026-11-15 8:38 pm UTC.
