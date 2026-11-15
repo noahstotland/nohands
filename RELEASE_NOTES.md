@@ -1,5 +1,11 @@
 # Release notes
 
+## 2026-11-15 green checkmark by the Claude status when Claude works (NH-109) (#131)
+
+Merged 2026-11-15 7:12 pm UTC.
+
+After "Check Claude connection" succeeds, the menu shows a green checkmark by "Claude: connected at HH:mm".
+
 ## 2026-11-15 per-app voice commands, packs and menu items by name (NH-76) (#129)
 
 Merged 2026-11-15 6:51 pm UTC.
