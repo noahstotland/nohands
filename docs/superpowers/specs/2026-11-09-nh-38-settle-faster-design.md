@@ -1,7 +1,10 @@
 # NH-38: Settle faster after each task step — Design
 
 **Date:** 2026-11-09  **Ticket:** [NH-38](https://github.com/noahstotland/nohands/issues/38)
-**Status:** Draft, written in team mode without a brainstorming session. Every choice the ticket left open is under
+**Status:** Shipped
+**Shipped:** in PR #124, as specified
+
+Written in team mode without a brainstorming session. Every choice the ticket left open is under
 [Calls I made](#calls-i-made).
 
 ## Intent
