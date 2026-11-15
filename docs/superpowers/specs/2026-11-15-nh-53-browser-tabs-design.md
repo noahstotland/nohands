@@ -1,7 +1,8 @@
 # NH-53: Browser tabs by name and number: Design
 
 **Date:** 2026-11-15  **Ticket:** [NH-53](https://github.com/noahstotland/nohands/issues/53)
-**Status:** Draft
+**Status:** Shipped
+**Shipped:** in PR #133, with differences: [as-built](../as-built/2026-11-15-nh-53-browser-tabs.md)
 
 ## Intent
 
