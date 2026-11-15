@@ -112,6 +112,20 @@ public final class AXQuery: @unchecked Sendable {
         return nil
     }
 
+    /// Whether the focused window is in full screen; nil when there is no window or it does not say.
+    public func focusedWindowIsFullScreen() -> Bool? {
+        focusedWindow().flatMap { Self.attr($0.window, "AXFullScreen") as? Bool }
+    }
+
+    /// Whether the focused element takes typed text (a text field, text area, search field or combo box), so a
+    /// player's letter key would be typed into it.
+    public func focusedElementIsTextInput() -> Bool {
+        guard let f = focusedWindow(), let element = Self.element(f.appEl, kAXFocusedUIElementAttribute) else { return false }
+        AXUIElementSetMessagingTimeout(element, 0.05)
+        return ["AXTextField", "AXTextArea", "AXComboBox", "AXSearchField"].contains(Self.string(element, kAXRoleAttribute))
+            || Self.string(element, kAXSubroleAttribute) == "AXSearchField"
+    }
+
     public func frontmostAppName() -> String? {
         NSWorkspace.shared.frontmostApplication?.localizedName
     }
