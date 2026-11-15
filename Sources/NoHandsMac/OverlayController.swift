@@ -13,7 +13,7 @@ public final class OverlayController {
     private var boardPanel: NSPanel?
     /// Redraws the board when its next row is due to leave.
     private var boardTask: Task<Void, Never>?
-    /// The always-on status bar (see `StatusBarText`): app state and mode come from `setAppState`, the rest from the board.
+    /// The status bar (see `StatusBarText`): app state and mode come from `setAppState`, the rest from the board.
     private var statusPanel: NSPanel?
     private var statusMenu: MenuState = .loading
     private var statusMode: Mode = .command
@@ -25,7 +25,7 @@ public final class OverlayController {
     private var shownTask: (content: TaskPanelContent, size: CGSize)?
 
     /// Where the status bar sits; changing it redraws at once.
-    public var statusBarPosition: StatusBarPosition = .top {
+    public var statusBarPosition: StatusBarPosition = .corner {
         didSet { if statusBarPosition != oldValue { renderBoard() } }
     }
 
@@ -126,7 +126,7 @@ public final class OverlayController {
         let width = min(Self.boardWidth, max(200, screenCG.width - 32))
         let lines = rows.count + (notice == nil ? 0 : 1)
         let size = CGSize(width: width, height: CGFloat(lines) * Self.boardRowHeight + Self.boardPadding * 2)
-        let originCG = CGPoint(x: screenCG.midX - size.width / 2, y: screenCG.minY + 8 + (statusBarShown && statusBarPosition == .top ? Self.statusBarHeight + 6 : 0))
+        let originCG = CGPoint(x: screenCG.midX - size.width / 2, y: screenCG.minY + 8)
         let frame = CoordinateMapper.toAppKit(CGRect(origin: originCG, size: size), primaryScreenHeight: Self.primaryHeight)
         let panel = boardPanel ?? Self.makePanel()
         boardPanel = panel
@@ -149,7 +149,7 @@ public final class OverlayController {
     private var overlayDrawn: Bool { gridPanel != nil || !labelsPanels.isEmpty }
     private var statusBarShown: Bool { statusBarPosition != .off && !overlayDrawn }
 
-    /// Draws the bar centred on the screen the pointer is on, 8 pt below the menu bar or above the Dock.
+    /// Draws the bar 16 pt from the bottom-right of the screen the pointer is on, or fades it out when there is nothing to say.
     private func renderStatusBar() {
         guard statusBarShown else {
             if let statusPanel { hideNow(statusPanel) }   // the grid or a badge is up: never sit over it
@@ -157,13 +157,18 @@ public final class OverlayController {
             shownStatusFrame = nil
             return
         }
-        let line = StatusBarText.line(menu: statusMenu, mode: statusMode, rows: board.visibleRows(now: .now))
+        guard let line = StatusBarText.line(menu: statusMenu, mode: statusMode, rows: board.visibleRows(now: .now)) else {
+            if let statusPanel { fadeOut(statusPanel) }   // idle: nothing to say
+            shownStatus = nil
+            shownStatusFrame = nil
+            return
+        }
         let screenCG = Self.visibleBoundsCG(containing: Self.pointerCG())
         let textW = StatusBarView.textWidth(line.text)
         let width = min(max(160, textW + 44), min(520, max(160, screenCG.width - 32)))
         let size = CGSize(width: width, height: Self.statusBarHeight)
-        let y = statusBarPosition == .bottom ? screenCG.maxY - 8 - size.height : screenCG.minY + 8
-        let originCG = CGPoint(x: screenCG.midX - size.width / 2, y: y)
+        let inset = Self.taskPanelInset
+        let originCG = CGPoint(x: screenCG.maxX - inset - size.width, y: screenCG.maxY - inset - size.height)
         shownStatusFrame = CGRect(origin: originCG, size: size)
         let frame = CoordinateMapper.toAppKit(CGRect(origin: originCG, size: size), primaryScreenHeight: Self.primaryHeight)
         let panel = statusPanel ?? Self.makePanel()

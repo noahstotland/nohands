@@ -111,7 +111,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         backendItem.submenu = backendMenu
         for position in StatusBarPosition.allCases {
-            let item = NSMenuItem(title: position.rawValue.capitalized, action: #selector(statusBarChosen(_:)), keyEquivalent: "")
+            let item = NSMenuItem(title: Self.statusBarTitle(position), action: #selector(statusBarChosen(_:)), keyEquivalent: "")
             item.target = self
             item.representedObject = position.rawValue
             statusBarMenu.addItem(item)
@@ -282,6 +282,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     // MARK: - status bar setting
+
+    private static func statusBarTitle(_ position: StatusBarPosition) -> String {
+        switch position {
+        case .off: "Off"
+        case .corner: "Bottom Right"
+        }
+    }
 
     private func refreshStatusBarMenu() {
         for item in statusBarMenu.items {
