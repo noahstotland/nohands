@@ -124,4 +124,10 @@ public enum ClaudeStatus {
         if checking { return "Claude: checking…" }
         return last.flatMap { $0.result.menuText(at: $0.time) } ?? plainLine(config)
     }
+
+    /// Whether the menu shows the green checkmark: only for a finished check that connected. It takes the same
+    /// inputs as `menuLine`, so the checkmark and the text cannot disagree.
+    public static func showsCheckmark(checking: Bool, last: ClaudeCheckResult?) -> Bool {
+        !checking && last?.kind == .connected
+    }
 }

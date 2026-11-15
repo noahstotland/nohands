@@ -99,3 +99,17 @@ private func apiError(_ type: String, _ message: String) -> Data {
         #expect(check["max_tokens"] as? Int == 1 && real["max_tokens"] as? Int == 2048)
     }
 }
+
+@Test func checkmarkShowsOnlyForAFinishedConnectedCheck() {
+    let kinds: [ClaudeCheckKind] = [.connected, .requestRejected, .keyRejected, .modelNotFound, .rateLimited,
+                                    .unavailable(503), .timedOut, .noNetwork, .noKey]
+    for kind in kinds {
+        for checking in [false, true] {
+            let expected = kind == .connected && !checking
+            #expect(ClaudeStatus.showsCheckmark(checking: checking, last: ClaudeCheckResult(kind: kind)) == expected,
+                    "\(kind) checking=\(checking)")
+        }
+    }
+    #expect(!ClaudeStatus.showsCheckmark(checking: false, last: nil))
+    #expect(!ClaudeStatus.showsCheckmark(checking: true, last: nil))
+}

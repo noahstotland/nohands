@@ -182,7 +182,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// The Claude line (config and last check only, no network) and the check item. The menu autoenables items that
     /// have a target and action, so the item is disabled by removing its action, not by `isEnabled`.
     private func refreshClaudeItems() {
-        claudeItem.title = ClaudeStatus.menuLine(config: config, checking: claudeChecking, last: lastClaudeCheck)
+        let line = ClaudeStatus.menuLine(config: config, checking: claudeChecking, last: lastClaudeCheck)
+        claudeItem.title = line
+        if ClaudeStatus.showsCheckmark(checking: claudeChecking, last: lastClaudeCheck?.result) {
+            let title = NSMutableAttributedString(string: "✓ ", attributes: [.foregroundColor: NSColor.systemGreen])
+            title.append(NSAttributedString(string: line))
+            claudeItem.attributedTitle = title
+        } else {
+            claudeItem.attributedTitle = nil
+        }
         checkClaudeItem.action = claudeChecking || !ClaudeStatus.hasKey(config) ? nil : #selector(checkClaude)
     }
 
