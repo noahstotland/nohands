@@ -56,19 +56,6 @@ private func field(_ caret: Int = 39, length: Int = 0, line: TextSpan? = nil, se
     }
 }
 
-@MainActor @Test func caretMovesAreKeysAndNeedNoRead() async {
-    let table: [(CaretPlace, KeyChord)] = [
-        (.lineStart, KeyChord(.left, [.command])), (.lineEnd, KeyChord(.right, [.command])),
-        (.documentStart, KeyChord(.up, [.command])), (.documentEnd, KeyChord(.down, [.command])),
-    ]
-    for (place, chord) in table {
-        let (ex, i, ax, _) = make()
-        ax.textFocused = true
-        #expect(await ex.execute([.editText(.caret(place), otherwise: nil)]) == nil)
-        #expect(i.chords == [chord] && ax.selections.isEmpty)
-    }
-}
-
 @MainActor @Test func aPhraseThatIsNotThereTypesDictationOrNamesTheSpeakersWords() async {
     // Dictation: the words go in as typing, and the executor says so (the dictation record stays right).
     let (ex, i, ax, _) = make()

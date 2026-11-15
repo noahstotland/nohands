@@ -21,7 +21,9 @@ private func slice(_ text: String, _ r: TextSpan?) -> String? {
         (text, .sentence, true, 34, "I'm fine"), (text, .sentence, true, 26, "How are you?"), (text, .sentence, true, 12, "Hello there."),
         (text, .sentence, true, 5, nil),
         (emoji, .word, false, 8, "there"), (emoji, .word, true, 8, "hi"), (emoji, .word, false, 4, "hi"),
-        (lines, .paragraph, false, 14, "second line"), (lines, .paragraph, true, 30, "third"), (lines, .paragraph, false, 23, "second line"),
+        (lines, .paragraph, false, 14, "second line"), (lines, .paragraph, true, 30, "third"), (lines, .paragraph, false, 22, "second line"),
+        (lines, .paragraph, false, 23, nil), (lines, .line, false, 23, nil),   // an empty line is nothing, never the line before
+        (lines, .paragraph, true, 23, "second line"),
         (lines, .line, false, 3, "first line"), (lines, .line, true, 30, "third"),
         ("", .word, false, 0, nil), ("   ", .sentence, false, 1, nil),
     ]

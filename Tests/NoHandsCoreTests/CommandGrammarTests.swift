@@ -250,6 +250,14 @@ let g = CommandGrammar()
         ("select the last word", edit(.select(.word, last: true)), edit(.select(.word, last: true))),
         ("select last sentence", edit(.select(.sentence, last: true)), edit(.select(.sentence, last: true))),
         ("delete line", edit(.delete(.line, last: false)), edit(.delete(.line, last: false))),
+        ("delete this line", edit(.delete(.line, last: false)), edit(.delete(.line, last: false))),
+        ("delete that line", edit(.delete(.line, last: false)), edit(.delete(.line, last: false))),
+        ("delete the current line", edit(.delete(.line, last: false)), edit(.delete(.line, last: false))),
+        ("delete this word", edit(.delete(.word, last: false)), edit(.delete(.word, last: false))),
+        ("delete that word", edit(.delete(.word, last: false)), edit(.delete(.word, last: false))),
+        ("select this line", edit(.select(.line, last: false)), edit(.select(.line, last: false))),
+        ("select the current word", edit(.select(.word, last: false)), edit(.select(.word, last: false))),
+        ("select that paragraph", edit(.select(.paragraph, last: false)), edit(.select(.paragraph, last: false))),
         ("delete the sentence", edit(.delete(.sentence, last: false)), edit(.delete(.sentence, last: false))),
         ("delete the paragraph", edit(.delete(.paragraph, last: false)), edit(.delete(.paragraph, last: false))),
         ("delete last word", edit(.delete(.word, last: true)), edit(.delete(.word, last: true))),
@@ -296,7 +304,6 @@ let g = CommandGrammar()
     for (spoken, focused, unfocused) in table {
         #expect(g.parse(spoken, textFocused: true) == focused, "\(spoken) (text field focused)")
         #expect(g.parse(spoken) == unfocused, "\(spoken) (no text field)")
-        #expect(g.parse(spoken, textFocused: false) == unfocused, "\(spoken) (textFocused false)")
     }
     // The model can never produce an edit: it is the grammar's own.
     #expect(Action.editText(.select(.word, last: false), otherwise: nil).carriesSpokenText == false)

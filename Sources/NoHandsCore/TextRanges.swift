@@ -97,6 +97,11 @@ public enum TextRanges {
         return ranges.last(where: { $0.upperBound <= caret })
     }
 
+    /// The range the caret is in or touching; nil on an empty line, never the line before it.
+    private static func here(_ ranges: [Range<Int>], caret: Int) -> Range<Int>? {
+        ranges.first(where: { $0.lowerBound <= caret && caret <= $0.upperBound })
+    }
+
     private static func clamp(_ caret: Int, _ n: Int) -> Int { min(max(caret, 0), n) }
 
     /// The unit at the caret (or, with `last`, the last whole one that ends at or before it). `line` is the visual
@@ -108,14 +113,14 @@ public enum TextRanges {
         switch unit {
         case .word: picked = pick(wordRanges(u), caret: caret, last: last)
         case .sentence: picked = pick(sentenceRanges(u), caret: caret, last: last)
-        case .paragraph: picked = pick(paragraphRanges(u), caret: caret, last: last)
+        case .paragraph: picked = last ? pick(paragraphRanges(u), caret: caret, last: true) : here(paragraphRanges(u), caret: caret)
         case .line:
             if !last, let line, line.location >= 0, line.end <= u.count {
                 var end = line.end
                 while end > line.location, isNewline(u[end - 1]) { end -= 1 }
                 picked = end > line.location ? line.location..<end : nil
             } else {
-                picked = pick(paragraphRanges(u), caret: caret, last: last)
+                picked = last ? pick(paragraphRanges(u), caret: caret, last: true) : here(paragraphRanges(u), caret: caret)
             }
         }
         return picked.map { TextSpan(location: $0.lowerBound, length: $0.count) }

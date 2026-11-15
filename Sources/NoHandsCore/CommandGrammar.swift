@@ -218,6 +218,12 @@ public struct CommandGrammar: Sendable {
         let tokens = normalize(transcript)
         guard tokens.count >= 2 else { return nil }
         func the(_ words: ArraySlice<String>) -> ArraySlice<String> { words.first == "the" ? words.dropFirst() : words }
+        /// Before a unit word, "this", "that" and "current" stand for "the" ("delete this line", "select the current word").
+        func unitBody(_ words: ArraySlice<String>) -> [String] {
+            var body = Array(the(words))
+            if body.count == 2, ["this", "that", "current"].contains(body[0]), editUnits[body[1]] != nil { body.removeFirst() }
+            return body
+        }
         /// The speaker's own words from `from` up to `to`, or nil when they are not a phrase to look up.
         func phrase(_ from: Int, _ to: Int) -> String? {
             let spoken = the(tokens[from..<to])
@@ -231,7 +237,7 @@ public struct CommandGrammar: Sendable {
         switch tokens[0] {
         case "select", "delete":
             let remove = tokens[0] == "delete"
-            let body = Array(the(tokens.dropFirst()))
+            let body = unitBody(tokens.dropFirst())
             if body.count == 1, let unit = editUnits[body[0]] { return remove ? .delete(unit, last: false) : .select(unit, last: false) }
             if body.count == 2, body[0] == "last", let unit = editUnits[body[1]], unit == .word || unit == .sentence {
                 return remove ? .delete(unit, last: true) : .select(unit, last: true)

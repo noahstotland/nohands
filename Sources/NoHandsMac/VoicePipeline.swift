@@ -551,10 +551,12 @@ import NoHandsCore
             let failure = await executor.execute(actions)
             // An edit moved the caret or the text: "scratch that" no longer matches the screen. Dictation that an edit
             // fell back to typing is the exception, the record is right.
-            if actions.contains(where: { if case .editText = $0 { true } else { false } }), !executor.editTypedOtherwise {
+            let typedAsWords = executor.editTypedOtherwise
+            if actions.contains(where: { if case .editText = $0 { true } else { false } }), !typedAsWords {
                 modeMachine.forgetDictationRecord()
             }
-            if isCommand {
+            // Dictation typed as the fallback is the speaker's words, not a command: it never goes in the command log.
+            if isCommand, !typedAsWords {
                 recordCommand(.grammar(date: began, phrase: text, action: PipelineText.describe(actions), failure: failure,
                                        durationMs: CommandLogEntry.milliseconds(clock.duration(to: .now))))
             }
