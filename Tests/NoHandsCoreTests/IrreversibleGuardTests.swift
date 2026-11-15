@@ -45,6 +45,8 @@ private func el(_ id: Int, _ title: String, role: String = "AXButton", states: [
         ([.click(.element(named: "Subscribe"), button: .left, count: 1)],
          [1: el(1, "Subscribe"), 2: el(2, "Unsubscribe")], "reply to Anna", nil),
         ([.click(.element(named: "subscribe"), button: .left, count: 1)], [2: el(2, "Unsubscribe")], "reply to Anna", "unsubscribe"),
+        // a prefix decoy does not hide the button a "contains" lookup (agent-desktop) would pick
+        ([.setChecked(.named("order"), nil)], [1: el(1, "Order history"), 2: el(2, "Place order")], "reply to Anna", "place order"),
         // moving the cursor or focus onto the button is the first half of pressing it
         ([.moveCursor(.label(1))], labels, "reply to Anna", "send"),
         ([.focusElement(.named("Send"))], labels, "reply to Anna", "send"),

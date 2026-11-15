@@ -76,8 +76,8 @@ public enum IrreversibleGuard {
         var asked: [String] = []
         for action in actions {
             guard let name = targetName(of: action, labels: labels) else { continue }
-            // The executor finds a named target by exact title, else prefix, else substring ("order" finds "Place order")
-            // in a live walk that may differ from `labels`, so every label in the tier it would use is checked too.
+            // The executor finds a named target by exact title, else a partial match ("order" finds "Place order"), in a
+            // live walk that may differ from `labels`, so every label it could pick is checked too.
             var candidates = [words(name)]
             if isNamed(action) {
                 candidates += tier(of: name, in: Array(labels.values)).map { words($0.title) }
@@ -91,21 +91,19 @@ public enum IrreversibleGuard {
         return asked.isEmpty ? nil : asked.joined(separator: " and ")
     }
 
-    /// Every element in the first non-empty tier of `LabelAssigner.find`'s order: exact title, else prefix, else contains.
+    /// The elements a name may press: those with exactly that title, else every one whose title contains it. Both
+    /// the native lookup (exact, prefix, contains) and agent-desktop's (exact, contains) land inside this set.
     private static func tier(of name: String, in elements: [UIElementInfo]) -> [UIElementInfo] {
         let q = name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard !q.isEmpty else { return [] }
         let titled = elements.map { ($0, $0.title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()) }
-        for match in [{ (t: String) in t == q }, { $0.hasPrefix(q) }, { $0.contains(q) }] {
-            let hits = titled.filter { match($0.1) }.map(\.0)
-            if !hits.isEmpty { return hits }
-        }
-        return []
+        let exact = titled.filter { $0.1 == q }
+        return (exact.isEmpty ? titled.filter { $0.1.contains(q) } : exact).map(\.0)
     }
 
     private static func isNamed(_ action: Action) -> Bool {
         switch action {
-        case .click(.element, _, _), .moveCursor(.element), .focusElement(.named), .setValue(.named, _), .selectOption(.named, _),
+        case .click(.element, _, _), .clickIn, .moveCursor(.element), .focusElement(.named), .setValue(.named, _), .selectOption(.named, _),
              .typeInto(.named, _), .setChecked(.named, _): return true
         default: return false
         }
