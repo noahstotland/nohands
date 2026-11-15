@@ -9,6 +9,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let stateItem = NSMenuItem(title: MenuState.loading.text, action: nil, keyEquivalent: "")
     private let configItem = NSMenuItem(title: "config.json invalid: using defaults", action: nil, keyEquivalent: "")
     private let transcriptItem = NSMenuItem(title: "No speech yet", action: nil, keyEquivalent: "")
+    private let recentItem = NSMenuItem(title: "Recent commands", action: nil, keyEquivalent: "")
+    private let recentMenu = NSMenu(title: "Recent commands")
+    private let viewLogsItem = NSMenuItem(title: "View Logs…", action: #selector(viewLogs), keyEquivalent: "")
     private let localModelItem = NSMenuItem(title: "", action: #selector(localModelClicked), keyEquivalent: "")
     private let pauseItem = NSMenuItem(title: "Pause Listening", action: #selector(togglePause), keyEquivalent: "")
     private let retryItem = NSMenuItem(title: "Retry", action: #selector(retry), keyEquivalent: "")
@@ -39,6 +42,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var claudeChecking = false
 
     private let overlay = OverlayController()
+    private let commandLog = CommandLogStore()
+    private lazy var logWindow = LogWindowController(store: commandLog)
     private var config = AppConfig()
     private var configInvalid = false
     /// Whether config.json itself holds a key (the environment is ignored): as of launch, plus saves from the menu.
@@ -63,6 +68,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         overlay.statusBarPosition = StatusBarPosition.stored(UserDefaults.standard.string(forKey: Self.statusBarDefaultsKey))
+        commandLog.onChange = { [weak self] in self?.logWindow.reload() }
         buildMenu()
         Task { await bootstrap() }
     }
@@ -96,7 +102,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         transcriptItem.isEnabled = false
         harnessItem.isEnabled = false
         claudeItem.isEnabled = false
-        for item in [checkClaudeItem, localModelItem, pauseItem, retryItem, accessibilityItem, screenRecordingItem, micItem, loginItem, claudeKeyItem, openConfigItem] { item.target = self }
+        for item in [viewLogsItem, checkClaudeItem, localModelItem, pauseItem, retryItem, accessibilityItem, screenRecordingItem, micItem, loginItem, claudeKeyItem, openConfigItem] { item.target = self }
         let title = NSMutableAttributedString(string: "● ", attributes: [.foregroundColor: NSColor.systemRed])
         title.append(NSAttributedString(string: "Grant Accessibility…"))
         accessibilityItem.attributedTitle = title
@@ -121,7 +127,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let quit = NSMenuItem(title: "Quit NoHands", action: #selector(quit), keyEquivalent: "q")
         quit.target = self
 
-        for item in [stateItem, configItem, NSMenuItem.separator(), transcriptItem, localModelItem, harnessItem, claudeItem, checkClaudeItem, NSMenuItem.separator(),
+        recentItem.submenu = recentMenu
+        rebuildRecentMenu()
+        for item in [stateItem, configItem, NSMenuItem.separator(), transcriptItem, recentItem, viewLogsItem, localModelItem, harnessItem, claudeItem, checkClaudeItem, NSMenuItem.separator(),
                      pauseItem, retryItem, accessibilityItem, screenRecordingItem, micItem, NSMenuItem.separator(), loginItem, statusBarItem, backendItem, claudeKeyItem, openConfigItem,
                      NSMenuItem.separator(), quit] {
             menu.addItem(item)
@@ -279,6 +287,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let observer = ScreenObserver(ax: taskAX, maxElements: config.observedElementCap, harness: pipelineHarness,
                                       snapshotTimeoutMs: config.agentDesktopSnapshotMs)
         pipeline.switchBackend(config: config, resolver: resolver, observer: observer)
+        pipeline.resolverKind = Self.logResolver(config.effectiveBackend)
     }
 
     // MARK: - status bar setting
@@ -415,8 +424,41 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     func menuWillOpen(_ menu: NSMenu) {
         refreshLoginItem()
+        rebuildRecentMenu()
         guard !harnessProbeInFlight else { return }
         Task { _ = await probeHarness() }
+    }
+
+    /// Newest first, one line per command; choosing one opens the View Logs window on it.
+    private func rebuildRecentMenu() {
+        recentMenu.removeAllItems()
+        let entries = commandLog.log.entries
+        guard !entries.isEmpty else {
+            let none = NSMenuItem(title: "No commands yet", action: nil, keyEquivalent: "")
+            none.isEnabled = false
+            recentMenu.addItem(none)
+            return
+        }
+        for entry in entries {
+            let item = NSMenuItem(title: CommandLogText.menuLine(entry), action: #selector(recentCommandChosen(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = entry.id.uuidString
+            recentMenu.addItem(item)
+        }
+    }
+
+    @objc private func recentCommandChosen(_ sender: NSMenuItem) {
+        logWindow.show(selecting: (sender.representedObject as? String).flatMap(UUID.init(uuidString:)))
+    }
+
+    @objc private func viewLogs() { logWindow.show() }
+
+    private static func logResolver(_ backend: EffectiveBackend) -> CommandLogEntry.Resolver {
+        switch backend {
+        case .claude: .claude
+        case .local: .localModel
+        case .off: .none
+        }
     }
 
     private func apply(mode: Mode, transcript: String) {
@@ -664,7 +706,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                                               maxElements: config.observedElementCap, harness: harness,
                                               snapshotTimeoutMs: config.agentDesktopSnapshotMs)
                 let p = VoicePipeline(config: config, transcriber: transcriber, resolver: resolver,
-                                      executor: executor, overlay: overlay, ax: ax, observer: observer, harness: harness)
+                                      executor: executor, overlay: overlay, ax: ax, observer: observer, harness: harness,
+                                      commandLog: commandLog)
+                p.resolverKind = Self.logResolver(builtBackend)
                 p.onStatus = { [weak self] mode, transcript in self?.apply(mode: mode, transcript: transcript) }
                 p.onNotice = { PipelineLog.info("notice: \($0)") }
                 p.onError = { [weak self] message in self?.errorText = message; self?.refresh() }
