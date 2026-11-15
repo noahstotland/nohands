@@ -112,7 +112,7 @@ public enum TaskOutcome: Equatable, Sendable {
         // A goal about playing media gets a longer budget: stream sites throw overlays and pop-unders first.
         let maxSteps = max(1, MediaGoal.matches(goal) ? config.maxMediaTaskSteps : config.maxTaskSteps)
         trail = TaskTrail(maxSteps: maxSteps)
-        onTrail?(trail)   // before the first screen read, which can take a second or two
+        setPhase(.reading)   // before the first screen read, which can take a second or two
         ledger = TabLedger()
         markTaskTab = false
         atTaskStart = true
@@ -146,7 +146,7 @@ public enum TaskOutcome: Equatable, Sendable {
         // loop below takes over on any miss. Every step still goes through the guards below.
         var engine: PlanEngine?
         if PlanGate.mayPlan(goal: goal) {
-            onStatus?(.running("planning the steps"))
+            setPhase(.planning)
             if let plan = await askForPlan(goal) {
                 engine = PlanEngine(plan: plan)
                 planLimit = TaskPlan.observedElements
@@ -184,6 +184,7 @@ public enum TaskOutcome: Equatable, Sendable {
                     if isCancelled { return await finish(.stopped) }
                 }
                 while true {
+                    setPhase(.thinking)
                     switch await resolveCancellable(request) {
                     case .step(let s): step = s
                     case .end(let outcome): return await finish(isCancelled ? .stopped : outcome)
@@ -209,7 +210,8 @@ public enum TaskOutcome: Equatable, Sendable {
 
             if isCancelled { return await finish(.stopped) }
             onStatus?(.running("step \(n) · \(step.intent)"))
-            trail.begin(number: n, intent: step.intent)
+            trail.begin(number: n, intent: step.intent, actions: step.actions)
+            trail.phase = .acting
             onTrail?(trail)
             // Code-level guard: never close a tab/window or quit an app the goal did not ask to close or quit.
             // A blocked step runs nothing and is recorded as a failed step so the model can react.
@@ -256,6 +258,7 @@ public enum TaskOutcome: Equatable, Sendable {
             // A step cut short by stop stays running, so the panel shows it as stopped, not failed.
             if failure != ActionExecutor.cancelled {
                 trail.end(number: n, failure: failure)
+                trail.phase = .reading   // the settle and the next look at the screen
                 onTrail?(trail)
             }
             onStep?(n, step, settled, failure)
@@ -498,15 +501,22 @@ public enum TaskOutcome: Equatable, Sendable {
     }
 
     /// `hud` overrides the outcome's usual finish line.
+    /// Reports what the task is doing now. Until the first step starts the board row shows the same words.
+    private func setPhase(_ phase: TaskPhase) {
+        guard trail.phase != phase else { return }
+        trail.phase = phase
+        onTrail?(trail)
+        if trail.steps.isEmpty, let line = TaskPanelText.phaseLine(trail) { onStatus?(.running(line)) }
+    }
+
     private func finish(_ outcome: TaskOutcome, hud: String? = nil) async -> TaskOutcome {
         // Spec Safety: a held mouse button is released on any exit; a successful `done` keeps what it did.
         if case .done = outcome {} else { executor.releaseAll() }
         observer.resetBrowserTokens()
         planLimit = nil
-        if case .stuck(let why) = outcome {
-            trail.ending = why == Self.stepLimit ? .stepCap : .stuck
-            onTrail?(trail)
-        }
+        if case .stuck(let why) = outcome { trail.ending = why == Self.stepLimit ? .stepCap : .stuck }
+        trail.phase = nil
+        onTrail?(trail)
         onStatus?(Self.finalStatus(outcome, text: hud ?? PipelineText.hud(for: outcome), steps: stepsRun))
         // The HUD is already up; ending the traced session is quick bookkeeping.
         if let id = sessionID, let harness {

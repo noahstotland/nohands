@@ -42,7 +42,7 @@ private func el(_ id: Int, _ title: String, x: CGFloat = 100) -> UIElementInfo {
 @MainActor private struct Rig {
     var runner: TaskRunner
     var log: StatusLog
-    var statuses: [String] { log.texts }
+    var statuses: [String] { log.texts.filter { !isPhaseLine($0) } }
     var resolver: FakeResolver
     var input: FakeInput
     var ax: FakeElements
@@ -77,6 +77,33 @@ private func step(_ intent: String, _ status: StepStatus, _ actions: [Action] = 
     IntentStep(intent: intent, status: status, actions: actions)
 }
 
+/// The phase the runner reports at each emission, collapsed so a repeat reads once.
+@MainActor private func phases(_ log: StatusLog) -> [TaskPhase?] {
+    var out: [TaskPhase?] = []
+    for t in log.trails where out.last != .some(t.phase) { out.append(t.phase) }
+    return out
+}
+
+@MainActor @Test func phasesFollowTheTask() async {
+    typealias P = TaskPhase
+    let click = Action.click(.cursor, button: .left, count: 1)
+    let table: [(String, [IntentStep], [P?], [String])] = [
+        ("one model step", [step("go", .done, [click])], [.reading, .thinking, .acting, .reading, nil],
+         ["Reading · looking at the screen", "Thinking · working out the first step"]),
+        ("two model steps", [step("a", .continue, [click]), step("b", .done, [click])],
+         [.reading, .thinking, .acting, .reading, .thinking, .acting, .reading, nil],
+         ["Reading · looking at the screen", "Thinking · working out the first step"]),
+        ("stuck", [step("hmm", .stuck)], [.reading, .thinking, nil],
+         ["Reading · looking at the screen", "Thinking · working out the first step"]),
+    ]
+    for (goal, steps, want, rows) in table {
+        let r = rig(FakeResolver(steps))
+        _ = await r.runner.run(goal: goal, mode: .command)
+        #expect(phases(r.log) == want, "\(goal)")
+        #expect(r.log.texts.filter(isPhaseLine) == rows, "\(goal)")   // the board row, before the first step only
+    }
+}
+
 @MainActor @Test func trailFollowsTheTask() async {
     typealias S = TaskStepRecord.State
     func scrolls(_ n: Int) -> [IntentStep] { (1...n).map { step("scroll \($0)", .continue, [.scroll(.down, amount: $0)]) } }
@@ -92,7 +119,9 @@ private func step(_ intent: String, _ status: StepStatus, _ actions: [Action] = 
     for (goal, steps, maxSteps, states, ending, cap) in table {
         let r = rig(FakeResolver(steps), maxSteps: maxSteps)
         _ = await r.runner.run(goal: goal, mode: .command)
-        #expect(r.log.trails.first == TaskTrail(maxSteps: cap), "\(goal)")   // each run starts from the empty trail
+        var start = TaskTrail(maxSteps: cap)
+        start.phase = .reading
+        #expect(r.log.trails.first == start, "\(goal)")   // each run starts from the empty trail, reading
         let last = r.log.trails.last
         #expect(last?.steps.map(\.state) == states, "\(goal)")
         #expect(last?.ending == ending, "\(goal)")
@@ -108,6 +137,7 @@ private func step(_ intent: String, _ status: StepStatus, _ actions: [Action] = 
     #expect(await task.value == .stopped)
     #expect(r.log.trails.last?.steps.map(\.state) == [.running])
     #expect(r.log.trails.last?.ending == nil)
+    #expect(r.log.trails.last?.phase == nil)   // a stop ends the phase: the panel has nothing to animate
 }
 
 @MainActor @Test func doneOnFirstStepIsOneCall() async {
@@ -840,6 +870,9 @@ private let pageHasMaple = [el(1, "Maple"), el(2, "Pause (k)")]
     #expect(resolver.requests.isEmpty)
     #expect(r.input.calls.filter { $0.hasPrefix("click") }.count == 1)
     #expect(r.runner.stepsRun == 4)   // three plan steps, then the finish step
+    // planning, then no model call (no thinking) between plan steps
+    #expect(phases(r.log).prefix(3) == [.reading, .planning, .acting] && !phases(r.log).contains(.thinking))
+    #expect(r.log.texts.filter(isPhaseLine) == ["Reading · looking at the screen", "Thinking · planning the steps"])
 }
 
 @MainActor @Test func aPlanThatMissesHandsOverToTheModelWithItsStepsAsHistory() async {
