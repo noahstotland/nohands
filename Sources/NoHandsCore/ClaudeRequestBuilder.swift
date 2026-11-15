@@ -74,10 +74,10 @@ public struct ClaudeRequestBuilder: Sendable {
         userBlocks(request: r, playbooks: playbooks).joined()
     }
 
-    /// `text` without the "User answered:" marker (any case), which only the builder may write.
+    /// `text` with the word "answered" (any case) changed to "replied", so no spelling of the "User answered:" marker, which
+    /// only the builder may write, survives in model text. Stripping colon variants instead is never complete.
     static func unmarked(_ text: String) -> String {
-        // Every colon after the word goes at once (a single-pass replace of "answered:" turns "answered::" into "answered:").
-        text.replacingOccurrences(of: "answered\\s*[:\u{FF1A}]+", with: "answered", options: [.regularExpression, .caseInsensitive])
+        text.replacingOccurrences(of: "answered", with: "replied", options: .caseInsensitive)
     }
 
     /// The user message in pieces, in order: goal and step, one block per history record (the first carries the
