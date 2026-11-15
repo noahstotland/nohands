@@ -13,6 +13,12 @@ public enum PipelineLog {
         if tty { print(message) }
     }
 
+    /// `detail` (page text, which may hold anything on screen) is logged `.private`.
+    public static func info(_ message: String, detail: String) {
+        logger.info("\(message, privacy: .public) \(detail, privacy: .private)")
+        if tty { print("\(message) \(detail)") }
+    }
+
     /// `detail` (error descriptions, which may contain names or text) is logged `.private`.
     public static func warning(_ message: String, detail: String = "") {
         logger.warning("\(message, privacy: .public) \(detail, privacy: .private)")

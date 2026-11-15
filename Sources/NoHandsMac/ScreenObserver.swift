@@ -51,7 +51,7 @@ public struct ScreenObserver: Sendable {
             if listed.count >= (limit ?? maxElements) { break }
             var role = e.role
             if role.hasPrefix("AX") { role.removeFirst(2) }
-            listed.append(ObservedElement(number: n, role: role.lowercased(), title: e.title))
+            listed.append(ObservedElement(number: n, role: role.lowercased(), title: e.title, near: e.near))
             snapshot[n] = e
         }
         var observation = ScreenObservation(
@@ -117,7 +117,7 @@ public struct ScreenObserver: Sendable {
             guard let e = labels[n] else { return nil }
             var role = e.role.lowercased()
             if role.hasPrefix("ax") { role.removeFirst(2) }
-            return ObservedElement(number: n, role: role, title: e.title, value: e.value, states: e.states)
+            return ObservedElement(number: n, role: role, title: e.title, value: e.value, states: e.states, near: e.near)
         }
         return (observation, labels)
     }

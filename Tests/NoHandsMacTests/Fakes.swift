@@ -48,6 +48,10 @@ final class FakeElements: ElementProviding, @unchecked Sendable {
     var onFind: (@Sendable () -> Void)?
     func findOnPage(words: String) -> UIElementInfo? { findWords.append(words); onFind?(); return pageMatch }
     func scrollIntoView(_ element: UIElementInfo) async -> CGRect? { scrolled.append(element); return scrollLandsAt }
+    /// Read page: the text runs the walk returns, and a hook run inside the walk.
+    var pageRuns: [String] = []
+    var onPageText: (@Sendable () -> Void)?
+    func pageText() -> [String] { onPageText?(); return pageRuns }
     /// The browser's windows and tabs (nil: the front app is not a browser) and the tab and window ids closed or selected.
     var browser: [BrowserWindow]?
     var closedTabs: [String] = []

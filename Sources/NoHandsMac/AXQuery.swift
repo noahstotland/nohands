@@ -288,6 +288,56 @@ public final class AXQuery: @unchecked Sendable {
         return nil
     }
 
+    // MARK: read page
+
+    /// Reading a page's text is bounded like a search: it stops at the screen, so it needs less than a find.
+    static let pageTextBudget: Duration = .milliseconds(500)
+    static let pageTextMaxNodes = 4000
+    /// A text run keeps this many characters (an element's usual title is cut at 120).
+    static let pageTextRunLimit = 400
+    /// Roles whose own value is page text. A link or button offers its title instead.
+    static let pageTextRoles: Set<String> = ["AXStaticText", "AXHeading"]
+
+    /// The visible text of the focused window in reading order (the walk's depth-first order): `AXStaticText` and
+    /// `AXHeading` values, `AXLink` and `AXButton` titles, only for elements on a screen. In a browser only the first
+    /// web area; elsewhere the whole window, menus never. Fields and secure fields are never read, nor walked into
+    /// (a contenteditable editor's draft is static text under a text area). Stops at the budget, the node limit, or
+    /// when the calling task is cancelled.
+    public func pageText() -> [String] {
+        guard let f = focusedWindow() else { return [] }
+        exposeChromiumTree(f.app, f.appEl)
+        let screens = Self.screenRectsCG()
+        let deadline = ContinuousClock.now.advanced(by: Self.pageTextBudget)
+        var visited = 0
+        var runs: [String] = []
+        func onScreen(_ el: AXUIElement) -> Bool {
+            guard let r = Self.frame(el), r.origin.x.isFinite, r.origin.y.isFinite, r.width.isFinite, r.height.isFinite,
+                  r.width > 0, r.height > 0 else { return false }
+            return screens.contains { $0.intersects(r) }
+        }
+        func visit(_ el: AXUIElement, depth: Int) {
+            guard depth <= Self.maxDepth, visited < Self.pageTextMaxNodes, ContinuousClock.now < deadline,
+                  !Task.isCancelled else { return }
+            visited += 1
+            AXUIElementSetMessagingTimeout(el, 0.05)
+            let role = Self.string(el, kAXRoleAttribute) ?? ""
+            if role == "AXMenuBar" || role == "AXMenuItem" || role == "AXMenu" { return }
+            if Self.textEntryRoles.contains(role) || Self.string(el, kAXSubroleAttribute) == "AXSecureTextField" { return }
+            if Self.pageTextRoles.contains(role) {
+                if let t = Self.string(el, kAXValueAttribute, limit: Self.pageTextRunLimit)
+                    ?? Self.string(el, kAXTitleAttribute, limit: Self.pageTextRunLimit), onScreen(el) { runs.append(t) }
+            } else if Self.findContainerRoles.contains(role) {
+                if let t = Self.string(el, kAXTitleAttribute, limit: Self.pageTextRunLimit)
+                    ?? Self.string(el, kAXDescriptionAttribute, limit: Self.pageTextRunLimit), onScreen(el) { runs.append(t) }
+            }
+            for c in Self.elements(el, kAXChildrenAttribute) { visit(c, depth: depth + 1) }
+        }
+        var seen = 0
+        let root = Self.firstWebArea(f.window, depth: 1, visited: &seen, limit: Self.pageTextMaxNodes, deadline: deadline)
+        visit(root ?? f.window, depth: 1)
+        return runs
+    }
+
     /// The id for a browser window or tab element (`prefix` "w" or "t"): the same element always gets the same id.
     func browserToken(for el: AXUIElement, prefix: String) -> String {
         lock.withLock {
@@ -345,7 +395,9 @@ public final class AXQuery: @unchecked Sendable {
         if policy.pageFirst, let window = Self.element(appEl, kAXFocusedWindowAttribute) {
             var seen = 0
             if let web = Self.firstWebArea(window, depth: 1, visited: &seen, limit: policy.maxNodes, deadline: deadline) {
+                walker.tracksText = true
                 walker.visit(web, depth: 1, descend: true)
+                walker.tracksText = false
             }
         }
         for w in Self.elements(appEl, kAXWindowsAttribute) { walker.visit(w, depth: 1, descend: true) }
@@ -354,7 +406,7 @@ public final class AXQuery: @unchecked Sendable {
         var infos: [UIElementInfo] = []
         var map: [Int: AXUIElement] = [:]
         for (i, found) in walker.found.enumerated() {
-            infos.append(UIElementInfo(id: i, frame: found.frame, title: found.title, role: found.role))
+            infos.append(UIElementInfo(id: i, frame: found.frame, title: found.title, role: found.role, near: found.near))
             map[i] = found.element
         }
         lock.withLock { elements = map }
@@ -500,10 +552,10 @@ public final class AXQuery: @unchecked Sendable {
         (attr(el, name) as? [AXUIElement]) ?? []
     }
 
-    static func string(_ el: AXUIElement, _ name: String) -> String? {
+    static func string(_ el: AXUIElement, _ name: String, limit: Int = 120) -> String? {
         guard let s = attr(el, name) as? String else { return nil }
         let t = s.trimmingCharacters(in: .whitespacesAndNewlines)
-        return t.isEmpty ? nil : String(t.prefix(120))
+        return t.isEmpty ? nil : String(t.prefix(limit))
     }
 
     static func frame(_ el: AXUIElement) -> CGRect? {
@@ -514,7 +566,7 @@ public final class AXQuery: @unchecked Sendable {
         return CGRect(origin: pt, size: sz)
     }
 
-    struct Found { var element: AXUIElement; var frame: CGRect; var title: String; var role: String }
+    struct Found { var element: AXUIElement; var frame: CGRect; var title: String; var role: String; var near: String? = nil }
 
     struct Walker {
         let screens: [CGRect]
@@ -523,6 +575,10 @@ public final class AXQuery: @unchecked Sendable {
         var found: [Found] = []
         var visited = 0
         var seen: [CFHashCode: [AXUIElement]] = [:]
+        /// Set while the walk is inside a browser's first web area: the latest static text or heading passed, so a
+        /// generic link or button can say what it sits next to (`PageText.near`). Nil keeps the walker as it was.
+        var lastText: String?
+        var tracksText = false
 
         init(screens: [CGRect], maxNodes: Int, deadline: ContinuousClock.Instant) {
             self.screens = screens
@@ -556,7 +612,13 @@ public final class AXQuery: @unchecked Sendable {
                 }
                 if title == nil, secure { title = TitleSource.secureFieldTitle }
                 let finalTitle = title ?? ""
-                found.append(Found(element: el, frame: f, title: finalTitle, role: role))
+                // Only a link or button reads the hint, and only a generic one (an unnamed link is the worst case).
+                let near = tracksText && AXQuery.findContainerRoles.contains(role) && PageText.isGeneric(finalTitle)
+                    ? lastText.flatMap(PageText.near) : nil
+                found.append(Found(element: el, frame: f, title: finalTitle, role: role, near: near))
+            } else if tracksText, AXQuery.pageTextRoles.contains(role),
+                      let t = AXQuery.string(el, kAXValueAttribute, limit: 400) ?? AXQuery.string(el, kAXTitleAttribute, limit: 400) {
+                lastText = t
             }
             // Menu bar items open menus whose contents are not on screen; do not descend into them.
             if stopAtMenuBarItems && role == "AXMenuBarItem" { return }
