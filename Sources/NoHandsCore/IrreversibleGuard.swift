@@ -40,11 +40,7 @@ public enum IrreversibleGuard {
     /// Letters and digits only, so "Send…" and "File > Send" split into words; "check out" is one word, "checkout".
     private static func words(_ text: String) -> [String] {
         let cleaned = String(text.map { $0.isLetter || $0.isNumber ? $0 : " " })
-        var out: [String] = []
-        for word in CommandGrammar.normalize(cleaned) {
-            if word == "out", out.last == "check" { out[out.count - 1] = "checkout" } else { out.append(word) }
-        }
-        return out
+        return mergeCheckOut(CommandGrammar.normalize(cleaned))
     }
 
     private static func contains(_ words: [String], _ phrase: [String]) -> Bool {
@@ -95,15 +91,38 @@ public enum IrreversibleGuard {
         verb.allowedBy.allSatisfy { !$0.isDisjoint(with: goalWords) }
     }
 
-    /// The verb a short menu title could press at run time, nil when none. Menu items are found by words (a prefix of
-    /// the title's words, then any title holding every spoken word), so "Empty" can press "Empty Trash…". A title is
-    /// held when its words, as `MenuMatch.fold` splits them, are a non-empty part of a guarded verb's name ("empty",
-    /// "trash", "place") and the goal does not allow that verb.
+    /// The part of a menu path the executor matches: what follows the last ">", trimmed ("File > Open Recent > Empty"
+    /// presses "Empty"; the menus before it only narrow the search).
+    static func menuLeaf(_ path: String) -> String {
+        (path.split(separator: ">", omittingEmptySubsequences: false).last.map(String.init) ?? path)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// The verb a short menu title could press at run time, nil when none. Only the part after the last ">" counts,
+    /// since that is what the executor matches. Menu items are found by words (a prefix of the title's words, then any
+    /// title holding every spoken word), so "Empty" can press "Empty Trash…". A title is held when its plain form is
+    /// part of a guarded verb's name ("Emp", "rash"), or each of its words, as `MenuMatch.fold` splits them ("check
+    /// out" is one word, "checkout"), starts a word of the name ("Empty", "Plac", "Check"), and the goal does not
+    /// allow that verb.
     public static func namesLoosely(title: String, goal: String) -> String? {
-        let titleWords = Set(MenuMatch.fold(title))
+        let leaf = menuLeaf(title)
+        let plain = MenuMatch.plain(leaf)
+        let titleWords = mergeCheckOut(MenuMatch.fold(leaf))
         guard !titleWords.isEmpty else { return nil }
         let goalWords = goalVerbs(goal)
-        return verbs.first { titleWords.isSubset(of: MenuMatch.fold($0.name)) && !allows($0, goalWords) }?.name
+        return verbs.first { verb in
+            let nameWords = mergeCheckOut(MenuMatch.fold(verb.name))
+            let loose = verb.name.contains(plain) || titleWords.allSatisfy { w in nameWords.contains { $0.hasPrefix(w) } }
+            return loose && !allows(verb, goalWords)
+        }?.name
+    }
+
+    private static func mergeCheckOut(_ words: [String]) -> [String] {
+        var out: [String] = []
+        for word in words {
+            if word == "out", out.last == "check" { out[out.count - 1] = "checkout" } else { out.append(word) }
+        }
+        return out
     }
 
     /// The elements a name may press: those with exactly that title, else every one whose title contains it. Both
@@ -129,7 +148,7 @@ public enum IrreversibleGuard {
         switch action {
         case .click(.label(let n), _, _), .click(.numbered(let n), _, _): return labels[n]?.title
         case .click(.element(let name), _, _), .clickIn(_, let name): return name
-        case .menuItem(let path): return path
+        case .menuItem(let path): return menuLeaf(path)
         case .setValue(.label(let n), _): return labels[n]?.title
         case .setValue(.named(let name), _), .selectOption(.named(let name), _), .typeInto(.named(let name), _),
              .setChecked(.named(let name), _): return name

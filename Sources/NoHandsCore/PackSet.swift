@@ -15,6 +15,9 @@ public struct PackSummary: Equatable, Sendable {
     public let openedApps: [String]
     /// Global phrases the pack overrides inside its apps, sorted.
     public let overriddenPhrases: [String]
+    /// One line per phrase, sorted: `"new note" -> command-N`, `"pin" -> menu item "Pin Note", open https://host/path`.
+    /// Already escaped by `printable`.
+    public let commandLines: [String]
 
     public init(_ pack: AppPack) {
         let actions = pack.phrases.values.flatMap { $0 }
@@ -29,9 +32,50 @@ public struct PackSummary: Equatable, Sendable {
         openedApps = Set(actions.compactMap { action -> String? in
             if case .openApp(let app) = action { return app } else { return nil }
         }).sorted()
-        // Anything the global grammar parses by itself, patterns included ("press return", "open safari").
+        // Anything the global grammar parses by itself, patterns included ("press return", "open safari"), as spoken or
+        // with its "open", "go to", "a" or "the" lead dropped, as a pack phrase is looked up.
         let global = CommandGrammar(packs: PackSet([]))
-        overriddenPhrases = pack.phrases.keys.filter { global.parse($0, frontmost: nil) != nil }.sorted()
+        overriddenPhrases = pack.phrases.keys.filter { phrase in
+            let bare = PhraseLead.strip(CommandGrammar.normalize(phrase)).tokens.joined(separator: " ")
+            return [phrase, bare].contains { !$0.isEmpty && global.parse($0, frontmost: nil) != nil }
+        }.sorted()
+        commandLines = pack.phrases.keys.sorted().map { phrase in
+            Self.quoted(phrase) + " -> " + (pack.phrases[phrase] ?? []).map(Self.describe).joined(separator: ", ")
+        }
+    }
+
+    /// An action in words: `command-shift-N`, `menu item "Archive Note"`, `open https://host/path`, `open app Foo`.
+    static func describe(_ action: Action) -> String {
+        switch action {
+        case .pressKey(let chord):
+            let order: [Modifier] = [.command, .option, .shift, .control, .function]
+            let key = chord.key.rawValue.count == 1 ? chord.key.rawValue.uppercased() : chord.key.rawValue
+            return (order.filter(chord.modifiers.contains).map(\.rawValue) + [key]).joined(separator: "-")
+        case .menuItem(let title): return "menu item " + quoted(title)
+        case .openURL(let url, _): return "open " + printable(url.absoluteString)
+        case .openApp(let app): return "open app " + printable(app)
+        default: return "(unsupported action)"
+        }
+    }
+
+    /// `text` in quotes with backslash and quote escaped, and `printable` applied.
+    public static func quoted(_ text: String) -> String {
+        "\"" + printable(text.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")) + "\""
+    }
+
+    /// `text` safe to print to a terminal: control, format, line and paragraph separator, private-use, unassigned and
+    /// surrogate scalars, and spaces other than " ", become `\u{XXXX}`, so a pack cannot inject escape sequences or
+    /// hide text with bidi marks.
+    public static func printable(_ text: String) -> String {
+        let bad: Set<Unicode.GeneralCategory> = [.control, .format, .lineSeparator, .paragraphSeparator, .privateUse, .unassigned,
+                                                 .surrogate, .spaceSeparator]
+        return text.unicodeScalars.reduce(into: "") { out, scalar in
+            if bad.contains(scalar.properties.generalCategory), scalar != " " {
+                out += "\\u{" + String(scalar.value, radix: 16, uppercase: true) + "}"
+            } else {
+                out.unicodeScalars.append(scalar)
+            }
+        }
     }
 }
 

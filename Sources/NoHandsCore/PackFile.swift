@@ -98,25 +98,40 @@ public enum PackFile {
         }
     }
 
-    /// A key press with no command, control or option: it types a character or presses the focused button.
+    /// A key press with no command or option: it types a character, presses the focused button or sends a control
+    /// character (control-letter chords count, so they cannot add up to typed text either).
     private static func isPlain(_ chord: KeyChord) -> Bool {
-        chord.modifiers.isDisjoint(with: [.command, .control, .option])
+        chord.modifiers.isDisjoint(with: [.command, .option])
+    }
+
+    /// A press that activates the focused button: return, space (alone or with shift), control-return, control-m
+    /// and control-j (both are a carriage return or line feed to a text field or a dialog).
+    private static func isReturnLike(_ chord: KeyChord) -> Bool {
+        guard isPlain(chord) else { return false }
+        switch chord.key {
+        case .return, .space: return true
+        case .m, .j: return chord.modifiers.contains(.control)
+        default: return false
+        }
     }
 
     /// Rules on a command's actions as a whole, so single presses cannot add up to typed text or to a press on a button
     /// the pack never named.
     private static func checkSequence(_ actions: [Action]) throws(PackError) {
         var plain = 0
-        var sawMenu = false
+        var opensDialog = false   // a menu item or a command chord: it may have opened a dialog with a default button
         for (index, action) in actions.enumerated() {
             switch action {
-            case .pressKey(let chord) where isPlain(chord):
-                plain += 1
-                if plain > 2 { throw PackError("too many key presses (over 2 without command, control or option: that would type text)") }
-                if sawMenu, chord.key == .return || chord.key == .space {
-                    throw PackError("return or space key after a menu_item (it could press the button that opens)")
+            case .pressKey(let chord):
+                if isPlain(chord) {
+                    plain += 1
+                    if plain > 2 { throw PackError("too many key presses (over 2 without command or option: that would type text)") }
                 }
-            case .menuItem: sawMenu = true
+                if opensDialog, isReturnLike(chord) {
+                    throw PackError("return-like key (return, space, control-m, control-j) after a menu_item or command chord (it could press the button that opens)")
+                }
+                if chord.modifiers.contains(.command) { opensDialog = true }
+            case .menuItem: opensDialog = true
             case .openApp, .openURL:
                 if index != actions.count - 1 { throw PackError("open_app and open_url must be the last action (focus leaves the app)") }
             default: break
@@ -124,29 +139,36 @@ public enum PackFile {
         }
     }
 
-    /// Chords that switch apps, open the launcher, force quit or empty the Trash, held unless the phrase says "empty" and "trash".
+    /// Chords that switch apps, open the launcher or force quit (command with space or tab, command-option-escape) are
+    /// always blocked. The chords that empty the Trash or delete at once (command-shift-delete, command-option-delete,
+    /// with any other modifiers) are held unless the phrase says "empty" and "trash"; that exemption covers only them.
     private static func blockedChord(_ actions: [Action], words: Set<String>) -> Bool {
-        guard !(words.contains("empty") && words.contains("trash")) else { return false }
+        let saysEmptyTrash = words.contains("empty") && words.contains("trash")
         return actions.contains { action in
             guard case .pressKey(let chord) = action, chord.modifiers.contains(.command) else { return false }
             switch chord.key {
             case .space, .tab: return true
             case .escape: return chord.modifiers.contains(.option)
-            case .delete: return chord.modifiers.contains(.shift)
+            case .delete, .forwardDelete: return !saysEmptyTrash && !chord.modifiers.isDisjoint(with: [.shift, .option])
             default: return false
             }
         }
     }
 
-    /// Whether an `open_url` host reaches this machine or a local network: an IP address, `localhost`, `.local`,
-    /// `.localhost` or a name with no dot.
+    /// Whether an `open_url` host is not a plain public DNS name: anything outside ASCII letters, digits, `.` and `-`
+    /// (a unicode host arrives as punycode, so it passes), an empty label (leading, trailing or double dots), an IP
+    /// address or number, `localhost`, a name with no dot, or a local-network suffix. A public name can still resolve
+    /// to a private address; this check does not look names up.
     private static func isLocalHost(_ host: String) -> Bool {
-        var h = host.lowercased()
-        if h.hasSuffix(".") { h.removeLast() }
-        guard h.contains("."), !h.contains(":"), !h.hasSuffix(".local"), !h.hasSuffix(".localhost") else { return true }
+        let h = host.lowercased()
+        guard !h.isEmpty, h.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "." || $0 == "-") }) else { return true }
+        let labels = h.split(separator: ".", omittingEmptySubsequences: false)
+        guard labels.count >= 2, labels.allSatisfy({ !$0.isEmpty }) else { return true }
+        let dotted = "." + h
+        guard ![".local", ".localhost", ".lan", ".internal", ".home.arpa"].contains(where: dotted.hasSuffix) else { return true }
         // A last label that is all digits or hex ("127.0.0.1", "0x7f.1") is an address; no real top level domain is.
-        let last = h.split(separator: ".").last.map(String.init) ?? ""
-        return last.isEmpty || last.allSatisfy(\.isNumber) || last.hasPrefix("0x")
+        let last = String(labels[labels.count - 1])
+        return last.allSatisfy(\.isNumber) || last.hasPrefix("0x")
     }
 
     private static func parseAction(_ raw: Any) throws(PackError) -> Action {
@@ -177,8 +199,12 @@ public enum PackFile {
                   parts.host?.isEmpty == false, parts.user == nil, parts.password == nil, let url = URL(string: spoken) else {
                 throw PackError("bad url (https with a host, no user or password)")
             }
-            guard !isLocalHost(parts.host ?? ""), !isLocalHost(url.host ?? "") else {
-                throw PackError("bad url (host must be a public name: no IP address, localhost, .local or name without a dot)")
+            // The raw host must not hide characters behind percent escapes. The host is checked as `URL.host` gives it
+            // (punycode for a unicode name), and again as URLComponents does when that is plain ASCII.
+            let rawHost = spoken.dropFirst("https://".count).prefix { !"/?#".contains($0) }
+            let seen = [url.host ?? ""] + [parts.host ?? ""].filter { $0.allSatisfy(\.isASCII) }
+            guard !rawHost.contains("%"), !seen.contains(where: isLocalHost) else {
+                throw PackError("bad url (host must be a public name: ASCII letters, digits, . and - only; no IP address, localhost, .local, .lan, .internal, .home.arpa, empty label or name without a dot)")
             }
             return .openURL(url, app: nil)
         default:

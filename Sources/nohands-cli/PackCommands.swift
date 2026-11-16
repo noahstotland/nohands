@@ -61,19 +61,23 @@ private func readPackFile(_ path: String) -> Data {
 }
 
 private func summaryText(_ s: PackSummary, id: String, shadowed: [PackSet.Shadowed], replaces: PackStore.Entry?) -> String {
-    var lines = ["\(s.name) \(s.version)" + (s.author.isEmpty ? "" : " by \(s.author)") + " (\(id))",
-                 "  Works in:    \(s.apps.joined(separator: ", "))",
+    let show = PackSummary.printable
+    func list(_ items: [String]) -> String { items.map(show).joined(separator: ", ") }
+    var lines = ["\(show(s.name)) \(show(s.version))" + (s.author.isEmpty ? "" : " by \(show(s.author))") + " (\(show(id)))",
+                 "  Works in:    \(list(s.apps))",
                  "  Phrases:     \(s.phraseCount)"]
-    if !s.urlHosts.isEmpty { lines.append("  Opens URLs on: \(s.urlHosts.joined(separator: ", "))") }
-    if !s.openedApps.isEmpty { lines.append("  Opens apps:  \(s.openedApps.joined(separator: ", "))") }
-    if !s.overriddenPhrases.isEmpty { lines.append("  Replaces these NoHands phrases in its apps: \(s.overriddenPhrases.joined(separator: ", "))") }
+    if !s.urlHosts.isEmpty { lines.append("  Opens URLs on: \(list(s.urlHosts))") }
+    if !s.openedApps.isEmpty { lines.append("  Opens apps:  \(list(s.openedApps))") }
+    if !s.overriddenPhrases.isEmpty { lines.append("  Replaces these NoHands phrases in its apps: \(list(s.overriddenPhrases))") }
     if !shadowed.isEmpty {
         lines.append("  Will not work (an earlier pack has them): "
-                     + shadowed.map { "\"\($0.phrase)\" (\($0.winner))" }.joined(separator: ", "))
+                     + shadowed.map { "\(PackSummary.quoted($0.phrase)) (\(show($0.winner)))" }.joined(separator: ", "))
     }
     if let replaces {
-        lines.append("  Replaces " + (replaces.pack.map { "version \($0.version)" } ?? "an invalid pack") + ", already installed.")
+        lines.append("  Replaces " + (replaces.pack.map { "version \(show($0.version))" } ?? "an invalid pack") + ", already installed.")
     }
+    lines.append("  Says and does:")
+    lines += s.commandLines.map { "    " + $0 }
     return lines.joined(separator: "\n")
 }
 

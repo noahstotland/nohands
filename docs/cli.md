@@ -19,7 +19,7 @@ Back to the [README](../README.md).
 | `grid` | Shows the 10×8 grid, zooms into cell 35 |
 | `labels` | Shows numbered badges |
 | `parse "<text>" [--app <bundle id>]` | Dry run: the grammar's actions, "no match -> LLM", or "rejected: ...". `--app` puts that app in front, so its built-in or installed pack applies |
-| `pack add <file>` | Checks a pack file, shows its summary (apps, phrase count, sites and apps it opens, phrases it replaces or loses to an earlier pack), and installs only if you answer `y` or `yes` at `Install? [y/N]`. No `--yes`. Exits 1 if declined or invalid. See [App packs](app-packs.md) |
+| `pack add <file>` | Checks a pack file, shows its summary (apps, every phrase with what it does, sites and apps it opens, phrases it replaces or loses to an earlier pack), and installs only if you answer `y` or `yes` at `Install? [y/N]`. No `--yes`. Exits 1 if declined or invalid. See [App packs](app-packs.md) |
 | `pack list` | Installed packs: id, version, on or off, phrase count, shadowed or invalid note |
 | `pack remove <id>` | Removes an installed pack, no prompt |
 | `pack builtin <id>` | Prints a built-in pack (`terminal`) as a pack file, as a template |
