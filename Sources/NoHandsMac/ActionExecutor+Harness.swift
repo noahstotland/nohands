@@ -134,16 +134,19 @@ extension ActionExecutor {
             return outcome(await harness.act(.click(ref: m.ref, button: .left, count: 1)))
         case .menuItem(let name):
             let last = name.split(separator: ">").last.map { $0.trimmingCharacters(in: .whitespaces) } ?? name
+            // agent-desktop looks a title up in the whole menu bar and cannot keep to a path, so a path never falls back to it
+            // ("Mailbox > Go to Favorite Mailbox > Sent" must not find "Use This Mailbox For > Sent").
+            let canFallBack = harness != nil && !name.contains(">")
             // A model step (the task loop passes labels) presses only the exact title, natively or through agent-desktop; the
             // user's own "menu <words>" may be closest.
             switch pressMenuItem(name, exactOnly: labelSnapshot != nil) {
             case .pressed: return nil
             case .disabled(let title): return "menu item \(title) is disabled"
             case .refused(let title):
-                guard harness != nil else { return "couldn't press menu item \(title)" }
+                guard canFallBack else { return "couldn't press menu item \(title)" }
             case .noMatch: break
             }
-            guard let harness, !MenuMatch.isAppleMenuTitle(last) else { return "no menu item called \(last)" }
+            guard canFallBack, let harness, !MenuMatch.isAppleMenuTitle(last) else { return "no menu item called \(last)" }
             guard let m = await harness.find(app: ax.frontmostAppName(), surface: .menubar, name: last) else {
                 return "no menu item called \(last)"
             }
