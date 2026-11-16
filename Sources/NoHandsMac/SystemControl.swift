@@ -5,8 +5,10 @@ import ApplicationServices
 /// What the system voice commands need beyond key presses. `MacSystemControl` is the real one; tests use a fake.
 public protocol SystemControlling: Sendable {
     /// Opens Mission Control, or shows the desktop (`showDesktop`: Mission Control's own argument), whatever the user
-    /// has bound the shortcuts to.
-    func openMissionControl(showDesktop: Bool)
+    /// has bound the shortcuts to. False when the app would not open.
+    func openMissionControl(showDesktop: Bool) async -> Bool
+    /// Whether the screenshot tool's own process (`screencaptureui`, the crosshair and window camera) is running.
+    func isScreenCaptureUIRunning() -> Bool
     /// Presses the menu-bar clock, which opens Notification Center on macOS 14. False when no clock is found.
     func pressMenuBarClock() -> Bool
     /// Finder's "Show warning before emptying the Trash"; nil when the key is unset (the default, on).
@@ -21,11 +23,20 @@ public struct MacSystemControl: SystemControlling {
     /// The apps whose menu bar extras hold the clock: Control Center on macOS 14, SystemUIServer on older systems.
     private static let extraHosts = ["com.apple.controlcenter", "com.apple.systemuiserver"]
 
-    public func openMissionControl(showDesktop: Bool) {
+    public func openMissionControl(showDesktop: Bool) async -> Bool {
         let config = NSWorkspace.OpenConfiguration()
         config.activates = false
         if showDesktop { config.arguments = ["1"] }
-        NSWorkspace.shared.openApplication(at: Self.missionControl, configuration: config) { _, _ in }
+        do {
+            _ = try await NSWorkspace.shared.openApplication(at: Self.missionControl, configuration: config)
+            return true
+        } catch {
+            return false
+        }
+    }
+
+    public func isScreenCaptureUIRunning() -> Bool {
+        !NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.screencaptureui").isEmpty
     }
 
     public func pressMenuBarClock() -> Bool {

@@ -7,9 +7,14 @@ import NoHandsCore
 private final class FakeSystem: SystemControlling {
     let warns: Bool?
     let clock: Bool
+    let opens: Bool
+    let captureUI: Bool
     let calls = OSAllocatedUnfairLock<[String]>(initialState: [])
-    init(warns: Bool? = nil, clock: Bool = true) { self.warns = warns; self.clock = clock }
-    func openMissionControl(showDesktop: Bool) { calls.withLock { $0.append(showDesktop ? "desktop" : "mission") } }
+    init(warns: Bool? = nil, clock: Bool = true, opens: Bool = true, captureUI: Bool = true) {
+        self.warns = warns; self.clock = clock; self.opens = opens; self.captureUI = captureUI
+    }
+    func openMissionControl(showDesktop: Bool) async -> Bool { calls.withLock { $0.append(showDesktop ? "desktop" : "mission") }; return opens }
+    func isScreenCaptureUIRunning() -> Bool { captureUI }
     func pressMenuBarClock() -> Bool { calls.withLock { $0.append("clock") }; return clock }
     func finderWarnsOnEmptyTrash() -> Bool? { warns }
 }
@@ -39,6 +44,11 @@ private final class FakeSystem: SystemControlling {
     }
     let (x, _, e, _) = system(FakeSystem(clock: false))
     #expect(await x.execute([.system(.notificationCenter)])?.hasPrefix("can't find the menu bar clock") == true)
+    // The window camera never came up: the crosshair stays, and space is not pressed.
+    let (y, yi, _, _) = system(FakeSystem(captureUI: false))
+    #expect(await y.execute([.system(.screenshot(.window))]) == "the screenshot tool did not start")
+    #expect(yi.chords == [KeyChord(.four, [.command, .shift])])
+    #expect(await system(FakeSystem(opens: false)).0.execute([.system(.missionControl)]) == "couldn't open Mission Control")
     #expect(await x.execute([.system(.openSettings(.bluetooth))]) == nil)
     #expect(e.opened.map(\.url) == [SettingsPane.bluetooth.url] && e.opened.map(\.app) == [ActionExecutor.systemSettings])
 }

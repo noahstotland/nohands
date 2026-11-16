@@ -16,13 +16,20 @@ extension ActionExecutor {
             case .screenshot(let kind):
                 try input.press(KeyChord(kind == .screen ? .three : .four, [.command, .shift]))
                 if kind == .window {
-                    // The crosshair needs a moment before space turns it into the window camera.
-                    try? await Task.sleep(for: .milliseconds(150))
+                    // Space turns the crosshair into the window camera only once the screenshot tool has put it up.
+                    let deadline = ContinuousClock.now.advanced(by: .seconds(1))
+                    while !system.isScreenCaptureUIRunning() {
+                        if Task.isCancelled { return Self.cancelled }
+                        if ContinuousClock.now >= deadline { return "the screenshot tool did not start" }
+                        try? await Task.sleep(for: .milliseconds(25))
+                    }
                     if Task.isCancelled { return Self.cancelled }
                     try input.press(KeyChord(.space))
                 }
-            case .missionControl: system.openMissionControl(showDesktop: false)
-            case .showDesktop: system.openMissionControl(showDesktop: true)
+            case .missionControl:
+                guard await system.openMissionControl(showDesktop: false) else { return "couldn't open Mission Control" }
+            case .showDesktop:
+                guard await system.openMissionControl(showDesktop: true) else { return "couldn't show the desktop" }
             case .space(let direction):
                 guard direction == .left || direction == .right else { return "can't switch space that way" }
                 try input.pressHardwareArrow(KeyChord(direction == .left ? .left : .right, [.control]))
