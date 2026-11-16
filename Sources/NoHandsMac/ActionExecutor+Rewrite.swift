@@ -51,7 +51,14 @@ extension ActionExecutor {
         let took = await Task.detached { ax.setSelection(span) }.value
         if Task.isCancelled { return Self.cancelled }
         guard took else { return Self.rewriteUnreadable }
-        try input.type(cleaned)
+        // Never one text segment with a line break in it: typing that would press a plain Return. Each line is typed, and
+        // the breaks between them are Shift-Return, which adds a line without sending or submitting anything.
+        let lines = cleaned.split(separator: "\n", omittingEmptySubsequences: false)
+        for (n, line) in lines.enumerated() {
+            if Task.isCancelled { return Self.cancelled }
+            if n > 0 { try input.press(KeyChord(.return, [.shift])) }
+            if !line.isEmpty { try input.type(String(line)) }
+        }
         hideStaleOverlay()
         let words = cleaned.split(whereSeparator: \.isWhitespace)
         rewriteReport = RewriteReport(from: subject.text.count, to: cleaned.count,

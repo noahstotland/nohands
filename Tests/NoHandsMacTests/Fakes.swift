@@ -343,7 +343,6 @@ func isPhaseLine(_ text: String) -> Bool { text.hasPrefix("Reading \u{00B7} ") |
     func press(_ index: Int) -> Bool { pressed.append(index); return pressWorks }
 }
 
-
 /// A `TextRewriting` that answers from a script and records what it was asked. `during` runs while the "model" works
 /// (a test changes the field or waits for a spoken stop there).
 final class FakeRewriter: TextRewriting {

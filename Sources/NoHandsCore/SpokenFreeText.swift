@@ -42,6 +42,12 @@ extension Action {
     }
 }
 
+extension CommandGrammar {
+    /// True when the utterance opens with "rewrite": "rewrite that" may be followed, after a pause, by the speaker's own
+    /// instruction ("as a formal email"), so it counts as open-ended even though the preset it parses to is complete.
+    public static func opensRewrite(_ transcript: String) -> Bool { normalize(transcript).first == "rewrite" }
+}
+
 extension Sequence where Element == Action {
     public var carriesSpokenText: Bool { contains { $0.carriesSpokenText } }
 }

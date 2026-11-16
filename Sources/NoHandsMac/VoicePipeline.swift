@@ -224,6 +224,7 @@ import NoHandsCore
                                               textFocused: @Sendable () -> Bool = { false }) -> Bool {
         var phrase = transcript
         if case .addressed(let rest) = attention.check(transcript) { phrase = rest }
+        if CommandGrammar.opensRewrite(phrase) { return true }
         return parsed(phrase, grammar: grammar, frontmost: frontmost, textFocused: textFocused)?.carriesSpokenText ?? true
     }
 
@@ -707,7 +708,6 @@ import NoHandsCore
         PipelineLog.utterance(trace: trace, transcript: text, outcome: "rewrite(\(how.kind), \(kind))", detail: "rewrite(\(how.kind), \(kind)) \(action)")
         publishStatus()
     }
-
 
     /// `row` is the words on the prompt's row when they are not `pending.transcript` (a macro step: the row shows the
     /// macro's name, the log the step); `relabel` rewrites each line the runner reports, nil hides it.

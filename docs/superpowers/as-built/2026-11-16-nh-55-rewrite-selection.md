@@ -9,6 +9,7 @@
 - `ModeMachine.namesTextEdit` is unchanged; a new `ModeMachine.namesRewrite` asks the pipeline for the focused-field check, in command mode only. Making `namesTextEdit` true for rewrites would have made them dictation commands.
 - `rewrite that` and `make it clearer` are the same instruction (`.style(.clearer)`, "Rewrite it to read more clearly.").
 - Line breaks in an answer collapse into one space when the selection had none (a blank line gives one space, not two).
+- Tabs in an answer always become spaces (the spec kept them when the source had one), and when the source has line breaks the answer's are typed as Shift-Return between typed lines, never as a text segment that would press a plain Return (the spec said line breaks are kept as text).
 - The done row ends in `…` only when the answer is longer than six words.
 - The `rewriting…` row shows only after the field read, subject choice and cap check pass, so a refused rewrite never shows it.
 - The "rewrite needs a model" and "rewrite is off" messages are chosen when the pipeline sets the rewriter, which also follows a live backend switch from the menu.

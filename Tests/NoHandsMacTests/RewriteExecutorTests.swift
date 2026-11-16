@@ -40,6 +40,16 @@ private let shorter = Action.rewriteText(.style(.shorter))
     }
 }
 
+@MainActor @Test func aMultiLineAnswerIsTypedWithShiftReturnAndNeverTextWithBreaksOrTabs() async {
+    let value = "Line one\nline two"
+    let rewriter = FakeRewriter(.success("One\t1\n\nTwo\r\nThree\u{2028}\tFour"))
+    let (ex, i, _) = rewriteRig(field(0, length: value.count, value: value), rewriter)
+    #expect(await ex.execute([shorter]) == nil)
+    #expect(i.calls == ["type:One 1", "press", "press", "type:Two", "press", "type:Three", "press", "type: Four"])
+    #expect(i.chords == Array(repeating: KeyChord(.return, [.shift]), count: 4))
+    #expect(!i.calls.contains { $0.hasPrefix("type:") && ($0.contains("\n") || $0.contains("\t")) })
+}
+
 @MainActor @Test func aRewriteThatCannotRunFailsWithTheNextStepAndSendsNothing() async {
     let cantRead = ActionExecutor.rewriteUnreadable
     let ok = FakeRewriter(.success("x"))

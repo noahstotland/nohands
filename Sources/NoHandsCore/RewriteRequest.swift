@@ -24,7 +24,7 @@ public enum RewriteRequestBuilder {
     /// The instruction sentence, then the subject inside `<text>…</text>`. A `<text>` or `</text>` inside the subject
     /// is escaped so it cannot close the block.
     public static func userMessage(subject: String, instruction: RewriteInstruction) -> String {
-        let escaped = subject.replacingOccurrences(of: #"<\s*(/?)\s*text"#, with: "&lt;$1text",
+        let escaped = subject.replacingOccurrences(of: #"<[\s\p{Cf}]*(/?)[\s\p{Cf}]*text"#, with: "&lt;$1text",
                                                    options: [.regularExpression, .caseInsensitive])
         return "\(instruction.sentence)\n\n<text>\n\(escaped)\n</text>"
     }
@@ -66,8 +66,8 @@ public enum RewriteRequestBuilder {
     }
 }
 
-/// The model's answer: decoded from the one field, then cleaned so typing it can only add text, never press Return in a
-/// single-line field or type control characters.
+/// The model's answer: decoded from the one field, then cleaned so typing it can only add text: no tabs or other control
+/// characters, and line breaks only where the source has them (the executor types those as Shift-Return, never Return).
 public enum RewriteResult {
     public static func decode(fromClaude data: Data) throws(RewriteError) -> String {
         guard let root = object(data), root["stop_reason"] as? String != "refusal",
@@ -96,7 +96,6 @@ public enum RewriteResult {
     /// `answer` made safe to type in place of `source`.
     public static func clean(_ answer: String, source: String) throws(RewriteError) -> String {
         let sourceBreaks = source.contains(where: { lineBreaks.contains($0) })
-        let sourceTabs = source.contains("\t")
         var text = ""
         for c in answer {
             if lineBreaks.contains(c) { text.append("\n"); continue }
@@ -107,7 +106,8 @@ public enum RewriteResult {
         if !sourceBreaks {
             text = text.replacingOccurrences(of: #"\s*\n\s*"#, with: " ", options: .regularExpression)
         }
-        if !sourceTabs { text = text.replacingOccurrences(of: "\t", with: " ") }
+        // A typed tab would move focus; line breaks are typed as Shift-Return by the executor.
+        text = text.replacingOccurrences(of: "\t", with: " ")
         let body = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !body.isEmpty else { throw .noAnswer }
         // The source's own leading and trailing whitespace, so a selection that ended in a space still does.

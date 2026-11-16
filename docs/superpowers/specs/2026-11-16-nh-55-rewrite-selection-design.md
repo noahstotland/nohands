@@ -130,9 +130,10 @@ escaped, so the subject cannot close the block.
 `RewriteResult.decode(fromClaude:)` / `(fromOllama:)` read the one field; anything else (no field, not a string,
 malformed JSON, a refusal stop reason) is an error `the model gave no text`. Then `RewriteResult.clean(_:source:)`:
 
-- control characters other than `\n` and `\t` are removed;
+- control characters other than `\n` are removed; tabs always become spaces (a typed tab moves focus);
 - when the source has no line break, every line break in the answer becomes a space (so no Return is pressed in a
-  single-line field or a chat box); tabs become spaces unless the source has one;
+  single-line field or a chat box); when it has, the answer keeps its line breaks, and the executor types them as
+  Shift-Return between typed lines, never as text that would press a plain Return;
 - leading and trailing whitespace is trimmed to match the source's (a sentence without a trailing space stays without);
 - empty after cleaning: `the model gave no text`; over 2,000 characters: `rewrite too long: try a shorter selection`.
 
@@ -180,8 +181,9 @@ Selected text is private (`docs/agents/project.md` § Security overlays).
 - **Logged:** one unified-log line per rewrite with the backend, the instruction kind (`shorter`, `translate`,
   `custom`), character counts, milliseconds and token counts. Never the subject, the answer, the language or custom
   words. The spoken phrase is logged as every utterance is, with the private marker.
-- **Kept:** nothing. The subject and answer live in memory for the one request; the command log gets counts only;
-  nothing goes to disk. Anthropic's API data policy applies to what Claude receives, as for task steps.
+- **Kept:** the subject and answer live in memory for the one request and are never logged or written to disk. The
+  command log keeps what the user said (their own words for `rewrite that <words>` and the language for `translate` are
+  part of that) and the character counts. Anthropic's API data policy applies to what Claude receives, as for task steps.
 - **Model output is untrusted:** it is one string, cleaned as above, typed only into the field the user had focused and
   checked unchanged, never decoded as actions. The selection is wrapped and the prompt says it is content, but the real
   guard is that the only possible effect is typed text the user can undo.
@@ -241,7 +243,7 @@ in Finder still goes to the model.
 - **The field is read again before typing and must be unchanged**, else nothing is typed and the row says to say it
   again.
 - **The rewrite runs in the task slot**, so "stop" cancels it and other speech waits, as with a model task.
-- **The command log keeps counts only, never the text**, unlike typed dictation, because the answer is model text the
-  user has not read yet.
+- **The command log never keeps the selected text or the answer**, unlike typed dictation, because the answer is model
+  text the user has not read yet; it keeps what was said and the character counts.
 - **The done row shows the answer's first six words.** The HUD is on screen only.
 - **An answer equal to the selection types nothing** and the row says `no change`.
