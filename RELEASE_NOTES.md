@@ -1,5 +1,11 @@
 # Release notes
 
+## 2026-11-16 VS Code voice commands (NH-83) (#144)
+
+Merged 2026-11-16 1:33 pm UTC.
+
+Say `command palette`, `go to definition`, `toggle terminal`, `step over` and many more while VS Code is in front. They only work in VS Code and need its default keybindings.
+
 ## 2026-11-16 short README, reference pages and refreshed contributing guide (NH-119) (#139)
 
 Merged 2026-11-16 12:44 am UTC.
