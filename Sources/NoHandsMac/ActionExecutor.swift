@@ -162,6 +162,7 @@ extension OverlayController: OverlayPresenting {
     private let audio: any AudioOutputProbing
     private let mediaPoll: Duration
     private let volume: any VolumeControlling
+    let system: any SystemControlling
     /// How long a window gets to leave full screen after Escape before the window chord is pressed.
     private let fullScreenSettle: Duration
     /// The accessibility layer the media walk uses: one with a larger budget than `ax`, which does not reach a
@@ -190,7 +191,8 @@ extension OverlayController: OverlayPresenting {
                 audio: any AudioOutputProbing = AudioOutputProbe(), mediaPoll: Duration = .milliseconds(500),
                 mediaAX: (any ElementProviding)? = nil, exposureSettle: Duration = .milliseconds(600),
                 menus: any MenuReading = AXMenuReader(), volume: any VolumeControlling = CoreAudioVolume(),
-                fullScreenSettle: Duration = .milliseconds(800)) {
+                fullScreenSettle: Duration = .milliseconds(800), system: any SystemControlling = MacSystemControl()) {
+        self.system = system
         self.fullScreenSettle = fullScreenSettle
         self.menus = menus
         self.volume = volume
@@ -400,8 +402,9 @@ extension OverlayController: OverlayPresenting {
                 hideStaleOverlay()
             case .volume(let change):
                 if let failure = changeVolume(change) { return failure }
-            case .system:
-                return "system controls are not wired up yet"
+            case .system(let command):
+                if let failure = await runSystem(command) { return failure }
+                hideStaleOverlay()
             case .setValue, .typeInto, .clearField, .selectOption, .setChecked, .setExpanded, .focusElement, .scrollTo,
                  .scrollIn, .drag, .clickIn, .menuItem, .closeApp, .windowAction, .clipboardSet, .readClipboard,
                  .readValue, .readNotifications, .dismissNotifications, .waitFor:
