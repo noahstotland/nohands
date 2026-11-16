@@ -12,6 +12,8 @@ public struct Vocabulary: Codable, Equatable, Sendable {
 
     public static let maxEntries = 200
     public static let maxHearWords = 5
+    /// Spellings kept per entry; the rest are ignored.
+    public static let maxHearSpellings = 10
     public static let maxSayCharacters = 100
 
     public private(set) var entries: [Entry]
@@ -66,12 +68,14 @@ public struct Vocabulary: Codable, Equatable, Sendable {
 
     private static func clean(_ raw: Raw) -> Entry? {
         guard let say = raw.say?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !say.isEmpty, say.count <= maxSayCharacters, !hasStopWord(say) else { return nil }
+              !say.isEmpty, say.count <= maxSayCharacters, !hasStopWord(say),
+              // A control character left after the trim (newline, tab, escape) would be typed as a key.
+              !say.unicodeScalars.contains(where: { $0.properties.generalCategory == .control }) else { return nil }
         let hear = raw.hear.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { spelling in
             let words = split(spelling).map { $0.core }
             return !words.isEmpty && words.count <= maxHearWords && !words.contains("") && !hasStopWord(spelling)
         }
-        return hear.isEmpty ? nil : Entry(hear: hear, say: say)
+        return hear.isEmpty ? nil : Entry(hear: Array(hear.prefix(maxHearSpellings)), say: say)
     }
 
     // MARK: Matching

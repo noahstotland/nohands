@@ -177,6 +177,9 @@ import Foundation
         (#"{"vocabulary":[{"hear":"stop it","say":"X"},{"hear":"x","say":"never mind"},{"hear":"x","say":"Cancel"}]}"#, [], 3),
         (#"{"vocabulary":[{"hear":["halt","one","a b c d e f"],"say":"X"}]}"#, [.init(hear: ["one"], say: "X")], 0),
         (#"{"vocabulary":[{"hear":"x","say":"\#(String(repeating: "y", count: 101))"}]}"#, [], 1),
+        (#"{"vocabulary":[{"hear":"x","say":"a\nb"},{"hear":"x","say":"a\tb"},{"hear":"x","say":"a\u001bb"},{"hear":"x","say":"a\u0085b"}]}"#, [], 4),
+        (#"{"vocabulary":[{"hear":"x","say":"\n Raptors\t"},{"hear":"y","say":"👨‍👩‍👧"}]}"#, [.init(hear: ["x"], say: "Raptors"), .init(hear: ["y"], say: "👨‍👩‍👧")], 0),
+        (#"{"vocabulary":[{"hear":["stop",\#((1...12).map { "\"s\($0)\"" }.joined(separator: ","))],"say":"X"}]}"#, [.init(hear: (1...10).map { "s\($0)" }, say: "X")], 0),
         (#"{"vocabulary":[\#(many)]}"#, (0..<200).map { .init(hear: ["w\($0)"], say: "W") }, 3),
     ]
     for row in table {
