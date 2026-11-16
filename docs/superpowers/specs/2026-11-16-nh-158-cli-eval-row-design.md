@@ -1,7 +1,8 @@
 # NH-158: Add the eval row to the CLI docs table: Design
 
 **Date:** 2026-11-16  **Ticket:** [NH-158](https://github.com/noahstotland/nohands/issues/158)
-**Status:** Draft
+**Status:** Shipped
+**Shipped:** in PR #174, as specified
 
 ## Intent
 
