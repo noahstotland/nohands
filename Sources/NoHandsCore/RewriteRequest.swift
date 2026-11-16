@@ -93,26 +93,32 @@ public enum RewriteResult {
 
     private static let lineBreaks: Set<Character> = ["\n", "\r", "\r\n", "\u{2028}", "\u{2029}", "\u{85}"]
 
+    /// `text` with every line break as `\n`, controls dropped, and tabs as spaces (a typed tab would move focus).
+    private static func normalized(_ text: String) -> String {
+        var out = ""
+        for c in text {
+            if lineBreaks.contains(c) { out.append("\n"); continue }
+            if c == "\t" { out.append(" "); continue }
+            if c.unicodeScalars.contains(where: { $0.properties.generalCategory == .control }) { continue }
+            out.append(c)
+        }
+        return out
+    }
+
     /// `answer` made safe to type in place of `source`.
     public static func clean(_ answer: String, source: String) throws(RewriteError) -> String {
         let sourceBreaks = source.contains(where: { lineBreaks.contains($0) })
-        var text = ""
-        for c in answer {
-            if lineBreaks.contains(c) { text.append("\n"); continue }
-            // Controls other than the line break and tab are dropped.
-            if c.unicodeScalars.contains(where: { $0.properties.generalCategory == .control }) && c != "\t" { continue }
-            text.append(c)
-        }
+        var text = normalized(answer)
         if !sourceBreaks {
             text = text.replacingOccurrences(of: #"\s*\n\s*"#, with: " ", options: .regularExpression)
         }
-        // A typed tab would move focus; line breaks are typed as Shift-Return by the executor.
-        text = text.replacingOccurrences(of: "\t", with: " ")
+        // Line breaks are typed as Shift-Return by the executor.
         let body = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !body.isEmpty else { throw .noAnswer }
         // The source's own leading and trailing whitespace, so a selection that ended in a space still does.
-        let lead = String(source.prefix(while: \.isWhitespace))
-        let trail = String(source.reversed().prefix(while: \.isWhitespace).reversed())
+        // Normalized like the body, so a copied tab or carriage return never reaches the keyboard as Tab or Return.
+        let lead = normalized(String(source.prefix(while: \.isWhitespace)))
+        let trail = normalized(String(source.reversed().prefix(while: \.isWhitespace).reversed()))
         let out = lead + body + trail
         guard out.count <= RewriteSubject.maxCharacters else { throw .answerTooLong }
         return out

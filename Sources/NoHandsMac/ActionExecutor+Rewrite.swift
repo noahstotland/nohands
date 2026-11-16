@@ -55,6 +55,7 @@ extension ActionExecutor {
         // the breaks between them are Shift-Return, which adds a line without sending or submitting anything.
         let lines = cleaned.split(separator: "\n", omittingEmptySubsequences: false)
         for (n, line) in lines.enumerated() {
+            await Task.yield()   // the loop is on the main actor: without a suspension a spoken stop could never land
             if Task.isCancelled { return Self.cancelled }
             if n > 0 { try input.press(KeyChord(.return, [.shift])) }
             if !line.isEmpty { try input.type(String(line)) }

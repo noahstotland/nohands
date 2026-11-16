@@ -137,7 +137,8 @@ private func rewrite(_ spoken: String, focused: Bool = true) -> RewriteInstructi
         ("a\tb", "a b", .success("a b")), ("a\tb", "a\tb", .success("a b")),
         ("a\u{7}b\u{0}c\u{1B}", "x", .success("abc")),                                // controls dropped
         ("  Fine.  ", "Not fine.", .success("Fine.")), ("Fine.", "Not fine. ", .success("Fine. ")),
-        ("Fine.", " Not fine.", .success(" Fine.")), ("Fine.\n", "a b", .success("Fine.")),
+        ("Fine.", " Not fine.", .success(" Fine.")),
+        ("Fine.", "\tNot fine.\r\n", .success(" Fine.\n")),                      // edge whitespace normalized like the body ("Fine.\n", "a b", .success("Fine.")),
         ("", "a", .failure(.noAnswer)), (" \n\t ", "a", .failure(.noAnswer)), ("\u{7}", "a", .failure(.noAnswer)),
         (longAnswer, "a", .failure(.answerTooLong)), (String(repeating: "a", count: 2000), "a", .success(String(repeating: "a", count: 2000))),
     ]
