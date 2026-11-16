@@ -75,6 +75,7 @@ Optional file `~/.config/nohands/config.json`. Every key may be omitted, and cha
 - Audio never leaves your machine.
 - Only commands the grammar can't match go to Claude (or the local model, which stays on your Mac), as text, plus, only with `visionFallback` on, a screenshot of the focused window to Claude.
 - Without an API key nothing is sent off the Mac. The local backend talks only to Ollama on `127.0.0.1`.
+- Finished tasks are remembered as routes (goal, site and the names of what was clicked, never typed text or answers) in `~/.config/nohands/routes.json`, mode 600 on this Mac; say "forget all routes" to clear it.
 - There is no wake-word model, so other people or loud playback can be acted on. Say "go to sleep" before leaving the desk or during calls.
 
 The full list of what is sent is in [Privacy](docs/privacy.md).
