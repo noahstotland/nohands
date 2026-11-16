@@ -1,7 +1,8 @@
 # NH-82: Messages voice commands: Design
 
 **Date:** 2026-11-15  **Ticket:** [NH-82](https://github.com/noahstotland/nohands/issues/82)
-**Status:** Proposed
+**Status:** Shipped
+**Shipped:** in PR #PRN, as specified
 
 ## Intent
 
