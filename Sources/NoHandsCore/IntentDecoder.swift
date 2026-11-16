@@ -174,7 +174,7 @@ public enum IntentDecoder {
             guard let s = (o["surface"] as? String).flatMap(DesktopSurface.init(rawValue:)),
                   let name = nonBlank(o["target_name"]) else { return nil }
             return .clickIn(s, name: name)
-        case "menu_item": return nonBlank(o["target_name"]).map(Action.menuItem)
+        case "menu_item": return nonBlank(o["target_name"]).map { Action.menuItem($0) }
         case "close_app": return nonBlank(o["app_name"]).map(Action.closeApp)
         case "window":
             guard let op = (o["window_action"] as? String).flatMap(DesktopWindowOp.init(rawValue:)) else { return nil }

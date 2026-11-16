@@ -149,7 +149,7 @@ public enum RouteMemory {
         case .scrollIn(let t, _, _): return named("scroll_element", element(t))
         case .drag: return "drag"
         case .clickIn(let surface, let name): return named("click_in \(surface.rawValue)", name)
-        case .menuItem(let name): return named("menu_item", name)
+        case .menuItem(let name, _): return named("menu_item", name)
         case .closeApp(let app): return named("close_app", app)
         case .windowAction(let op, let app, _): return named("window \(op.rawValue)", app)
         case .clipboardSet: return "clipboard_set"

@@ -135,7 +135,9 @@ private func commands(_ list: [Doc]) -> (inout Doc) -> Void { { $0["commands"] =
 
 @Test func builtInPacksRoundTripThroughTheFormat() throws {
     for pack in AppPacks.all {
-        #expect(try PackFile.parse(PackFile.encode(pack), reservedIDs: []) == pack, Comment(rawValue: pack.id))
+        // Installed menu steps parse as exact, so compare what is written, not the flag.
+        let again = try PackFile.parse(PackFile.encode(pack), reservedIDs: [])
+        #expect(PackFile.encode(again) == PackFile.encode(pack) && again.id == pack.id, Comment(rawValue: pack.id))
     }
 }
 
@@ -160,5 +162,13 @@ private func commands(_ list: [Doc]) -> (inout Doc) -> Void { { $0["commands"] =
     ]
     for (phrase, app, expected) in cases {
         #expect(grammar.parse(phrase, frontmost: app) == expected, "\(phrase) in \(app ?? "no app")")
+    }
+}
+
+@Test func installedMenuStepsAreExactAndLookalikeTitlesAreRejected() throws {
+    #expect(try PackFile.parse(data()).phrases["archive note"] == [.menuItem("Archive Note", exact: true)])
+    for pack in AppPacks.all { for case .menuItem(_, let exact) in pack.phrases.values.flatMap({ $0 }) { #expect(!exact, Comment(rawValue: pack.id)) } }
+    for title in ["Arch\u{0456}ve Note", "File > Arch\u{0456}ve"] {
+        #expect(throws: PackError.self) { try PackFile.parse(data(commands([cmd(["archive note"], [["kind": "menu_item", "title": title]])]))) }
     }
 }

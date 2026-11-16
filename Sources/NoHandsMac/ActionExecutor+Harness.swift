@@ -132,14 +132,15 @@ extension ActionExecutor {
             guard let m = await harness.find(app: app, surface: surface, name: name) else { return "no '\(name)' in \(surface.rawValue)" }
             if m.disabled { return "'\(name)' is disabled" }
             return outcome(await harness.act(.click(ref: m.ref, button: .left, count: 1)))
-        case .menuItem(let name):
+        case .menuItem(let name, let exact):
             guard let last = MenuMatch.leaf(of: name) else { return "no menu item called \(name)" }
             // agent-desktop looks a title up in the whole menu bar and cannot keep to a submenu path, so a path of three or more
             // parts never falls back to it ("Mailbox > Go to Favorite Mailbox > Sent" must not find "Use This Mailbox For > Sent").
             let canFallBack = harness != nil && name.split(separator: ">").count < 3
-            // A model step (the task loop passes labels) presses only the exact title, natively or through agent-desktop; the
-            // user's own "menu <words>" may be closest.
-            switch pressMenuItem(name, exactOnly: labelSnapshot != nil) {
+            // A model step (the task loop passes labels) and an installed pack's step (`exact`) press only the exact title,
+            // natively or through agent-desktop; the user's own "menu <words>" and built-in packs may be closest.
+            let exactOnly = exact || labelSnapshot != nil
+            switch pressMenuItem(name, exactOnly: exactOnly) {
             case .pressed: return nil
             case .disabled(let title): return "menu item \(title) is disabled"
             case .refused(let title):
@@ -150,9 +151,9 @@ extension ActionExecutor {
             guard let m = await harness.find(app: ax.frontmostAppName(), surface: .menubar, name: last) else {
                 return "no menu item called \(last)"
             }
-            if MenuMatch.isAppleMenuTitle(m.name) { return "no menu item called \(last)" }
-            // agent-desktop falls back to a contains match; a model step may press only the title it named.
-            if labelSnapshot != nil, MenuMatch.plain(m.name) != MenuMatch.plain(last) { return "no menu item called \(last)" }
+            if MenuMatch.isAppleMenuTitle(m.name) || MenuMatch.isLookalike(m.name) { return "no menu item called \(last)" }
+            // agent-desktop falls back to a contains match; an exact step may press only the title it named.
+            if exactOnly, MenuMatch.plain(m.name) != MenuMatch.plain(last) { return "no menu item called \(last)" }
             if m.disabled { return "menu item \(last) is disabled" }
             return outcome(await harness.act(.click(ref: m.ref, button: .left, count: 1)))
         case .closeApp(let app):
