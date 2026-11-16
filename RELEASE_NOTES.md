@@ -1,5 +1,13 @@
 # Release notes
 
+## 2026-11-16 Safari voice commands (NH-77) (#170)
+
+Merged 2026-11-16 8:17 pm UTC.
+
+In Safari you can now say "new private window", "reopen closed tab", "address bar", "bookmark this page", "add to reading list", "show reading list", "show history", "show downloads", "tab overview", "reader", "view source" and more. Tab, reload, back, forward, find and zoom phrases work in Safari as before.
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
 ## 2026-11-16 pack marketplace, browse, install and update packs from a registry (NH-85) (#168)
 
 Merged 2026-11-16 7:54 pm UTC.
