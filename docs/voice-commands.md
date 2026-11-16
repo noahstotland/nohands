@@ -143,12 +143,34 @@ An app can have phrases that work only while it is in front and win on a shared 
 | Messages | `tapback`, `react` | Opens the tapback picker |
 | Messages | `close window` | Closes the Messages window (command-W) |
 | Messages | `delete conversation` | Opens Messages' own delete confirm |
+| Safari | `new window`, `new private window` | Opens a new window, or a new private window |
+| Safari | `reopen closed tab`, `reopen closed window` | Reopens whatever closed last, tab or window |
+| Safari | `address bar`, `focus address bar` | Focuses the address bar |
+| Safari | `bookmark this page`, `add bookmark` | Bookmarks the page |
+| Safari | `show bookmarks`, `hide bookmarks` | Toggles the bookmarks sidebar |
+| Safari | `edit bookmarks`, `all bookmarks` | Opens the bookmark editor |
+| Safari | `add to reading list`, `read later` | Adds the page to the Reading List |
+| Safari | `show reading list`, `hide reading list` | Toggles the Reading List sidebar |
+| Safari | `show history`, `history` | Shows your browsing history |
+| Safari | `show downloads`, `downloads` | Shows Safari's downloads |
+| Safari | `tab overview`, `show all tabs` | Toggles Tab Overview |
+| Safari | `show sidebar`, `hide sidebar` | Toggles the sidebar |
+| Safari | `reader`, `reader mode` | Toggles Reader |
+| Safari | `favorites bar`, `hide favorites bar` | Toggles the favorites bar |
+| Safari | `hard reload`, `reload from origin` | Reloads the page without the cache |
+| Safari | `view source`, `page source` | Shows the page source |
+| Safari | `print page`, `print this page` | Opens the print dialog |
+| Safari | `home page` | Opens your Safari home page |
+| Safari | `move tab to new window` | Moves the current tab into its own window |
+| Safari | `merge all windows` | Merges all Safari windows into one |
 
 The global `new tab`, `close tab`, `close window`, `next tab`, `previous tab`, `find`, `page up` and `page down` also work in Terminal. Closing a tab or window with a running command shows Terminal's own confirm, which NoHands does not answer (say `enter` or `escape`). `stop` never interrupts a shell command; say `interrupt`. `top of page` and `bottom of page` press command-up and command-down in Terminal too; its own `scroll to top` and `scroll to bottom` still win there.
 
 The global `find`, `next tab`, `previous tab` and `search for <name>` also work in Messages. `delete conversation` asks first, and NoHands does not answer that question for you (say `enter` or `escape`). Sending stays `enter` (or `press return`), so there is no `send` phrase. Pin and unpin are not phrases yet: say them as a request and the model handles them.
 
 In Mail, read, flag, junk and the mailbox list are toggles. `go to inbox` and `go to sent` open the first Favorites mailbox and the Sent favorite, so they need Inbox and Sent in the Favorites bar. `next message` and `previous message` move the selection while the message list has focus. The global `delete`, `undo`, `find`, `up` and `down` keep their meaning while writing a message.
+
+The global `new tab`, `close tab`, `close window`, `next tab`, `previous tab`, `reload`, `go back`, `go forward`, `find`, `zoom in`, `zoom out`, `actual size` and `tab 3` work in Safari as they do elsewhere. The sidebar, bookmarks sidebar, Reading List, Reader, favorites bar and Tab Overview phrases toggle, so `hide reader` on a page without Reader shows it. `view source` needs Safari's "Show features for web developers" setting, and `hard reload` may need it too. `reopen closed tab` reopens whatever closed last, a tab or a window. With Safari in front, `open downloads` shows Safari's downloads; `open the downloads folder` still opens the folder.
 
 In VS Code the global `save`, `find`, `close tab`, `close window`, `full screen`, `undo`, `redo`, `copy`, `paste` and `select all` work as elsewhere, and `new tab`, `next tab`, `previous tab`, `go back` and `go forward` do the VS Code thing (new file, next or previous editor, navigate back or forward). VS Code phrases that start with `find`, `go to` or `open` (`find references`, `go to line`, `open extensions`) win over the page search, the address bar and app opening while it is in front. `open settings` opens VS Code's settings while it is in front (`open system settings` still opens System Settings). Show, hide and toggle `sidebar` and `terminal` are all one toggle, so `hide sidebar` on a hidden side bar shows it. There is no spoken "stop debugging" (`stop` always halts NoHands): use the debug toolbar or `menu stop debugging`.
 
