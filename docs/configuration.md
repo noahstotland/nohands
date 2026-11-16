@@ -65,7 +65,7 @@ scripts/setup-local-model.sh            # picks a model by RAM
 scripts/setup-local-model.sh qwen2.5:3b-instruct   # or name one
 ```
 
-Installs Ollama with Homebrew if needed, starts it, pulls the model, smoke tests; safe to re-run. The menu can also download the model. Ollama from brew starts at login (`brew services`). The menu can also download the model.
+Installs Ollama with Homebrew if needed, starts it, pulls the model, smoke tests; safe to re-run. The menu can also download the model. Ollama from brew starts at login (`brew services`).
 
 - **Default model:** `qwen2.5:7b-instruct` with 12 GB of RAM or more, else `qwen2.5:3b-instruct` (free RAM about 5 GB and 2 GB).
 - **Backend:** `intentBackend` is `auto` (Claude when a key is set, else local), `claude`, `local` or `off`. The menu's **Model: …** item switches Claude and local with no restart; the Claude row is greyed out until a key is in effect. `auto` and `off` are file-only. Details: `docs/superpowers/specs/2026-11-09-nh-116-backend-toggle-design.md`.

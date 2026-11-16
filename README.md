@@ -55,11 +55,11 @@ Say these, one at a time:
 - `go to sleep`, then `wake up`
 - `stop`
 
-Say something the grammar does not know, such as "find a recipe for pancakes", and the model takes over. All phrases are in [Voice commands](docs/voice-commands.md).
+Say something the grammar does not know, such as "show me the weather in Toronto", and the model takes over. All phrases are in [Voice commands](docs/voice-commands.md).
 
 ## Claude or a local model
 
-With no setup the grammar works, and natural-language commands show "LLM off". To turn them on:
+The grammar works with no setup. Natural-language commands need a model: with no Claude key they use the local model, and show `local model not running: start Ollama` until it is set up. Pick one:
 
 - **Claude:** choose **Set Claude API key…** in the menu, paste your key and restart. The default model is `claude-haiku-5-5`.
 - **A local model:** run `scripts/setup-local-model.sh`. It installs Ollama with Homebrew if needed, pulls a model sized to your RAM and smoke tests it. Nothing leaves the Mac.
@@ -73,7 +73,7 @@ Optional file `~/.config/nohands/config.json`. Every key may be omitted, and cha
 ## Privacy
 
 - Audio never leaves your machine.
-- Only commands the grammar can't match go to Claude (or the local model, which stays on your Mac), as text.
+- Only commands the grammar can't match go to Claude (or the local model, which stays on your Mac), as text, plus, only with `visionFallback` on, a screenshot of the focused window to Claude.
 - Without an API key nothing is sent off the Mac. The local backend talks only to Ollama on `127.0.0.1`.
 - There is no wake-word model, so other people or loud playback can be acted on. Say "go to sleep" before leaving the desk or during calls.
 

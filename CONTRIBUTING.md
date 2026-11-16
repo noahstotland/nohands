@@ -48,10 +48,10 @@ A per-app command pack is an entry in `Sources/NoHandsCore/AppPack.swift` plus a
 
 - One change per pull request. Do not mix a fix with a refactor.
 - Name the branch `feat/nh-N-short-title` for the issue it closes.
-- Conventional commits: `feat:`, `fix:`, `docs:`, `infra:`, `chore:`. A scope in brackets names the target, for example `fix(mac):` or `feat(core):`.
+- Conventional commits: `feat:`, `fix:`, `docs:`, `infra:`, `chore:`. A scope in parentheses names the target, for example `fix(mac):` or `feat(core):`.
 - Open the PR from a branch, never from `main`. Link the issue it closes (`Closes #N`) and fill in the PR template.
 - Add a line to the voice command table in [docs/voice-commands.md](docs/voice-commands.md) in the same PR when you add a command phrase. Every listed phrase must keep working.
-- Issues carry an area label (`core`, `mac`, `cli`, `docs`) and a type label (`type:feature`, `type:improvement`, `type:bug`).
+- Issues carry an area label (`core`, `mac`, `cli`, `infra`, `docs`) and a type label (`type:feature`, `type:improvement`, `type:bug`).
 
 ## Tests
 
@@ -95,7 +95,7 @@ These cannot run in `swift test`. Run the ones your change touches, and say in t
 - [ ] Microphone: the app hears you and does not start without permission.
 - [ ] Accessibility: typing, clicking and reading UI elements work, and the menu shows the grant item when it is missing.
 - [ ] A real app: the command or task works in the frontmost app (Safari, Finder or the app you changed it for).
-- [ ] A running model: a natural-language command works with Claude or with Ollama, and "LLM off" still shows when neither is set up.
+- [ ] A running model: a natural-language command works with Claude or with Ollama, and "LLM off" shows when `intentBackend` is `off`.
 - [ ] "stop" halts a running task.
 
 Build and run the app with `scripts/bundle.sh && open build/NoHands.app`.

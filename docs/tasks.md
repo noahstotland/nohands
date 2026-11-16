@@ -26,6 +26,7 @@ With [agent-desktop](https://github.com/vercel-labs/agent-desktop) installed (`n
 - **Observation.** The model sees each field's value (`= "cats"`) and states (checked, selected, disabled, expanded, offscreen); an open sheet or menu is listed next (`Surface: sheet`).
 - **Actions** land on the element (a real click only if agent-desktop delivered nothing): `set_value`, `type_into`, `clear`, `select`, `check`/`uncheck`/`toggle`, `expand`/`collapse`, `focus`, `scroll_to`, `scroll_element`, `drag`, `menu_item` (exact title; works without agent-desktop), `click_in` (`dock`, `menubar`, `sheet`, `alert`, `popover`, `menu`, `menu_bar_extras`), `close_app` (request must say quit, exit, shut or close), `window`, `clipboard_set`, `read_clipboard`, `read_value`, `read_notifications`, `dismiss_notifications` (results under `Read:` next step), `wait` with `wait_for`.
 - **Fallback.** Chosen once per task; if agent-desktop cannot read the frontmost app (no window, another Space, minimized, locked screen) the task runs natively. Grammar commands and dictation never use it.
+
 The harness keys are in [Configuration](configuration.md#agent-desktop-harness-keys).
 
 **Claude vs. the local model.** Use Claude for tasks: with `qwen2.5:7b-instruct` the cold first request timed out, the warm one answered `ignore`, and no task has completed. A step costs 5 to 20 s on an M1 Pro (about 2,200 prompt tokens), hence `localLlmDeadlineMs` (30 s) and `localMaxObservedElements` (40). NoHands warms the model every 20 minutes while listening.
