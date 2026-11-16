@@ -1,8 +1,9 @@
 # NH-58: Open files, folders and recent documents by voice
 
 **Date:** 2026-11-16
-**Status:** Draft
+**Status:** Shipped
 **Ticket:** [NH-58](https://github.com/noahstotland/nohands/issues/58)
+**Shipped:** in PR #165, with differences: [as-built](../as-built/2026-11-16-nh-58-open-files.md)
 
 ## Goal
 
