@@ -61,13 +61,20 @@ public enum MenuMatch {
         return Dictionary(pairs.map { ($0.first!, $0.last!) }, uniquingKeysWith: { a, _ in a })
     }()
 
-    /// Whether a title is an ASCII title in disguise: its letters are not all ASCII, but its skeleton (NFKC, then
-    /// look-alike Cyrillic, Greek and Armenian letters mapped to Latin) is. "Sаve" with a Cyrillic а and fullwidth
-    /// "Ｑｕｉｔ" are; a French, Russian or Japanese title is not. Only letters count.
+    /// Whether a title holds an ASCII word in disguise, checked word by word so another accented or CJK word beside it
+    /// cannot hide it ("Sеnd Ägain" with a Cyrillic е). A word is a disguise when a non-ASCII letter in it reads as ASCII
+    /// (NFKC, then look-alike Cyrillic, Greek and Armenian letters mapped to Latin) and the word either also holds a
+    /// real ASCII letter or reads as ASCII all through. "Закрыть Safari", "Envoyer à nouveau" and "URLを開く" are not.
     public static func isLookalike(_ title: String) -> Bool {
-        let letters = title.filter(\.isLetter)
-        guard !letters.allSatisfy(\.isASCII) else { return false }
-        return letters.precomposedStringWithCompatibilityMapping.map { confusables[$0] ?? $0 }.allSatisfy { !$0.isLetter || $0.isASCII }
+        title.split(whereSeparator: { !$0.isLetter && !$0.isNumber }).contains { word in
+            var converted = 0, ascii = 0, other = 0
+            for ch in word where ch.isLetter {
+                if ch.isASCII { ascii += 1; continue }
+                let skeleton = String(ch).precomposedStringWithCompatibilityMapping.map { confusables[$0] ?? $0 }
+                if skeleton.allSatisfy({ !$0.isLetter || $0.isASCII }) { converted += 1 } else { other += 1 }
+            }
+            return converted > 0 && (ascii > 0 || other == 0)
+        }
     }
 
     /// Titles in the Apple menu: never pressed by name, whichever way the item is found.

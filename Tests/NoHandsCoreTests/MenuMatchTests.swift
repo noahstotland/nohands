@@ -63,6 +63,7 @@ private let entries = [
     let cases: [(String, Bool)] = [
         ("S\u{0430}ve", true), ("\u{FF31}\u{FF55}\u{FF49}\u{FF54}", true), ("\u{1D412}end", true), ("Save…", false), ("Emoji & Symbols", false),
         ("Enregistrer sous…", false), ("Envoyer \u{00E0} nouveau", false), ("Закрыть Safari", false), ("Safari を終了", false),
+        ("S\u{0435}nd \u{00C4}gain", true), ("S\u{0435}nd\u{3092}", true), ("URLを開く", false),
     ]
     for (title, expected) in cases { #expect(MenuMatch.isLookalike(title) == expected, Comment(rawValue: title)) }
 }
