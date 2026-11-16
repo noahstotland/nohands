@@ -110,6 +110,67 @@ import NoHandsCore
     /// How long a file list waits for a pick. Tests shorten it.
     var pickTimeout: Duration = FilePick.timeout
 
+    // MARK: - Spoken feedback (NH-60)
+
+    /// What NoHands says out loud. Changed live by the menu (`setSpeakLevel`) and by a voice phrase.
+    public private(set) var speakLevel: SpeakLevel
+    /// Called when a voice phrase changed the level, so the app can save it and refresh the menu.
+    public var onSpeakLevelChange: ((SpeakLevel) -> Void)?
+    /// Builds the speaker on the first line said; nil builds the real one (tests give a fake).
+    var speakerFactory: (@MainActor () -> any FeedbackSpeaking)?
+    /// Created on the first line said at a level other than off, and dropped when the level goes back to off.
+    private var speaker: (any FeedbackSpeaking)?
+    /// Rows whose finish line has been said, so a row is spoken once.
+    private var spokenRows: Set<Int> = []
+
+    /// Applies `level` from the next line on. Off cuts what is playing and drops the speaker.
+    public func setSpeakLevel(_ level: SpeakLevel) {
+        speakLevel = level
+        if level == .off { speaker?.cut(); speaker = nil }
+    }
+
+    /// A voice phrase asked for `level`: apply it, tell the app, and say so (the way to hear it work).
+    private func spokenFeedbackRequested(_ level: SpeakLevel) {
+        setSpeakLevel(level)
+        onSpeakLevelChange?(level)
+        if level != .off { speak(level == .all ? "Spoken feedback all." : "Spoken feedback on.", kind: "confirmation") }
+    }
+
+    /// Says what `cue` is at the current level, if anything. `row` marks a task-slot finish line, said once per row.
+    private func say(_ cue: FeedbackCue, kind: String, row: Int? = nil) {
+        guard speakLevel != .off, let line = SpokenFeedback.line(for: cue, level: speakLevel) else { return }
+        if let row, !spokenRows.insert(row).inserted { return }
+        speak(line, kind: kind)
+    }
+
+    /// Never in dictation (the words would be typed), sleep or while paused. Logged by kind and length; the words only
+    /// with the private marker.
+    private func speak(_ line: String, kind: String) {
+        guard !stopped, modeMachine.mode == .command, speakLevel != .off else { return }
+        let voice = speaker ?? speakerFactory?() ?? FeedbackSpeaker(capture: { [weak self] in self?.mic })
+        speaker = voice
+        voice.speak(line)
+        PipelineLog.info("spoke \(kind), \(line.count) chars", detail: line)
+    }
+
+    /// What the user said while NoHands may be talking. A stop phrase cuts the speech and carries on to act as it
+    /// always does, before any echo check. Anything else that repeats the spoken line is NoHands' own voice heard back:
+    /// dropped (true). Anything else cuts the speech and is handled.
+    private func ownVoiceHeard(_ text: String, trace: LatencyTrace) -> Bool {
+        guard let speaker else { return false }
+        if attention.isStop(text) { speaker.cut(); return false }
+        guard SelfEcho.isEcho(transcript: text, utteranceEnd: trace.speechEnd ?? .now, spoken: speaker.current) else {
+            speaker.cut()
+            return false
+        }
+        if let row = listeningID {   // the merge window showed the words: that row must not stay "listening"
+            overlay.report(row, text: text, status: .ignored(""))
+            listeningID = nil
+        }
+        PipelineLog.utterance(trace: trace, transcript: text, outcome: "ignore(own voice)", detail: "ignore(own voice)")
+        return true
+    }
+
     private func newPromptID() -> Int {
         nextPromptID += 1
         return nextPromptID
@@ -139,6 +200,7 @@ import NoHandsCore
                 observer: ScreenObserver? = nil, taskRunner: TaskRunner? = nil, harness: (any DesktopHarness)? = nil,
                 commandLog: CommandLogStore? = nil, routes: (any RouteStoring)? = nil) {
         self.config = config
+        self.speakLevel = config.speakFeedback
         self.commandLog = commandLog
         self.routes = routes
         self.attention = config.attentionGate
@@ -160,8 +222,10 @@ import NoHandsCore
         executor.onModeChange = { [weak self] mode in
             guard let self else { return }
             self.modeMachine.apply(mode: mode)
+            if mode != .command { self.speaker?.cut() }
             self.publishStatus()
         }
+        executor.onSpokenFeedbackChange = { [weak self] level in self?.spokenFeedbackRequested(level) }
     }
 
     /// Looks pack phrases up in `packs` from the next utterance on. An utterance already being routed finishes on the
@@ -433,6 +497,7 @@ import NoHandsCore
         lastTask = nil
         stopped = true
         closePick(.stopped(PipelineText.cancelled))
+        speaker?.cut()
         mic?.stop()
         mic = nil
         for t in tasks { t.cancel() }
@@ -485,6 +550,7 @@ import NoHandsCore
     /// Routes one transcript and executes it. Internal so tests can drive the pipeline without audio.
     /// Returns once the utterance is handled; an LLM utterance only starts a task (see `waitForTask()`).
     func handle(transcript text: String, trace: LatencyTrace) async {
+        if ownVoiceHeard(text, trace: trace) { return }
         // The words the merge window was showing become this prompt's row; otherwise it gets a new one.
         let job = Job(id: listeningID ?? newPromptID(), transcript: text, trace: trace, shown: listeningID != nil)
         listeningID = nil
@@ -589,6 +655,7 @@ import NoHandsCore
         // A stop phrase with no task running must not start one (held jobs never get here: busy() intercepts them).
         if case .resolveWithLLM(let phrase) = routing, StopWords.isStop(phrase) { routing = .ignore(reason: "stop") }
         if modeMachine.mode != modeBefore { lastTask = nil }   // a mode switch or sleep ends the conversation
+        if modeMachine.mode != .command { speaker?.cut() }
         var outcome = PipelineText.summary(routing)                    // public: kinds only
         var detail = PipelineText.summary(routing, detailed: true)     // private: with payloads
 
@@ -678,6 +745,7 @@ import NoHandsCore
             var next: PendingTask? = first
             while let pending = next {
                 next = nil
+                speaker?.cut()   // a new task starts: the last line is old news
                 applyPendingRunner()
                 if let how = pending.rewrite {
                     await runRewrite(pending, how)
@@ -719,9 +787,12 @@ import NoHandsCore
             result = .stopped; kind = "stopped"
         } else if let failure {
             overlay.report(id, text: text, status: .failed(failure))
+            say(.status(.failed(failure), carriesPrivateText: true), kind: "status", row: id)
             result = .failed(failure); kind = "failed"
         } else {
-            overlay.report(id, text: text, status: .done(report?.preview ?? ""))
+            let preview = PromptStatus.done(report?.preview ?? "")
+            overlay.report(id, text: text, status: preview)
+            say(.status(preview, carriesPrivateText: true), kind: "status", row: id)   // the rewritten text is private
             result = .done; kind = "done"
         }
         let action = report.map { "rewrote \($0.from) → \($0.to) characters" } ?? "rewrite \(how.kind)"
@@ -741,9 +812,12 @@ import NoHandsCore
                          relabel: @escaping (PromptStatus) -> PromptStatus? = { $0 }) async -> TaskOutcome {
         // The runner's step and finish lines go on this prompt's row.
         let id = pending.id, text = row ?? pending.transcript
-        runner.onStatus = { [weak self] status in
-            if let shown = relabel(status) { self?.overlay.report(id, text: text, status: shown) }
+        runner.onStatus = { [weak self, weak runner] status in
+            guard let shown = relabel(status), let self else { return }
+            self.overlay.report(id, text: text, status: shown)
+            self.say(.status(shown, carriesPrivateText: runner?.readText ?? true), kind: "status", row: id)
         }
+        runner.onPrompt = { [weak self] cue in self?.say(cue, kind: "prompt") }
         runner.onTrail = { [weak self] trail in self?.overlay.report(id, trail: trail) }
         let kind = resolverKind
         _ = await runner.takeUsage()   // a cancelled earlier task's calls must not count here
@@ -761,6 +835,7 @@ import NoHandsCore
         recordTask(pending, runner: runner, outcome: outcome, kind: kind, began: began,
                    durationMs: CommandLogEntry.milliseconds(clock.duration(to: .now)), usage: await runner.takeUsage())
         runner.onStatus = nil
+        runner.onPrompt = nil
         runner.onTrail = nil
         let sessionUsage = ClaudeUsageMeter.shared.total
         if kind == .claude, sessionUsage.calls > 0 { PipelineLog.info("claude: session \(sessionUsage.logFragment)") }
@@ -783,6 +858,7 @@ import NoHandsCore
         let id = pending.id, text = pending.transcript, total = macro.steps.count
         func at(_ n: Int, _ detail: String) -> String { "step \(n) of \(total) · \(detail)" }
         var result = PromptStatus.done("done · \(total) steps")
+        var sawText = false   // a step read text the user did not say: the finish line is private
         for (index, step) in macro.steps.enumerated() {
             let n = index + 1
             guard canExecute else { result = .stopped("stopped at step \(n) of \(total)"); break }
@@ -798,6 +874,7 @@ import NoHandsCore
             var failure: String?
             switch routing {
             case .execute(let actions):
+                if actions.contains(where: \.readsText) { sawText = true }
                 let began = Date(), clock = ContinuousClock.now
                 failure = await executor.execute(actions, files: .macro)
                 recordCommand(.grammar(date: began, phrase: phrase, action: PipelineText.describe(actions),
@@ -812,6 +889,7 @@ import NoHandsCore
                     let outcome = await runTask(task, runner: runner, row: text) { status in
                         if case .running(let detail) = status { .running(at(n, detail)) } else { nil }
                     }
+                    if runner.readText { sawText = true }
                     switch outcome {
                     case .done: break
                     case .stopped: failure = ActionExecutor.cancelled
@@ -833,6 +911,7 @@ import NoHandsCore
             if modeMachine.mode != .command { lastTask = nil; result = .failed(at(n, "changed mode")); break }
         }
         overlay.report(id, text: text, status: result)
+        say(.status(result, carriesPrivateText: sawText), kind: "status", row: id)
         let kind: String
         switch result {
         case .done: kind = "done"
