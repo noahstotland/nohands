@@ -1,5 +1,13 @@
 # Release notes
 
+## 2026-11-16 rewrite the selection with the model (NH-55) (#160)
+
+Merged 2026-11-16 4:38 pm UTC.
+
+You can now say "make that shorter", "fix the grammar" or "translate that to French" to have Claude (or your local model) rewrite the selected text in place; "undo" brings the original back. The selected text is sent to the model when you do.
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
 ## 2026-11-16 system controls by voice (NH-52) (#161)
 
 Merged 2026-11-16 4:34 pm UTC.
