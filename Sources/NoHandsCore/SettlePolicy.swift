@@ -32,7 +32,7 @@ public enum SettlePolicy: Int, Comparable, Sendable {
             // Return submits; Command, Control and Option chords can switch tabs, reload or go back.
             let loads = chord.key == .return || !chord.modifiers.isDisjoint(with: [.command, .control, .option])
             return loads ? .full : .oneLook
-        case .openURL, .openApp, .click, .search, .searchSite, .menuItem, .clickIn, .windowAction, .selectOption,
+        case .openURL, .openApp, .openFile, .click, .search, .searchSite, .menuItem, .clickIn, .windowAction, .selectOption,
              .setExpanded, .drag, .closeApp, .closeTab, .closeWindow, .selectTab, .goToTab, .closeOtherTabs, .pressMouse, .releaseMouse,
              .showGrid, .zoomGrid, .showLabels, .hideOverlay, .setMode, .dismissNotifications:
             return .full
