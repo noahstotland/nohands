@@ -1,5 +1,11 @@
 # Release notes
 
+## 2026-11-16 Messages voice commands (NH-82) (#143)
+
+Merged 2026-11-16 2:53 pm UTC.
+
+In Messages you can now say "new message", "next conversation", "search", "show details", "mark as unread", "emoji", "tapback", "close window" and "delete conversation". Nothing changes in other apps.
+
 ## 2026-11-16 harness minors from the PR #2 review (NH-7) (#147)
 
 Merged 2026-11-16 2:36 pm UTC.
