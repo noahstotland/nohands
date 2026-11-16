@@ -143,15 +143,23 @@ An app can have phrases that work only while it is in front and win on a shared 
 | Messages | `tapback`, `react` | Opens the tapback picker |
 | Messages | `close window` | Closes the Messages window (command-W) |
 | Messages | `delete conversation` | Opens Messages' own delete confirm |
-| Chrome | `new window`, `new incognito window`, `incognito` | Opens a window or a private window |
-| Chrome | `reopen closed tab`, `duplicate tab`, `pin tab`, `unpin tab`, `move tab to new window` | Restores, duplicates, pins or moves the tab |
-| Chrome | `search tabs`, `hard reload`, `home page`, `find next`, `find previous` | Opens tab search, reloads without cache, goes home, steps through find matches |
-| Chrome | `view source`, `developer tools`, `javascript console` | Opens the page source, DevTools or the console |
-| Chrome | `print page`, `save page` | Opens the print or save dialog |
-| Chrome | `bookmark this page`, `bookmark all tabs`, `bookmarks bar`, `bookmark manager` | Adds bookmarks, toggles the bar, opens the manager |
-| Chrome | `history`, `downloads`, `extensions`, `settings` | Opens that Chrome page |
-| Chrome | `delete browsing data` | Opens Chrome's delete dialog (Delete Browsing Data… menu item) |
-| Chrome | `address bar`, `focus address bar` | Focuses the address bar (command-L) |
+| Chrome | `new window`, `new incognito window`, `incognito window`, `incognito` | Opens a window or a private window |
+| Chrome | `reopen closed tab`, `reopen tab`, `reopen last tab`, `restore tab` | Reopens the last closed tab |
+| Chrome | `duplicate tab`, `duplicate this tab`, `pin tab`, `pin this tab`, `unpin tab`, `unpin this tab` | Duplicates, pins or unpins the tab |
+| Chrome | `move tab to new window`, `move tab to a new window`, `move this tab to a new window` | Moves the tab to its own window |
+| Chrome | `search tabs`, `tab search` | Opens tab search |
+| Chrome | `hard reload`, `force reload`, `hard refresh` | Reloads without the cache |
+| Chrome | `home page`, `go home` | Goes to the home page |
+| Chrome | `find next`, `find previous` | Steps through the find matches |
+| Chrome | `view source`, `view page source`, `page source`, `developer tools`, `dev tools`, `devtools`, `javascript console` | Opens the page source, DevTools or the console |
+| Chrome | `print page`, `print this page`, `save page`, `save page as`, `save this page` | Opens the print or save dialog |
+| Chrome | `bookmark this page`, `bookmark this tab`, `bookmark page`, `add bookmark`, `bookmark all tabs` | Bookmarks the tab, or all tabs |
+| Chrome | `bookmarks bar`, `show bookmarks bar`, `hide bookmarks bar`, `toggle bookmarks bar` | Toggles the bookmarks bar |
+| Chrome | `bookmark manager`, `bookmarks`, `manage bookmarks` | Opens the bookmark manager |
+| Chrome | `history`, `show history`, `browsing history`, `downloads`, `show downloads` | Opens history or downloads |
+| Chrome | `extensions`, `show extensions`, `manage extensions`, `settings`, `chrome settings`, `preferences` | Opens extensions or Chrome's settings |
+| Chrome | `delete browsing data` | Opens Chrome's Delete Browsing Data dialog |
+| Chrome | `address bar`, `focus address bar`, `location bar`, `url bar` | Focuses the address bar (command-L) |
 
 The global `new tab`, `close tab`, `close window`, `next tab`, `previous tab`, `find`, `page up` and `page down` also work in Terminal. Closing a tab or window with a running command shows Terminal's own confirm, which NoHands does not answer (say `enter` or `escape`). `stop` never interrupts a shell command; say `interrupt`. `top of page` and `bottom of page` press command-up and command-down in Terminal too; its own `scroll to top` and `scroll to bottom` still win there.
 

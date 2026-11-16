@@ -21,9 +21,8 @@ private let chrome = "com.google.Chrome"
                    "open system settings", "close the other tabs", "tab 3", "stop", "cancel"] {
         #expect(grammar.parse(phrase, frontmost: chrome) == grammar.parse(phrase, frontmost: nil), Comment(rawValue: phrase))
     }
-    for phrase in ["open chrome", "open safari"] {
-        guard case .openApp = grammar.parse(phrase, frontmost: chrome)?.first else { Issue.record("\(phrase)"); continue }
-    }
+    #expect(grammar.parse("open chrome", frontmost: chrome) == [.openApp("chrome")])
+    #expect(grammar.parse("open safari", frontmost: chrome) == [.openApp("safari")])
     for phrase in AppPack.chrome.phrases.keys {
         #expect(!StopWords.isStop(phrase) && !phrase.split(separator: " ").contains("stop"), Comment(rawValue: phrase))
     }
