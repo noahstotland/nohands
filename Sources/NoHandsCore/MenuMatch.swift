@@ -78,7 +78,10 @@ public enum MenuMatch {
     /// A word of such letters alone ("Сору") marks it unless the title shows the letters are really that script: a
     /// letter of the same script that does not look Latin ("О программе Safari", "και στιλ"). "Закрыть Safari",
     /// "Envoyer à nouveau" and "URLを開く" are not disguises.
-    public static func isLookalike(_ title: String) -> Bool {
+    public static func isLookalike(_ rawTitle: String) -> Bool {
+        // Invisible joiners (zero-width joiner, combining grapheme joiner) cannot hide a letter from the table.
+        var title = ""
+        title.unicodeScalars.append(contentsOf: rawTitle.unicodeScalars.filter { !$0.properties.isDefaultIgnorableCodePoint })
         func converts(_ ch: Character) -> Bool {
             String(ch).precomposedStringWithCompatibilityMapping.map { confusables[$0] ?? $0 }.allSatisfy { !$0.isLetter || $0.isASCII }
         }
