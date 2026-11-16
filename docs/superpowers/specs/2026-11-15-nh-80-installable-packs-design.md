@@ -1,7 +1,8 @@
 # NH-80: Installable app packs: Design
 
 **Date:** 2026-11-15  **Ticket:** [NH-80](https://github.com/noahstotland/nohands/issues/80)
-**Status:** Draft
+**Status:** Shipped
+**Shipped:** in PR #142, with differences: [as-built](../as-built/2026-11-15-nh-80-installable-packs.md)
 
 ## Intent
 
