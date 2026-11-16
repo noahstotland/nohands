@@ -46,11 +46,47 @@ extension ActionExecutor {
                 guard ax.open(url: pane.url, appNamed: Self.systemSettings) != nil else { return "can't open \(Self.systemSettings)" }
             case .emptyTrash:
                 return await emptyTrash()
+            case .appearance(let appearance):
+                return await setAppearance(appearance)
+            case .doNotDisturb(let on):
+                return await runDoNotDisturb(on: on)
             }
             return nil
         } catch {
             return "couldn't post input event"
         }
+    }
+
+    /// "dark mode", "light mode", "toggle dark mode": the one fixed script, through System Events. The Automation prompt is
+    /// only started here, never awaited: this action runs inline, so waiting on the user's answer would hold `stop` and
+    /// `press enter` behind it. The speaker says the phrase again after allowing.
+    private func setAppearance(_ appearance: Appearance) async -> String? {
+        var step = AutomationAccess.step(status: system.automationStatus())
+        if step == .startSystemEvents {
+            guard await system.startSystemEvents() else { return AutomationAccess.startFailedLine }
+            if Task.isCancelled { return Self.cancelled }
+            step = AutomationAccess.step(status: system.automationStatus())
+        }
+        if step == .ask { system.requestAutomation() }
+        if let line = AutomationAccess.line(for: step) { return line }
+        let result = await system.runAppearance(appearance)
+        switch AutomationAccess.outcome(result) {
+        case .success(let now):
+            addResult(AutomationAccess.doneLine(now))
+            return nil
+        case .failure(let failure):
+            return failure.line
+        }
+    }
+
+    /// "do not disturb on" and "off": the user's shortcut of that fixed name.
+    private func runDoNotDisturb(on: Bool) async -> String? {
+        let result = await system.runShortcut(DoNotDisturb.shortcutName(on: on))
+        var list: String?
+        if case .exited(0, _) = result {} else if result != .timedOut { list = await system.listShortcuts() }
+        if let line = DoNotDisturb.failure(result, on: on, list: list) { return line }
+        addResult(DoNotDisturb.doneLine(on: on))
+        return nil
     }
 
     /// Finder's own `Empty Trash…` menu item, which asks "Are you sure…?" for the speaker to answer (`enter` or

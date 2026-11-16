@@ -21,6 +21,7 @@ public enum SettingsPane: String, Equatable, Codable, Sendable, CaseIterable {
     case notifications = "com.apple.Notifications-Settings.extension"
     case battery = "com.apple.Battery-Settings.extension"
     case general = "com.apple.systempreferences.GeneralSettings"
+    case automation = "com.apple.preference.security?Privacy_Automation"
 
     /// The address System Settings opens at this pane. Built here from the fixed table, never from speech.
     public var url: URL { URL(string: "x-apple.systempreferences:" + rawValue)! }
@@ -32,11 +33,15 @@ public enum SettingsPane: String, Equatable, Codable, Sendable, CaseIterable {
         "privacy": .privacy, "privacy and security": .privacy, "security": .privacy,
         "login items": .loginItems, "startup items": .loginItems,
         "notifications": .notifications, "notification": .notifications, "battery": .battery, "general": .general,
+        "automation": .automation, "automation settings": .automation,
     ]
 
     /// The pane the words name (already normalized); nil for an unknown or empty name, never a guess.
     public static func parse(_ words: [String]) -> SettingsPane? { spoken[words.joined(separator: " ")] }
 }
+
+/// What "dark mode", "light mode" and "toggle dark mode" set. The raw value is the one script argument, never speech.
+public enum Appearance: String, Equatable, Codable, Sendable { case dark, light, toggle }
 
 /// A system chore by voice ("lock screen", "screenshot", "next space", "open bluetooth settings", "empty trash").
 /// Grammar only; the model has no kind for it.
@@ -50,6 +55,10 @@ public enum SystemCommand: Equatable, Codable, Sendable {
     case notificationCenter
     case openSettings(SettingsPane)
     case emptyTrash
+    /// Through System Events (needs the Automation permission, asked the first time).
+    case appearance(Appearance)
+    /// Runs the user's `NoHands Do Not Disturb On` or `Off` shortcut.
+    case doNotDisturb(Bool)
 }
 
 /// What "empty trash" needs from Finder's "Show warning before emptying the Trash" setting. With it off, Finder erases

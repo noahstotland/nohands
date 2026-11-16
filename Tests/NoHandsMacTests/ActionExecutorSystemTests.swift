@@ -20,6 +20,13 @@ private final class FakeSystem: SystemControlling {
     func isScreenCaptureUIRunning() -> Bool { looks.withLock { $0 += 1; return $0 == 1 ? captureUIBefore : captureUI } }
     func pressMenuBarClock() -> Bool { calls.withLock { $0.append("clock") }; return clock }
     func finderWarnsOnEmptyTrash() -> Bool? { warns }
+    // Appearance and Do Not Disturb need the real system (osascript, shortcuts, the permission check): manual checks.
+    func automationStatus() -> Int { 0 }
+    func requestAutomation() {}
+    func startSystemEvents() async -> Bool { true }
+    func runAppearance(_ appearance: Appearance) async -> ChildResult { .exited(0, "true") }
+    func runShortcut(_ name: String) async -> ChildResult { .exited(0, "") }
+    func listShortcuts() async -> String? { nil }
 }
 
 @MainActor private func system(_ fake: FakeSystem = FakeSystem(), menus: [MenuEntry] = [])
