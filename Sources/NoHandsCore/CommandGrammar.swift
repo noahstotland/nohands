@@ -362,7 +362,8 @@ public struct CommandGrammar: Sendable {
             let spoken = the(rest).dropFirst(2)
             let name = Array(spoken.filter { !fillers.contains($0) })
             if let pane = SettingsPane.parse(name) { return .pane(pane) }
-            guard name.count <= 4, name.allSatisfy({ !compoundMarkers.contains($0) }) else { return nil }
+            // The marker check sees the name before fillers go, or "bluetooth to connect airpods" would lose its "to".
+            guard name.count <= 4, spoken.allSatisfy({ !compoundMarkers.contains($0) }) else { return nil }
             return .unknown(name.joined(separator: " "))
         }
         guard rest.count >= 2, rest.last == "settings" else { return nil }

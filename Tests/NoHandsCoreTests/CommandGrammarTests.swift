@@ -401,7 +401,7 @@ let g = CommandGrammar()
     #expect(g.rejection("open settings for") != nil)
     #expect(g.rejection("open settings for bluetooth") == nil && g.rejection("open system settings") == nil)
     // A compound or long request goes to the model as before, with no rejection.
-    for said in ["open settings for bluetooth and turn it off", "open settings for slack and type hello", "open settings for slack bluetooth wifi sound off"] {
+    for said in ["open settings for bluetooth and turn it off", "open settings for slack and type hello", "open settings for slack bluetooth wifi sound off", "open settings for bluetooth to connect airpods", "open settings for sound to fifty"] {
         #expect(g.parse(said) == nil && g.rejection(said) == nil, "\(said)")
     }
 }
