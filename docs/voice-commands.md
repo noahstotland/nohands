@@ -74,5 +74,17 @@ An app can have phrases that work only while it is in front and win on a shared 
 | Terminal | `split pane`, `close pane` | Splits the window, or closes the split pane |
 | Terminal | `bigger font`, `smaller font`, `default font size` | Changes the font size |
 | Terminal | `interrupt`, `cancel command` | Sends control-C to the running command |
+| VS Code | `command palette`, `quick open`, `go to line` | Opens the palette, the file picker, or the line box (then say `type 42`, `enter`) |
+| VS Code | `go to definition`, `find references` | Jumps to the definition, or peeks the references |
+| VS Code | `next editor`, `previous editor`, `close editor`, `split editor` | Moves along, closes or splits editors |
+| VS Code | `toggle sidebar`, `explorer`, `source control`, `extensions`, `problems` | Shows the side bar or a view in it |
+| VS Code | `save all`, `format document`, `rename symbol`, `toggle comment` | Edits the file |
+| VS Code | `move line up`, `move line down`, `duplicate line` | Moves or copies the current line |
+| VS Code | `find in files`, `replace`, `replace in files` | Searches, or replaces in the file or the project |
+| VS Code | `toggle terminal`, `new terminal` | Shows the integrated terminal, or opens a new one |
+| VS Code | `start debugging`, `toggle breakpoint`, `step over`, `step into`, `step out` | Drives the debugger |
+| VS Code | `zen mode`, `new window`, `settings` | Window and settings |
 
 The global `new tab`, `close tab`, `close window`, `next tab`, `previous tab`, `find`, `page up` and `page down` also work in Terminal. Closing a tab or window with a running command shows Terminal's own confirm, which NoHands does not answer (say `enter` or `escape`). `stop` never interrupts a shell command; say `interrupt`.
+
+In VS Code the global `save`, `find`, `close tab`, `close window`, `full screen`, `undo`, `redo`, `copy`, `paste` and `select all` work as elsewhere, and `new tab`, `next tab`, `previous tab`, `go back` and `go forward` do the VS Code thing (new file, next or previous editor, navigate back or forward). `open settings` opens VS Code's settings while it is in front (`open system settings` still opens System Settings). Show, hide and toggle `sidebar` and `terminal` are all one toggle, so `hide sidebar` on a hidden side bar shows it. There is no spoken "stop debugging" (`stop` always halts NoHands): use the debug toolbar or `menu stop debugging`.
