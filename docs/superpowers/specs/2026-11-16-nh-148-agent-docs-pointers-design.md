@@ -2,7 +2,7 @@
 
 **Date:** 2026-11-16  **Ticket:** [NH-148](https://github.com/noahstotland/nohands/issues/148)
 **Status:** Shipped
-**Shipped:** in PR #178, with a small difference: the Extra checks trigger files are paired with their own doc (see PR)
+**Shipped:** in PR #178, as specified
 
 ## Intent
 
@@ -17,7 +17,7 @@ Three lines, pointer text only:
 | File | Today | After |
 |---|---|---|
 | `docs/agents/project.md` § Product rules | "Every command phrase in the `README.md` voice command table keeps working." | "Every command phrase in the voice command table in `docs/voice-commands.md` keeps working." (rest of the line unchanged) |
-| `docs/agents/project.md` § Docs check, Extra checks | "the voice command and CLI subcommand tables in `README.md` when the diff touches ...; the Configuration section in `README.md` when it touches `AppConfig.swift`." | "the voice command table in `docs/voice-commands.md` and the CLI subcommand table in `docs/cli.md` when the diff touches ...; `docs/configuration.md` when it touches `AppConfig.swift`." (same trigger files) |
+| `docs/agents/project.md` § Docs check, Extra checks | "the voice command and CLI subcommand tables in `README.md` when the diff touches ...; the Configuration section in `README.md` when it touches `AppConfig.swift`." | "the voice command table in `docs/voice-commands.md` when the diff touches `CommandGrammar.swift`; the CLI subcommand table in `docs/cli.md` when it touches `Sources/nohands-cli/main.swift`; `docs/configuration.md` when it touches `AppConfig.swift`." (same trigger files, each paired with its own doc) |
 | `AGENTS.md` § Workflow | "Key setup: `README.md` § Configuration." | "Key setup: `docs/configuration.md`." |
 
 Each new target was checked: `docs/voice-commands.md` holds the `Say | Does` table, `docs/cli.md` the `Subcommand | Does` table, and `docs/configuration.md` the config key table with `anthropicAPIKey`.
