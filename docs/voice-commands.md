@@ -143,10 +143,25 @@ An app can have phrases that work only while it is in front and win on a shared 
 | Messages | `tapback`, `react` | Opens the tapback picker |
 | Messages | `close window` | Closes the Messages window (command-W) |
 | Messages | `delete conversation` | Opens Messages' own delete confirm |
+| Finder | `new window`, `new folder` | Opens a new Finder window, or a new folder |
+| Finder | `go to downloads`, `go to my documents`, `go home` | Moves the front window to that folder (also desktop, applications, iCloud Drive) |
+| Finder | `go to folder` | Opens Go to Folder (then `type ~/Projects`, `enter`) |
+| Finder | `go up` | Goes up a folder |
+| Finder | `icon view`, `list view`, `column view`, `gallery view` | Switches the view |
+| Finder | `show sidebar`, `show path bar` | Toggles the sidebar, or the path bar |
+| Finder | `get info`, `open`, `quick look` | Gets info on, opens, or previews the selection |
+| Finder | `duplicate`, `make alias`, `rename` | Duplicates, makes an alias of, or starts renaming the selection |
+| Finder | `move here` | Moves the copied files into this folder |
+| Finder | `move to trash`, `put back` | Trashes the selection (`undo` brings it back), or puts it back from the Trash |
+| Finder | `show hidden files` | Toggles hidden files |
+| Finder | `search` | Focuses the search field |
+| Finder | `close window` | Closes the front Finder window |
 
 The global `new tab`, `close tab`, `close window`, `next tab`, `previous tab`, `find`, `page up` and `page down` also work in Terminal. Closing a tab or window with a running command shows Terminal's own confirm, which NoHands does not answer (say `enter` or `escape`). `stop` never interrupts a shell command; say `interrupt`. `top of page` and `bottom of page` press command-up and command-down in Terminal too; its own `scroll to top` and `scroll to bottom` still win there.
 
 The global `find`, `next tab`, `previous tab` and `search for <name>` also work in Messages. `delete conversation` asks first, and NoHands does not answer that question for you (say `enter` or `escape`). Sending stays `enter` (or `press return`), so there is no `send` phrase. Pin and unpin are not phrases yet: say them as a request and the model handles them.
+
+In Finder the global `new tab`, `close tab`, `go back`, `go forward`, `copy`, `paste`, `select all`, `undo` and `find` work as elsewhere. `go to <place>` changes the front window, while `open the downloads folder` still opens that folder as before. The sidebar, path bar, hidden files and Quick Look phrases toggle. `move to trash` is undone by `undo` or `put back`, `rename` only starts editing (say `enter` to finish), and `empty trash` still asks Finder's own question.
 
 In Mail, read, flag, junk and the mailbox list are toggles. `go to inbox` and `go to sent` open the first Favorites mailbox and the Sent favorite, so they need Inbox and Sent in the Favorites bar. `next message` and `previous message` move the selection while the message list has focus. The global `delete`, `undo`, `find`, `up` and `down` keep their meaning while writing a message.
 
