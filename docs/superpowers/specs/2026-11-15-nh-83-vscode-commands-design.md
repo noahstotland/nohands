@@ -1,7 +1,8 @@
 # NH-83: VS Code voice commands: Design
 
 **Date:** 2026-11-15  **Ticket:** [NH-83](https://github.com/noahstotland/nohands/issues/83)
-**Status:** Proposed
+**Status:** Shipped
+**Shipped:** in PR #144, as specified
 
 ## Intent
 
