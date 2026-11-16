@@ -38,7 +38,7 @@ Input is lowercased and stripped of `.,!?`. In a number slot "to"/"too" mean 2 a
 | `spell <tokens>` | `.typeText(string)`: letters, letter-name homophones, NATO words, digits, `space`/`dash`/`dot`/`underscore`/`at sign`; `capital` uppercases the next letter. One unknown token or a dangling `capital` types nothing |
 | `press <modifiers…> <key>` e.g. "press command shift s" | `.pressKey(KeyChord)` |
 | `enter`, `tab`, `escape`, `space`, `delete` / `backspace`, `forward delete`, `up`/`down`/`left`/`right` | `.pressKey` of that key |
-| `undo`, `redo`, `copy`, `paste`, `cut`, `select all`, `save`, `find`, `new tab`, `close tab`, `close window`, `quit app`, `switch app`, `spotlight`, `delete word` | the standard ⌘ shortcut (`redo` = ⇧⌘Z, `switch app` = ⌘⇥, `spotlight` = ⌘␣, `delete word` = ⌥⌫); `delete line` and other spoken text edits are in the README voice commands and the NH-54 spec |
+| `undo`, `redo`, `copy`, `paste`, `cut`, `select all`, `save`, `find`, `new tab`, `close tab`, `close window`, `quit app`, `switch app`, `spotlight`, `delete word` | the standard ⌘ shortcut (`redo` = ⇧⌘Z, `switch app` = ⌘⇥, `spotlight` = ⌘␣, `delete word` = ⌥⌫); `delete line` and other spoken text edits are in the voice commands page (`docs/voice-commands.md`) and the NH-54 spec |
 | `find <words>`, `scroll to <words>` | `.findOnPage(words, movePointer: true)`; bare `find` stays ⌘F, and `scroll to` an end of the page or a direction goes to the LLM |
 | `click` | `.click(.cursor)` left, count 1 |
 | `double click`, `triple click` | count 2 / 3 |
@@ -60,7 +60,7 @@ Input is lowercased and stripped of `.,!?`. In a number slot "to"/"too" mean 2 a
 
 Spoken tokens → characters: `period` `.`, `comma` `,`, `question mark` `?`, `exclamation point|mark` `!`, `colon` `:`, `semicolon` `;`, `dash` ` - `, `hyphen` `-`, `open quote` `"`, `close quote` `"`, `open paren` `(`, `close paren` `)`, `new line` `\n`, `new paragraph` `\n\n`. No space before `.,?!:;)`; space after them when followed by a word; capitalize the first letter of the utterance and of any word following `.`, `?`, `!`, or a newline. Across utterances, `DictationSession` inserts a leading space when the previous insertion ended in a word character and the new text starts with one. Parakeet already emits punctuation and casing; the formatter preserves it and only adds what is spoken.
 
-The README voice table is the user-facing list; the table above is the grammar contract.
+The voice command table in `docs/voice-commands.md` is the user-facing list; the table above is the grammar contract.
 
 - `spell` takes letters, NATO words, digits and symbol words; one unknown token or a dangling `capital` types nothing.
 - `find <words>` and `scroll to <words>` find on the page; bare `find` is ⌘F.
@@ -85,7 +85,7 @@ The README voice table is the user-facing list; the table above is the grammar c
 
 ## 8. Configuration
 
-`~/.config/nohands/config.json`, all keys optional (the README lists them); `ANTHROPIC_API_KEY` wins over `anthropicAPIKey`. Defaults: `asrModelVersion` `v2` (English; `v3` multilingual), `silenceMs` 1000 (raised from 350 to allow pauses mid-command), `earlySilenceMs` 350 (ends a complete grammar command or "stop" early; 0 = off), grid 10×8, `moveStepPx` 50, `scrollStepLines` 5.
+`~/.config/nohands/config.json`, all keys optional (`docs/configuration.md` lists them); `ANTHROPIC_API_KEY` wins over `anthropicAPIKey`. Defaults: `asrModelVersion` `v2` (English; `v3` multilingual), `silenceMs` 1000 (raised from 350 to allow pauses mid-command), `earlySilenceMs` 350 (ends a complete grammar command or "stop" early; 0 = off), grid 10×8, `moveStepPx` 50, `scrollStepLines` 5.
 
 ## 9. Latency budget (grammar path)
 

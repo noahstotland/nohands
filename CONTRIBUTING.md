@@ -1,15 +1,30 @@
 # Contributing to NoHands
 
-Thanks for helping. NoHands is a macOS menu-bar app that controls the Mac by voice. Read [README.md](README.md) first for how it works, what it needs and how it is configured.
+Thanks for helping. NoHands is a macOS menu-bar app that controls the Mac by voice. Read [README.md](README.md) first for how it works and what it needs. Every voice phrase, config key and CLI subcommand is listed under [docs/](docs/voice-commands.md).
 
-## Build and test
+## Build, test and run
 
 ```bash
 swift build
 swift test
+scripts/bundle.sh && open build/NoHands.app
 ```
 
 `swift test` must pass on a Mac with no permissions granted and no Ollama running. A test that needs the microphone, Accessibility, a real app or a running model is not a unit test (see the manual checks below).
+
+`scripts/bundle.sh` builds the menu-bar app and warns when your branch is behind `origin/main`. Every ad-hoc rebuild is a new app to macOS, so you grant Microphone and Accessibility again each time. Sign with a stable identity to avoid that:
+
+```bash
+CODESIGN_IDENTITY="Apple Development: Your Name (TEAMID)" scripts/bundle.sh
+```
+
+Watch the app's log while you try a change:
+
+```bash
+log stream --predicate 'subsystem == "dev.nohands.app"'
+```
+
+Transcripts log as `<private>`. Run `build/NoHands.app/Contents/MacOS/NoHands` from a terminal to see full lines. More in [docs/using-nohands.md](docs/using-nohands.md).
 
 All targets build in Swift 6 language mode with strict concurrency. Do not weaken it: no `@unchecked Sendable`, no `@preconcurrency` imports. Fix the isolation instead.
 
@@ -20,14 +35,23 @@ All targets build in Swift 6 language mode with strict concurrency. Do not weake
 | `Sources/NoHandsCore` | Pure logic with unit tests. No AppKit, CoreGraphics events or network |
 | `Sources/NoHandsMac` | macOS integration: audio, speech, input events, accessibility |
 | `Sources/NoHands` | The menu-bar app |
-| `Sources/nohands-cli` | Dev tool to try each piece by hand |
+| `Sources/nohands-cli` | Dev tool to try each piece by hand ([docs/cli.md](docs/cli.md)) |
+| `Tests` | Unit tests and audio fixtures for `bench` |
+| `scripts` | Bundling, local model setup, intent fixtures, task scenarios |
+| `docs` | Reference pages and `docs/superpowers` (design specs, plans and as-built notes) |
+| `.github` | Issue and PR templates |
+| `LICENSE`, `THIRD_PARTY_LICENSES.md` | Apache-2.0 licence and third-party notices |
+
+A per-app command pack is an entry in `Sources/NoHandsCore/AppPack.swift` plus a row in the per-app table of [docs/voice-commands.md](docs/voice-commands.md).
 
 ## Commits and pull requests
 
 - One change per pull request. Do not mix a fix with a refactor.
-- Conventional commits: `feat:`, `fix:`, `docs:`, `infra:`, `chore:`. A scope in brackets names the target, for example `fix(mac):` or `feat(core):`.
+- Name the branch `feat/nh-N-short-title` for the issue it closes.
+- Conventional commits: `feat:`, `fix:`, `docs:`, `infra:`, `chore:`. A scope in parentheses names the target, for example `fix(mac):` or `feat(core):`.
 - Open the PR from a branch, never from `main`. Link the issue it closes (`Closes #N`) and fill in the PR template.
-- Add a line to the README voice command table in the same PR when you add a command phrase. Every listed phrase must keep working.
+- Add a line to the voice command table in [docs/voice-commands.md](docs/voice-commands.md) in the same PR when you add a command phrase. Every listed phrase must keep working.
+- Issues carry an area label (`core`, `mac`, `cli`, `infra`, `docs`) and a type label (`type:feature`, `type:improvement`, `type:bug`).
 
 ## Tests
 
@@ -56,6 +80,14 @@ swift build
 
 Both must keep passing. Never edit a fixture's expectations to make them pass. Fix the prompt or the grammar instead.
 
+### Other dev tools
+
+`nohands-cli` (see [docs/cli.md](docs/cli.md)) lets you check a change without the app:
+
+- `nohands-cli parse "<text>"` shows what the grammar does with a phrase. Use it for any grammar change.
+- `nohands-cli bench <dir>` is a dry-run latency benchmark over `.wav` files, with no model. `scripts/make-bench-audio.sh` generates a phrase set, and `Tests/Fixtures/audio/README.md` lists phrases to record yourself.
+- `nohands-cli scenarios` runs the task goals in `scripts/task-scenarios.json` for real and scores each one. It takes over the screen, mouse and keyboard, so run it on a spare desktop. Ctrl-C stops it.
+
 ## Manual checks
 
 These cannot run in `swift test`. Run the ones your change touches, and say in the PR which you ran and which you did not.
@@ -63,7 +95,7 @@ These cannot run in `swift test`. Run the ones your change touches, and say in t
 - [ ] Microphone: the app hears you and does not start without permission.
 - [ ] Accessibility: typing, clicking and reading UI elements work, and the menu shows the grant item when it is missing.
 - [ ] A real app: the command or task works in the frontmost app (Safari, Finder or the app you changed it for).
-- [ ] A running model: a natural-language command works with Claude or with Ollama, and "LLM off" still shows when neither is set up.
+- [ ] A running model: a natural-language command works with Claude or with Ollama, and "LLM off" shows when `intentBackend` is `off`.
 - [ ] "stop" halts a running task.
 
 Build and run the app with `scripts/bundle.sh && open build/NoHands.app`.
