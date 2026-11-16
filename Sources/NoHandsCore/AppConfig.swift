@@ -72,6 +72,8 @@ public struct AppConfig: Codable, Equatable, Sendable {
     public var followUpWindowMs: Int = 30000
     /// The user's own words: misheard spellings swapped for the right ones in every transcript (see `Vocabulary`).
     public private(set) var vocabulary = Vocabulary()
+    /// The user's named step sequences, run by saying the name (see `Macros`).
+    public private(set) var macros = Macros()
 
     public static let defaultOllamaURL = "http://127.0.0.1:11434"
     public static let efforts = ["low", "medium", "high", "xhigh", "max"]
@@ -85,7 +87,7 @@ public struct AppConfig: Codable, Equatable, Sendable {
         case maxTaskSteps, maxMediaTaskSteps, llmDeadlineMs, settleMs, maxObservedElements
         case localLlmDeadlineMs, localMaxObservedElements
         case desktopHarness, agentDesktopPath, agentDesktopTimeoutMs, agentDesktopSnapshotMs, agentDesktopHeadedFallback, agentDesktopTrace
-        case echoCancellation, attentionWord, visionFallback, vocabulary, followUpWindowMs
+        case echoCancellation, attentionWord, visionFallback, vocabulary, macros, followUpWindowMs
     }
 
     public init(from decoder: Decoder) throws {
@@ -127,6 +129,10 @@ public struct AppConfig: Codable, Equatable, Sendable {
         // Lenient: a `vocabulary` that is not a list is ignored and counted as one skipped entry; each bad entry is skipped inside `Vocabulary`.
         if c.contains(.vocabulary) {
             d.vocabulary = (try? c.decode(Vocabulary.self, forKey: .vocabulary)) ?? Vocabulary(skipped: 1)
+        }
+        // Same for `macros`: anything but an object counts as one skipped macro.
+        if c.contains(.macros) {
+            d.macros = (try? c.decode(Macros.self, forKey: .macros)) ?? Macros(skipped: 1)
         }
         self = d
     }

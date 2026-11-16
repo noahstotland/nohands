@@ -6,16 +6,21 @@ public enum Routing: Equatable, Sendable {
     case ignore(reason: String)
     /// The grammar recognised the phrase but it can't be run (a `spell` with an unknown word). Shown, never sent to the model.
     case reject(String)
+    /// The whole phrase is a macro's name (command mode only; the grammar is asked first). The pipeline runs its steps.
+    case macro(Macro)
 }
 
 public struct ModeMachine: Sendable {
     public private(set) var mode: Mode
     private var grammar: CommandGrammar
     private let attention: AttentionGate
+    private let macros: Macros
     private var session = DictationSession()
 
-    public init(grammar: CommandGrammar = CommandGrammar(), mode: Mode = .command, attention: AttentionGate = .off) {
+    public init(grammar: CommandGrammar = CommandGrammar(), mode: Mode = .command, attention: AttentionGate = .off,
+                macros: Macros = Macros()) {
         self.grammar = grammar
+        self.macros = macros
         self.mode = mode
         self.attention = attention
     }
@@ -136,10 +141,20 @@ public struct ModeMachine: Sendable {
         }
     }
 
-    private mutating func routeCommand(_ transcript: String, frontmost bundleID: String?, textFocused: Bool) -> Routing {
+    /// Routes one macro step: command mode, no attention word (the user wrote it without), and never a macro lookup.
+    /// A step that is a macro's name was refused at load; this is the second guard.
+    public mutating func routeStep(_ step: String, frontmost bundleID: String? = nil, textFocused: Bool = false) -> Routing {
+        guard !CommandGrammar.normalize(step).isEmpty else { return .ignore(reason: "empty") }
+        guard mode == .command else { return .ignore(reason: "not in command mode") }
+        return routeCommand(step, frontmost: bundleID, textFocused: textFocused, lookUpMacro: false)
+    }
+
+    private mutating func routeCommand(_ transcript: String, frontmost bundleID: String?, textFocused: Bool,
+                                       lookUpMacro: Bool = true) -> Routing {
         let phrase = CommandGrammar.normalize(transcript).joined(separator: " ")
         guard let actions = grammar.parse(transcript, frontmost: bundleID, textFocused: textFocused) else {
             if let message = grammar.rejection(transcript) { return .reject(message) }
+            if lookUpMacro, let macro = macros.match(transcript) { return .macro(macro) }
             return .resolveWithLLM(phrase)
         }
         for case .setMode(let m) in actions {

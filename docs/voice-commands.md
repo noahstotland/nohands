@@ -53,6 +53,7 @@ Everything NoHands understands without a model. Anything else goes to Claude or 
 | `delete that` | Presses Delete (it removes what is selected) |
 | `go to sleep` / `wake up` | Pause and resume listening |
 | `menu <words>` | Presses the front app's menu item through Accessibility, e.g. `menu bookmark this tab`, `menu save as`; none: `no menu item called <words>`; greyed: `menu item <title> is disabled`; the Apple menu is never searched (no `menu shut down`) |
+| `<macro name>` (from `macros` in config) | Runs its steps in order on one row (`step 2 of 4 · go to …`); a failure or a stop ends it at that step |
 
 Details: `docs/superpowers/specs/2026-11-05-nh-10-spell-command-design.md`, `docs/superpowers/specs/2026-11-15-nh-53-browser-tabs-design.md`, `docs/superpowers/specs/2026-11-05-nh-15-search-on-site-design.md`, `docs/superpowers/specs/2026-11-15-nh-93-ordinal-click-target-design.md`, `docs/superpowers/specs/2026-11-15-nh-44-find-on-page-design.md`.
 

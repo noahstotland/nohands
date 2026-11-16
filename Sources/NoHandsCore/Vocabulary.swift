@@ -59,7 +59,7 @@ public struct Vocabulary: Codable, Equatable, Sendable {
         }
     }
 
-    private static func hasStopWord(_ text: String) -> Bool {
+    static func hasStopWord(_ text: String) -> Bool {
         let tokens = CommandGrammar.normalize(text)
         return tokens.contains(where: StopWords.isStop) || tokens.joined(separator: " ").contains("never mind")
     }

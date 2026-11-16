@@ -42,13 +42,13 @@ private let reloadButton = UIElementInfo(id: 1, frame: CGRect(x: 100, y: 100, wi
     var typed: [String] { input.calls.filter { $0.hasPrefix("type:") } }
 }
 
-@MainActor private func rig(withResolver: Bool = true, attentionWord: String = "",
+@MainActor private func rig(withResolver: Bool = true, attentionWord: String = "", macros: String = "{}",
                             commandLog: CommandLogStore? = nil,
                             sleep: @escaping @Sendable (Duration) async -> Void = { _ in }) -> Rig {
     let input = FakeInput(), ax = FakeElements(), overlay = FakeOverlay()
     let executor = ActionExecutor(input: input, ax: ax, overlay: overlay, config: AppConfig(), frontTimeout: .milliseconds(100))
     let resolver = withResolver ? FakeResolver() : nil
-    var config = AppConfig()
+    var config = try! AppConfig.load(from: Data(#"{"macros":\#(macros)}"#.utf8), environment: [:])
     config.attentionWord = attentionWord
     let observer = ScreenObserver(ax: ax, maxElements: config.maxObservedElements)
     let runner = resolver.map {
@@ -57,6 +57,7 @@ private let reloadButton = UIElementInfo(id: 1, frame: CGRect(x: 100, y: 100, wi
     let p = VoicePipeline(config: config, transcriber: NullTranscriber(), resolver: resolver,
                           executor: executor, overlay: overlay, ax: ax, observer: observer, taskRunner: runner,
                           commandLog: commandLog)
+    p.macroStepPause = .zero
     return Rig(pipeline: p, input: input, ax: ax, overlay: overlay, resolver: resolver, executor: executor, observer: observer, runner: runner)
 }
 
@@ -520,5 +521,50 @@ private func step(_ intent: String, _ status: StepStatus, _ actions: [Action] = 
         await r.pipeline.handle(transcript: "make it smaller", trace: trace())
         await r.pipeline.waitForTask()
         #expect(b.calls == (stop ? 1 : 2) && a.calls == 1, "after, stop: \(stop)")
+    }
+}
+
+private let nightGame = #"{"night game":["click","play the newest video","scroll down"]}"#
+
+@MainActor @Test func macroRunsItsStepsInOrderOnOneRow() async {
+    let r = rig(macros: nightGame)
+    r.resolver?.scripted = [step("type a", .done, [.typeText("a")])]
+    await r.pipeline.handle(transcript: "Night game.", trace: trace())
+    await r.pipeline.waitForTask()
+    #expect(r.input.calls.filter { $0 != "releaseAll" } == ["click:10,20", "type:a", "scroll"])
+    #expect(Set(r.overlay.reports.map(\.id)).count == 1)
+    #expect(r.overlay.statuses.contains("step 2 of 3 · play the newest video"))
+    #expect(r.overlay.statuses.contains("step 2 of 3 · step 1 · type a"))   // the runner's line, relabelled
+    #expect(r.overlay.statuses.last == "done · 3 steps")
+}
+
+@MainActor @Test func stopPhraseEndsAMacroAtItsStep() async {
+    let r = rig(macros: nightGame)
+    let entered = Gate(), release = Gate()
+    r.resolver?.onResolve = { _ in entered.open(); await release.wait() }
+    await r.pipeline.handle(transcript: "night game", trace: trace())
+    await entered.wait()                                   // step 2 is resolving
+    await r.pipeline.handle(transcript: "stop", trace: trace())
+    release.open()
+    await r.pipeline.waitForTask()
+    #expect(r.input.calls.filter { $0 != "releaseAll" } == ["click:10,20"])   // step 3 never ran
+    #expect(r.overlay.reports.first { $0.id == 1 && $0.status == .stopped("stopped at step 2 of 3") } != nil)
+    #expect(!r.pipeline.isTaskActive)
+}
+
+@MainActor @Test func aFailingStepEndsTheMacroAndNamesTheStep() async {
+    // (resolver, what the row ends on)
+    let table: [(Result<[Action], IntentError>?, String)] = [
+        (.failure(.timeout), "step 2 of 3 · timed out"),
+        (nil, "step 2 of 3 · \(PipelineText.llmOff)"),         // LLM off: the grammar step still ran
+    ]
+    for (result, last) in table {
+        let r = rig(withResolver: result != nil, macros: nightGame)
+        if let result { r.resolver?.result = result }
+        await r.pipeline.handle(transcript: "night game", trace: trace())
+        await r.pipeline.waitForTask()
+        #expect(r.overlay.statuses.last == last)
+        #expect(r.input.calls.filter { $0 != "releaseAll" } == ["click:10,20"], "\(last)")
+        #expect(r.overlay.reports.last?.status == .failed(last))
     }
 }
