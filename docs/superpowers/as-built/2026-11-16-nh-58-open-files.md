@@ -12,3 +12,6 @@
 - Several matches in a macro step say `several files match: say open file <words>`; in a model task, `several files match: ask the user to say open file <words>`. `<words>` is the spoken words.
 - The pick closes on `stop()`, when a task starts, and on the next utterance that is not a number. Pause, sleep and a mode switch do not close it separately.
 - There is no spoken "more" for lists over six; the hint says to say more words.
+- Finder alias files are refused (rule 4), as are `tcsh`, `pyw`, `afploc` and `ftploc` files.
+- A macro step or the model gets a refusal that names no file (`won't open a file: it can run as a program`); only a spoken command names the hit.
+- The file opens at the resolved path the guard checked, not the path the search found.
