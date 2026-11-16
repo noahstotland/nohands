@@ -378,12 +378,30 @@ let g = CommandGrammar()
     for said in ["stop", "stop screenshot", "lock screen stop", "empty trash and stop"] { #expect(g.parse(said) == nil, "\(said)") }
 }
 
+@Test func darkModeAndDoNotDisturbPhrases() {
+    let table: [([String], [Action]?)] = [
+        (["dark mode", "dark mode on", "turn on dark mode", "turn dark mode on", "switch to dark mode", "turn on the dark mode"], [.system(.appearance(.dark))]),
+        (["light mode", "dark mode off", "turn off dark mode", "turn dark mode off", "switch to light mode", "light mode on"], [.system(.appearance(.light))]),
+        (["toggle dark mode"], [.system(.appearance(.toggle))]),
+        (["do not disturb", "do not disturb on", "turn on do not disturb"], [.system(.doNotDisturb(true))]),
+        (["do not disturb off", "turn off do not disturb"], [.system(.doNotDisturb(false))]),
+        (["open automation settings", "automation settings"], [.system(.openSettings(.automation))]),
+        // Unchanged: neighbours and the stop keep their meaning.
+        (["dictation mode"], [.setMode(.dictation)]), (["command mode"], [.setMode(.command)]),
+        (["spoken feedback on"], [.setSpokenFeedback(.outcomes)]), (["stop", "stop dark mode", "dark mode stop"], nil),
+    ]
+    for (phrases, expected) in table {
+        for phrase in phrases { #expect(g.parse(phrase) == expected, "\(phrase)") }
+    }
+}
+
 @Test func settingsPaneNames() {
     let table: [(SettingsPane, [String])] = [
         (.wifi, ["wifi", "wi-fi", "wi fi"]), (.bluetooth, ["bluetooth"]), (.sound, ["sound", "audio"]),
         (.displays, ["display", "displays"]), (.accessibility, ["accessibility"]),
         (.privacy, ["privacy", "privacy and security", "security"]), (.loginItems, ["login items", "startup items"]),
         (.notifications, ["notifications", "notification"]), (.battery, ["battery"]), (.general, ["general"]),
+        (.automation, ["automation", "automation settings"]),
     ]
     #expect(Set(table.map(\.0)) == Set(SettingsPane.allCases))
     for (pane, names) in table {
