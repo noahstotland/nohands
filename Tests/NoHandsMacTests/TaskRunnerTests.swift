@@ -584,6 +584,20 @@ private func harnessSnapshot() -> DesktopSnapshot {
     #expect(!h2.calls.contains { $0.hasPrefix("session") })
 }
 
+@MainActor private final class TaskBox { var task: Task<TaskOutcome, Never>? }
+
+@MainActor @Test func stoppingATracedTaskStillEndsItsSession() async {
+    let h = FakeHarness(); h.snapshotResults = [harnessSnapshot()]
+    let resolver = FakeResolver([step("wait", .continue, [.wait(ms: 5000)])])
+    let r = harnessRig(resolver, harness: h, trace: true)
+    let runner = r.runner, box = TaskBox()
+    resolver.onResolve = { _ in await box.task?.cancel() }
+    box.task = Task { await runner.run(goal: "slow", mode: .command) }
+    #expect(await box.task!.value == .stopped)
+    #expect(h.calls.last == "session:end:sess-1")
+    #expect(h.sessionEndedCancelled == false)
+}
+
 @MainActor @Test func elementChangedFailureIsRecordedForTheModel() async {
     let h = FakeHarness(); h.snapshotResults = [harnessSnapshot()]; h.actResults = [.elementChanged]
     let r = harnessRig(FakeResolver([step("click", .continue, [.click(.label(1), button: .left, count: 1)]), step("done", .done)]), harness: h)

@@ -708,7 +708,8 @@ public enum TaskOutcome: Equatable, Sendable {
         // The HUD is already up; ending the traced session is quick bookkeeping.
         if let id = sessionID, let harness {
             sessionID = nil
-            await harness.endSession(id)
+            // A spoken "stop" cancels this task; a child task would inherit that and kill `session end` before it ran.
+            await Task { await harness.endSession(id) }.value
         }
         return outcome
     }

@@ -7,7 +7,7 @@ public protocol DesktopCommandRunning: Sendable {
 }
 
 /// Spawns the `agent-desktop` binary once per command and decodes its one-line JSON envelope.
-/// Never blocks the caller's actor: the child runs on a detached task, is killed at the deadline, and is killed
+/// Never blocks the caller's actor or the cooperative pool: the child runs on a GCD thread, is killed at the deadline, and is killed
 /// when the calling task is cancelled.
 public struct AgentDesktopClient: DesktopCommandRunning, Sendable {
     public let binary: URL
@@ -24,10 +24,13 @@ public struct AgentDesktopClient: DesktopCommandRunning, Sendable {
         let limit = deadline ?? defaultDeadline
         let child = Child()
         return await withTaskCancellationHandler {
-            await Task.detached {
-                child.launch(binary: binary, argv: argv, environment: environment, deadline: limit,
-                             command: command, isObservation: isObservation)
-            }.value
+            // `launch` blocks until the child exits: run it on a GCD thread, which can grow, not on the cooperative pool.
+            await withCheckedContinuation { (continuation: CheckedContinuation<DesktopEnvelope, Never>) in
+                DispatchQueue.global().async {
+                    continuation.resume(returning: child.launch(binary: binary, argv: argv, environment: environment,
+                                                                deadline: limit, command: command, isObservation: isObservation))
+                }
+            }
         } onCancel: {
             child.cancel()
         }
