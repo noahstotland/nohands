@@ -222,8 +222,11 @@ import NoHandsCore
     }
 
     /// The ASR loop: transcribes jobs one at a time, so an early pass always finishes before the full pass of its
-    /// segment. Internal so tests can drive it with a fake transcriber.
-    nonisolated static func runASR(_ jobs: AsyncStream<ASRJob>, transcriber: any Transcribing, merge: MergeBuffer) async {
+    /// segment. Internal so tests can drive it with a fake transcriber. Every transcript goes through `vocabulary`
+    /// before anything else sees it, except a stop or a mode phrase, which is passed on as heard (`Vocabulary.rewrite`).
+    nonisolated static func runASR(_ jobs: AsyncStream<ASRJob>, transcriber: any Transcribing, merge: MergeBuffer,
+                                   vocabulary: Vocabulary = Vocabulary(), attention: AttentionGate = .off) async {
+        func corrected(_ heard: String) -> String { vocabulary.rewrite(heard, attention: attention) }
         var ledger = EarlyCloseLedger()
         for await job in jobs {
             var trace = LatencyTrace()
@@ -234,7 +237,7 @@ import NoHandsCore
                 // The utterance is still open: a pass that is skipped, fails or hears nothing changes nothing.
                 guard let audio = ledger.audio(forEarly: job.segment) else { continue }
                 do {
-                    let text = try await transcriber.transcribe(audio)
+                    let text = corrected(try await transcriber.transcribe(audio))
                     trace.asrDone = .now
                     // Record only an accepted early close; a rejected one leaves the whole segment to the full pass.
                     if !text.isEmpty, await merge.earlyTranscript(text, trace: trace) {
@@ -249,7 +252,7 @@ import NoHandsCore
                     continue
                 }
                 do {
-                    let text = try await transcriber.transcribe(audio)
+                    let text = corrected(try await transcriber.transcribe(audio))
                     trace.asrDone = .now
                     if text.isEmpty {
                         await merge.speechAbandoned()
@@ -293,6 +296,7 @@ import NoHandsCore
 
         let mergeGrammar = self.mergeGrammar
         let attention = self.attention
+        let vocabulary = config.vocabulary
         let front = FrontmostApp.shared   // a pack phrase closes the merge window early, like a global one
         let ax = self.ax   // asked only for a text edit that names words in the field
         let merge = MergeBuffer(
@@ -363,7 +367,7 @@ import NoHandsCore
             uttCont.finish()
         }
         let asrTask = Task.detached {
-            await Self.runASR(utterances, transcriber: transcriber, merge: merge)
+            await Self.runASR(utterances, transcriber: transcriber, merge: merge, vocabulary: vocabulary, attention: attention)
             jobCont.finish()
         }
         // The single serial consumer: each job is fully handled (including awaiting the executor) before the next.
