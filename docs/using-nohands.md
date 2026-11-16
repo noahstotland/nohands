@@ -36,4 +36,4 @@ log stream --predicate 'subsystem == "dev.nohands.app"'
 
 Transcripts log as `<private>` unless private data logging is on (`sudo log config --mode "private_data:on"`); running `build/NoHands.app/Contents/MacOS/NoHands` from a terminal prints full lines.
 
-**Claude API key:** shell exports do not reach an app started with `open`. Choose **Set Claude API key…**, paste, restart; saved to `~/.config/nohands/config.json`. Without a key, natural-language commands use the local model (`local model not running: start Ollama` until it is set up); "LLM off" shows only when `intentBackend` is `off`.
+**Claude API key:** shell exports do not reach an app started with `open`. Choose **Set Claude API key…**, paste, restart; saved to `~/.config/nohands/config.json`. Without a key and with `intentBackend` left at `auto`, natural-language commands use the local model (`local model not running: start Ollama` until it is set up). "LLM off" shows when `intentBackend` is `off`, or `claude` with no key.
