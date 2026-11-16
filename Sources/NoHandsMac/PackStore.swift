@@ -8,11 +8,9 @@ public struct PackStore: Sendable {
     /// Posted (no payload) after an install, toggle or remove, so a running app can reload.
     public static let changedNotification = Notification.Name("com.nohands.packs-changed")
 
-    /// `$HOME/.config/nohands/packs`. `$HOME` is honored when it is an absolute path (the system call ignores it), so
-    /// a manual run can use a scratch home instead of the real one.
+    /// `~/.config/nohands/packs`, next to `config.json`.
     public static var defaultRoot: URL {
-        let home = ProcessInfo.processInfo.environment["HOME"].flatMap { $0.hasPrefix("/") ? URL(fileURLWithPath: $0) : nil }
-        return (home ?? FileManager.default.homeDirectoryForCurrentUser).appendingPathComponent(".config/nohands/packs")
+        FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".config/nohands/packs")
     }
 
     public enum StoreError: Error, Equatable, Sendable {
