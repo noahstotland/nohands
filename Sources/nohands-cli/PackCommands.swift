@@ -89,7 +89,8 @@ private func listPacks(_ store: PackStore) {
     for entry in entries {
         let note = PackMenu.status(phrases: entry.pack?.phrases.count ?? 0, shadowed: set.shadowed.filter { $0.packID == entry.id }.count,
                                    invalidReason: entry.invalidReason)
-        print("\(entry.id)  \(entry.pack?.version ?? "-")  \(entry.enabled ? "on" : "off")  \(note)")
+        let show = PackSummary.printable
+        print("\(show(entry.id))  \(entry.pack.map { show($0.version) } ?? "-")  \(entry.enabled ? "on" : "off")  \(show(note))")
     }
 }
 

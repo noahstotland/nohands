@@ -104,10 +104,9 @@ public enum PackFile {
         chord.modifiers.isDisjoint(with: [.command, .option])
     }
 
-    /// A press that activates the focused button: return, space (alone or with shift), control-return, control-m
-    /// and control-j (both are a carriage return or line feed to a text field or a dialog).
+    /// A press that activates the focused button: return and space with any modifiers (option-return and
+    /// shift-option-return too), and control-m and control-j (a carriage return or line feed to a text field or a dialog).
     private static func isReturnLike(_ chord: KeyChord) -> Bool {
-        guard isPlain(chord) else { return false }
         switch chord.key {
         case .return, .space: return true
         case .m, .j: return chord.modifiers.contains(.control)
@@ -140,8 +139,9 @@ public enum PackFile {
     }
 
     /// Chords that switch apps, open the launcher or force quit (command with space or tab, command-option-escape) are
-    /// always blocked. The chords that empty the Trash or delete at once (command-shift-delete, command-option-delete,
-    /// with any other modifiers) are held unless the phrase says "empty" and "trash"; that exemption covers only them.
+    /// always blocked, and so is command-option-delete (Delete Immediately) without shift. The chords that empty the
+    /// Trash (command with shift and delete or forward delete, with any other modifiers) are held unless the phrase
+    /// says "empty" and "trash"; that exemption covers only them.
     private static func blockedChord(_ actions: [Action], words: Set<String>) -> Bool {
         let saysEmptyTrash = words.contains("empty") && words.contains("trash")
         return actions.contains { action in
@@ -149,7 +149,9 @@ public enum PackFile {
             switch chord.key {
             case .space, .tab: return true
             case .escape: return chord.modifiers.contains(.option)
-            case .delete, .forwardDelete: return !saysEmptyTrash && !chord.modifiers.isDisjoint(with: [.shift, .option])
+            case .delete, .forwardDelete:
+                if chord.modifiers.contains(.shift) { return !saysEmptyTrash }
+                return chord.modifiers.contains(.option)
             default: return false
             }
         }
@@ -188,7 +190,14 @@ public enum PackFile {
             return .pressKey(KeyChord(key, modifiers))
         case "menu_item":
             try expectKeys(o, required: ["kind", "title"], in: kind)
-            return .menuItem(try text(o["title"], "title", max: 100))
+            let title = try text(o["title"], "title", max: 100)
+            // The executor presses the last part that has a name, so an empty part ("Send>", "File > > Save", ">Save")
+            // would hide the real target from the checks.
+            guard !title.split(separator: ">", omittingEmptySubsequences: false)
+                .contains(where: { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) else {
+                throw PackError("bad menu_item title (empty part around >)")
+            }
+            return .menuItem(title)
         case "open_app":
             try expectKeys(o, required: ["kind", "app"], in: kind)
             return .openApp(try text(o["app"], "app", max: 60))

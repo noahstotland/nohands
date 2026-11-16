@@ -133,7 +133,7 @@ extension ActionExecutor {
             if m.disabled { return "'\(name)' is disabled" }
             return outcome(await harness.act(.click(ref: m.ref, button: .left, count: 1)))
         case .menuItem(let name):
-            let last = name.split(separator: ">").last.map { $0.trimmingCharacters(in: .whitespaces) } ?? name
+            guard let last = MenuMatch.leaf(of: name) else { return "no menu item called \(name)" }
             // A model step (the task loop passes labels) presses only the exact title, natively or through agent-desktop; the
             // user's own "menu <words>" may be closest.
             switch pressMenuItem(name, exactOnly: labelSnapshot != nil) {

@@ -87,6 +87,13 @@ private func commands(_ list: [Doc]) -> (inout Doc) -> Void { { $0["commands"] =
         ("blocked chord", data(commands([cmd(["tidy up"], [key("delete", ["command", "shift"])])]))),
         ("blocked chord", data(commands([cmd(["empty"], [key("delete", ["command", "option", "shift"])])]))),
         ("blocked chord", data(commands([cmd(["tidy up"], [key("delete", ["command", "option"])])]))),
+        ("blocked chord", data(commands([cmd(["empty the trash"], [key("delete", ["command", "option"])])]))),   // Delete Immediately, never freed
+        ("empty part", data(commands([cmd(["go"], [["kind": "menu_item", "title": "Send>"]])]))),
+        ("empty part", data(commands([cmd(["go"], [["kind": "menu_item", "title": "Message > Send>>"]])]))),
+        ("empty part", data(commands([cmd(["go"], [["kind": "menu_item", "title": "Empty Trash >"]])]))),
+        ("empty part", data(commands([cmd(["go"], [["kind": "menu_item", "title": "Sen>"]])]))),
+        ("loosely", data(commands([cmd(["go"], [["kind": "menu_item", "title": "Move"]])]))),
+        ("loosely", data(commands([cmd(["go"], [["kind": "menu_item", "title": "End"]])]))),
         ("blocked chord", data(commands([cmd(["tidy up"], [key("delete", ["command", "option", "control"])])]))),
         // "empty trash" frees only the delete chords, never app switching or force quit.
         ("blocked chord", data(commands([cmd(["empty the trash"], [key("tab", ["command"])])]))),
@@ -95,6 +102,8 @@ private func commands(_ list: [Doc]) -> (inout Doc) -> Void { { $0["commands"] =
         ("after a menu_item", data(commands([cmd(["go"], [["kind": "menu_item", "title": "Print"], key("m", ["control"])])]))),
         ("after a menu_item", data(commands([cmd(["go"], [["kind": "menu_item", "title": "Print"], key("j", ["control"])])]))),
         ("after a menu_item", data(commands([cmd(["go"], [["kind": "menu_item", "title": "Print"], key("return", ["control"])])]))),
+        ("after a menu_item", data(commands([cmd(["go"], [["kind": "menu_item", "title": "Print"], key("return", ["option"])])]))),
+        ("after a menu_item", data(commands([cmd(["go"], [["kind": "menu_item", "title": "Print"], key("return", ["shift", "option"])])]))),
         ("after a menu_item", data(commands([cmd(["go"], [cmdN, key("return")])]))),
         ("after a menu_item", data(commands([cmd(["go"], [key("p", ["command"]), key("e"), key("space", ["shift"])])]))),
         ("too many key presses", data(commands([cmd(["go"], [key("a", ["control"]), key("e", ["control"]), key("k", ["control"])])]))),
