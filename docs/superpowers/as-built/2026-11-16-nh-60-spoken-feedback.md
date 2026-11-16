@@ -1,6 +1,6 @@
 # As-built: Spoken feedback
 
-**Shipped:** in PR #PRNUM
+**Shipped:** in PR #167
 **Ticket:** NH-60
 **Spec:** [2026-11-16-nh-60-spoken-feedback-design.md](../specs/2026-11-16-nh-60-spoken-feedback-design.md)
 
