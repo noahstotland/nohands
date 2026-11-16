@@ -1,5 +1,11 @@
 # Release notes
 
+## 2026-11-16 short README, reference pages and refreshed contributing guide (NH-119) (#139)
+
+Merged 2026-11-16 12:44 am UTC.
+
+The README is now a short guide to installing and trying NoHands. The full voice command list, CLI tools, config keys and privacy details are on pages under `docs/`.
+
 ## 2026-11-16 cut the repo docs to a fraction of their length (NH-99) (#135)
 
 Merged 2026-11-16 12:28 am UTC.
