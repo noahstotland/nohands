@@ -1,4 +1,5 @@
 import Foundation
+import AppKit
 import CoreGraphics
 import NoHandsCore
 import os
@@ -22,6 +23,8 @@ public protocol InputSynthesizing: Sendable {
     func mouseDown(_ button: MouseButton, at point: CGPoint) throws
     func mouseUp(_ button: MouseButton, at point: CGPoint) throws
     func scroll(_ direction: Direction, lines: Int) throws
+    /// The system play, next or previous key (a system-defined event, not a key code).
+    func pressMediaKey(_ key: SystemMediaKey) throws
     /// nil when the pointer position cannot be read.
     func currentMouseLocation() -> CGPoint?
     /// Releases any mouse button this synthesizer is still holding down (safety net on pause/quit).
@@ -76,6 +79,27 @@ public struct CGEventInputSynthesizer: InputSynthesizing {
             }
         }
         try postKeyPair(virtualKey: chord.key.keyCode, flags: flags, what: "key event for \(chord.key)")
+    }
+
+    public func pressMediaKey(_ key: SystemMediaKey) throws {
+        // NX_KEYTYPE_PLAY 16, NEXT 17, PREVIOUS 18; subtype 8 is a media key; 0xA00 is key down, 0xB00 key up.
+        let code: Int
+        switch key {
+        case .playPause: code = 16
+        case .next: code = 17
+        case .previous: code = 18
+        }
+        for down in [true, false] {
+            let state = down ? 0xA00 : 0xB00
+            guard let event = NSEvent.otherEvent(with: .systemDefined, location: .zero,
+                                                 modifierFlags: NSEvent.ModifierFlags(rawValue: UInt(state)), timestamp: 0,
+                                                 windowNumber: 0, context: nil, subtype: 8,
+                                                 data1: (code << 16) | state, data2: -1),
+                  let cgEvent = event.cgEvent else {
+                throw InputSynthesisError.eventCreationFailed("media key \(key)")
+            }
+            cgEvent.post(tap: .cghidEventTap)
+        }
     }
 
     public func moveMouse(to point: CGPoint) throws {

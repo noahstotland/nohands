@@ -630,6 +630,8 @@ import NoHandsCore
                    durationMs: CommandLogEntry.milliseconds(clock.duration(to: .now)), usage: await runner.takeUsage())
         runner.onStatus = nil
         runner.onTrail = nil
+        let sessionUsage = ClaudeUsageMeter.shared.total
+        if kind == .claude, sessionUsage.calls > 0 { PipelineLog.info("claude: session \(sessionUsage.logFragment)") }
         lastTaskOutcome = outcome
         var trace = pending.trace
         trace.actionsDone = .now

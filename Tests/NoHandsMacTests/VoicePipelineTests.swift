@@ -261,7 +261,7 @@ private func step(_ intent: String, _ status: StepStatus, _ actions: [Action] = 
     defer { try? FileManager.default.removeItem(at: url) }
     let log = CommandLogStore(url: url)
     let r = rig(commandLog: log)
-    r.ax.textFocused = true
+    r.ax.fieldFocused = true
     r.ax.field = FocusedText(value: "Meeting at noon.", selection: TextSpan(location: 16, length: 0), line: nil, rangeSettable: true)
     await r.pipeline.handle(transcript: "start dictating", trace: trace())
     let before = log.log.entries.count

@@ -285,11 +285,42 @@ import Foundation
 
 @Test func claudeUsageParsing() {
     func usage(_ json: String) -> ClaudeUsage? { ClaudeUsage.from(response: Data(json.utf8)) }
-    #expect(usage(#"{"usage":{"input_tokens":12,"cache_read_input_tokens":2214,"cache_creation_input_tokens":5}}"#)
-            == ClaudeUsage(inputTokens: 12, cacheReadTokens: 2214, cacheWriteTokens: 5))
-    #expect(usage(#"{"usage":{"input_tokens":7}}"#) == ClaudeUsage(inputTokens: 7, cacheReadTokens: 0, cacheWriteTokens: 0))
+    #expect(usage(#"{"usage":{"input_tokens":12,"cache_read_input_tokens":2214,"cache_creation_input_tokens":5,"output_tokens":40}}"#)
+            == ClaudeUsage(inputTokens: 12, cacheReadTokens: 2214, cacheWriteTokens: 5, outputTokens: 40))
+    #expect(usage(#"{"usage":{"input_tokens":7}}"#) == ClaudeUsage(inputTokens: 7, cacheReadTokens: 0, cacheWriteTokens: 0, outputTokens: 0))
     #expect(usage(#"{"content":[]}"#) == nil)
     #expect(usage("not json") == nil)
     #expect(ClaudeUsage.logFragment(nil) == "cache=-")
-    #expect(ClaudeUsage.logFragment(ClaudeUsage(inputTokens: 612, cacheReadTokens: 2214, cacheWriteTokens: 0)) == "cache=2214/0 in=612")
+    #expect(ClaudeUsage.logFragment(ClaudeUsage(inputTokens: 612, cacheReadTokens: 2214, cacheWriteTokens: 0, outputTokens: 33))
+            == "cache=2214/0 in=612 out=33")
+}
+
+@Test func claudeUsageTotalAddsEveryCall() {
+    let calls: [ClaudeUsage?] = [
+        ClaudeUsage(inputTokens: 10, cacheReadTokens: 100, cacheWriteTokens: 1, outputTokens: 5),
+        nil,   // a 2xx body without a usage object is still a call
+        ClaudeUsage(inputTokens: 20, cacheReadTokens: 200, cacheWriteTokens: 2, outputTokens: 7),
+    ]
+    let total = calls.reduce(ClaudeUsageTotal()) { $0.adding($1) }
+    #expect(total.calls == 3)
+    #expect(total.input == 30); #expect(total.cacheRead == 300); #expect(total.cacheWrite == 3); #expect(total.output == 12)
+    #expect(total.logFragment == "calls=3 in=30 cache=300/3 out=12")
+    #expect(ClaudeUsageTotal().adding(nil).calls == 1)
+}
+
+@Test func claudeUsageTotalMenuLine() {
+    #expect(ClaudeUsageTotal().menuLine == nil)
+    #expect(ClaudeUsageTotal().adding(nil).menuLine == "Claude this session: 1 call, 0 in, 0 cached, 0 out")
+    // "in" is uncached input plus cache writes; "cached" is cache reads.
+    let one = ClaudeUsageTotal().adding(ClaudeUsage(inputTokens: 100, cacheReadTokens: 2_000, cacheWriteTokens: 50, outputTokens: 9))
+    #expect(one.menuLine == "Claude this session: 1 call, 150 in, 2k cached, 9 out")
+    // Number formatting boundaries, through the output count.
+    let cases: [(Int, String)] = [(0, "0"), (999, "999"), (1_000, "1k"), (1_250, "1.2k"), (9_999, "9.9k"),
+                                  (10_000, "10k"), (31_400, "31k"), (999_999, "999k"), (1_250_000, "1.2M")]
+    for (n, text) in cases {
+        let line = ClaudeUsageTotal().adding(ClaudeUsage(inputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, outputTokens: n)).menuLine
+        #expect(line?.hasSuffix(", \(text) out") == true, "\(n) -> \(String(describing: line))")
+    }
+    let many = (0..<14).reduce(ClaudeUsageTotal()) { t, _ in t.adding(nil) }
+    #expect(many.menuLine?.hasPrefix("Claude this session: 14 calls,") == true)
 }

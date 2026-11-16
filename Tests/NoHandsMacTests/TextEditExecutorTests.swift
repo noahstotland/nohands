@@ -25,7 +25,7 @@ private func field(_ caret: Int = 39, length: Int = 0, line: TextSpan? = nil, se
     ]
     for (edit, caret, selection, input) in table {
         let (ex, i, ax, _) = make()
-        ax.textFocused = true; ax.field = field(caret)
+        ax.fieldFocused = true; ax.field = field(caret)
         #expect(await ex.execute([.editText(edit, otherwise: nil)]) == nil, "\(edit)")
         #expect(ax.selections == [selection], "\(edit)")
         #expect(i.calls == input, "\(edit)")
@@ -50,7 +50,7 @@ private func field(_ caret: Int = 39, length: Int = 0, line: TextSpan? = nil, se
     ]
     for (edit, text, takes, failure, chords) in table {
         let (ex, i, ax, _) = make()
-        ax.textFocused = true; ax.field = text; ax.selectionTakes = takes
+        ax.fieldFocused = true; ax.field = text; ax.selectionTakes = takes
         #expect(await ex.execute([.editText(edit, otherwise: nil)]) == failure, "\(edit)")
         #expect(i.chords == chords && !i.calls.contains(where: { $0.hasPrefix("type:") }), "\(edit)")
     }
@@ -59,13 +59,13 @@ private func field(_ caret: Int = 39, length: Int = 0, line: TextSpan? = nil, se
 @MainActor @Test func aPhraseThatIsNotThereTypesDictationOrNamesTheSpeakersWords() async {
     // Dictation: the words go in as typing, and the executor says so (the dictation record stays right).
     let (ex, i, ax, _) = make()
-    ax.textFocused = true; ax.field = field()
+    ax.fieldFocused = true; ax.field = field()
     let edit = TextEdit.deletePhrase("the old files")
     #expect(await ex.execute([.editText(edit, otherwise: "Delete the old files.")]) == nil)
     #expect(i.calls == ["type:Delete the old files."] && ax.selections.isEmpty && ex.editTypedOtherwise)
     // Command mode: a message with the speaker's words, never the field's.
     let (ex2, i2, ax2, _) = make()
-    ax2.textFocused = true; ax2.field = field()
+    ax2.fieldFocused = true; ax2.field = field()
     #expect(await ex2.execute([.editText(.replace("lunch", with: "dinner"), otherwise: nil)]) == "no \"lunch\" in the text")
     #expect(i2.calls.isEmpty && !ex2.editTypedOtherwise)
     // Found: the edit runs and the words are not typed.
@@ -76,7 +76,7 @@ private func field(_ caret: Int = 39, length: Int = 0, line: TextSpan? = nil, se
 @MainActor @Test func noTextFieldFailsWithNothingTyped() async {
     for edit in [TextEdit.select(.word, last: false), .caret(.lineEnd), .replace("a", with: "b"), .changeCase(.lower)] {
         let (ex, i, ax, _) = make()
-        ax.textFocused = false; ax.field = field()
+        ax.fieldFocused = false; ax.field = field()
         #expect(await ex.execute([.editText(edit, otherwise: "words")]) == ActionExecutor.noTextField, "\(edit)")
         #expect(i.calls.isEmpty && ax.selections.isEmpty, "\(edit)")
     }
@@ -84,7 +84,7 @@ private func field(_ caret: Int = 39, length: Int = 0, line: TextSpan? = nil, se
 
 @MainActor @Test func aSpokenStopDuringTheFieldReadKeepsTheEditFromActing() async {
     let (ex, i, ax, _) = make()
-    ax.textFocused = true; ax.field = field()
+    ax.fieldFocused = true; ax.field = field()
     let reading = OSAllocatedUnfairLock(initialState: false)
     ax.onFieldRead = { reading.withLock { $0 = true }; Thread.sleep(forTimeInterval: 0.2) }
     let task = Task { @MainActor in await ex.execute([.editText(.deletePhrase("noon"), otherwise: nil)]) }

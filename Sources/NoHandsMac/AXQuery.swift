@@ -112,6 +112,25 @@ public final class AXQuery: @unchecked Sendable {
         return nil
     }
 
+    /// Whether the focused window is in full screen; nil when there is no window or it does not say.
+    public func focusedWindowIsFullScreen() -> Bool? {
+        focusedWindow().flatMap { Self.attr($0.window, "AXFullScreen") as? Bool }
+    }
+
+    /// Whether the focused element takes typed text (a text field, text area, search field or combo box), so a
+    /// player's letter key would be typed into it.
+    public func focusedElementIsTextInput() -> Bool {
+        guard let f = focusedWindow() else { return false }
+        exposeChromiumTree(f.app, f.appEl)
+        // Chromium may not have built the page tree yet: an unreadable focus there could be the search box.
+        guard let element = Self.element(f.appEl, kAXFocusedUIElementAttribute) else {
+            return f.app.bundleIdentifier.map(Self.chromiumBundleIDs.contains) ?? false
+        }
+        AXUIElementSetMessagingTimeout(element, 0.05)
+        return ["AXTextField", "AXTextArea", "AXComboBox", "AXSearchField"].contains(Self.string(element, kAXRoleAttribute))
+            || Self.string(element, kAXSubroleAttribute) == "AXSearchField"
+    }
+
     public func frontmostAppName() -> String? {
         NSWorkspace.shared.frontmostApplication?.localizedName
     }

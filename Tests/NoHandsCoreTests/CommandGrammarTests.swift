@@ -309,3 +309,41 @@ let g = CommandGrammar()
     #expect(Action.editText(.select(.word, last: false), otherwise: nil).carriesSpokenText == false)
     #expect(Action.editText(.replace("a", with: "b"), otherwise: nil).carriesSpokenText)
 }
+
+@Test func mediaAndVolumePhrases() {
+    let table: [(String, Action)] = [
+        ("play", .media(.play)), ("resume", .media(.play)), ("play the music", .media(.play)),
+        ("pause", .media(.pause)), ("pause the video", .media(.pause)), ("pause the music", .media(.pause)),
+        ("play pause", .media(.playPause)), ("toggle play", .media(.playPause)),
+        ("next track", .media(.next)), ("next song", .media(.next)), ("next video", .media(.next)),
+        ("previous track", .media(.previous)), ("previous song", .media(.previous)), ("previous video", .media(.previous)),
+        ("full screen video", .media(.fullScreen)), ("video full screen", .media(.fullScreen)),
+        ("make the video full screen", .media(.fullScreen)),
+        ("exit full screen", .media(.exitFullScreen)), ("leave full screen", .media(.exitFullScreen)),
+        ("mute", .volume(.mute(true))), ("mute sound", .volume(.mute(true))),
+        ("unmute", .volume(.mute(false))), ("unmute sound", .volume(.mute(false))),
+        ("skip ahead", .media(.skip(seconds: 10))), ("skip back", .media(.skip(seconds: -10))),
+        ("skip forward", .media(.skip(seconds: 10))), ("skip backward", .media(.skip(seconds: -10))),
+        ("skip forward 30 seconds", .media(.skip(seconds: 30))), ("skip backward thirty seconds", .media(.skip(seconds: -30))),
+        ("skip ahead one second", .media(.skip(seconds: 1))), ("skip ahead 600 seconds", .media(.skip(seconds: 600))),
+        ("volume up", .volume(.by(10))), ("volume down three", .volume(.by(-30))), ("turn it up", .volume(.by(10))),
+        ("turn it down 2", .volume(.by(-20))), ("volume up 10", .volume(.by(100))),
+        ("volume up fifteen percent", .volume(.by(15))), ("volume down 5 percent", .volume(.by(-5))),
+        ("volume 30%", .volume(.set(30))), ("volume up 15%", .volume(.by(15))), ("volume 30 %", .volume(.set(30))),
+        ("set volume to 25 percent", .volume(.set(25))), ("volume 40", .volume(.set(40))), ("volume thirty percent", .volume(.set(30))), ("volume 0", .volume(.set(0))),
+        ("volume 150 percent", .volume(.set(100))), ("set volume to 25", .volume(.set(25))),
+        ("set the volume to fifty percent", .volume(.set(50))),
+    ]
+    for (said, action) in table { #expect(g.parse(said) == [action], "\(said)") }
+    for said in ["volume up 11", "volume up 0", "volume up percent", "volume up 101 percent", "skip ahead 0 seconds",
+                 "skip ahead 601 seconds", "skip ahead seconds", "skip", "skip ad", "volume", "volume loud", "set volume"] {
+        #expect(g.parse(said) == nil, "\(said)")
+    }
+    // "play the video" is not a grammar phrase (it can mean clicking the page's Play button): the model gets it.
+    #expect(g.parse("play the video") == nil)
+    // Older phrases and the stop keep their meaning.
+    #expect(g.parse("full screen") == [.pressKey(KeyChord(.f, [.command, .control]))])
+    #expect(g.parse("is it playing") == [.checkMedia])
+    #expect(g.parse("stop") == nil)
+    #expect(g.parse("stop the music") == nil)
+}

@@ -36,6 +36,22 @@ public enum WaitCondition: Equatable, Codable, Sendable {
 /// of its title. Grammar only; positions here are the speaker's, not the model's `Tabs:` listing numbers.
 public enum TabTarget: Equatable, Codable, Sendable { case number(Int), last, named(String) }
 
+/// A media command by voice ("pause", "next track", "skip ahead 30 seconds"). Grammar only; the model has no kind for it.
+public enum MediaCommand: Equatable, Codable, Sendable {
+    case play, pause, playPause, next, previous, fullScreen, exitFullScreen
+    /// Seconds to seek; negative goes back.
+    case skip(seconds: Int)
+}
+
+/// A change to the system output volume ("volume 30 percent", "volume up", "mute"). Grammar only.
+public enum VolumeChange: Equatable, Codable, Sendable {
+    /// An absolute level, 0 to 100.
+    case set(Int)
+    /// A step in points, positive or negative.
+    case by(Int)
+    case mute(Bool)
+}
+
 public enum Action: Equatable, Codable, Sendable {
     case typeText(String)
     case pressKey(KeyChord)
@@ -112,6 +128,9 @@ public enum Action: Equatable, Codable, Sendable {
     /// like the tab commands: the model has no kind for it. `otherwise` is dictation's own words, typed when the edit
     /// names a phrase that is not in the field ("Delete the old files." still dictates); nil in command mode.
     case editText(TextEdit, otherwise: String?)
+    // Voice commands for what is playing and the system volume. Grammar only; the model has no kind for them.
+    case media(MediaCommand)
+    case volume(VolumeChange)
 
     /// Ask for a picture of the focused window on the next step. Only the task loop gives it meaning; anywhere
     /// else the executor runs it as a successful no-op.

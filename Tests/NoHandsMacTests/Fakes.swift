@@ -11,9 +11,10 @@ final class FakeInput: InputSynthesizing, @unchecked Sendable {
     var location: CGPoint? = CGPoint(x: 10, y: 20)
     var throwOnType = false
     func type(_ text: String) throws { if throwOnType { throw Boom() }; calls.append("type:\(text)") }
-    /// Every chord pressed, in order (`calls` only says "press").
     var chords: [KeyChord] = []
+    var mediaKeys: [SystemMediaKey] = []
     func press(_ chord: KeyChord) throws { calls.append("press"); chords.append(chord) }
+    func pressMediaKey(_ key: SystemMediaKey) throws { calls.append("mediaKey"); mediaKeys.append(key) }
     func moveMouse(to point: CGPoint) throws { calls.append("move:\(Int(point.x)),\(Int(point.y))") }
     func click(at point: CGPoint, button: MouseButton, count: Int) throws { calls.append("click:\(Int(point.x)),\(Int(point.y))") }
     func mouseDown(_ button: MouseButton, at point: CGPoint) throws { calls.append("down") }
@@ -21,6 +22,16 @@ final class FakeInput: InputSynthesizing, @unchecked Sendable {
     func scroll(_ direction: Direction, lines: Int) throws { calls.append("scroll") }
     func currentMouseLocation() -> CGPoint? { location }
     func releaseAll() { calls.append("releaseAll") }
+}
+
+final class FakeVolume: VolumeControlling, @unchecked Sendable {
+    var current: Int? = 50
+    var muted = false
+    var canMute = true
+    var set: [Int] = []
+    func level() -> Int? { current }
+    func setLevel(_ level: Int) throws { set.append(level); current = level }
+    func setMuted(_ muted: Bool) throws { guard canMute else { throw VolumeError.noMute }; self.muted = muted }
 }
 
 final class FakeAudio: AudioOutputProbing, @unchecked Sendable {
@@ -43,12 +54,12 @@ final class FakeElements: ElementProviding, @unchecked Sendable {
     func searchFieldFrame() -> CGRect? { searchBox }
     /// Text editing: whether a text field has focus, what it holds (nil: unreadable), whether it takes a selection,
     /// the selections asked for, and a hook run inside the read (a test cancels the task there).
-    var textFocused = false
+    var fieldFocused = false
     var field: FocusedText?
     var selectionTakes = true
     var selections: [TextSpan] = []
     var onFieldRead: (@Sendable () -> Void)?
-    func isTextFocused() -> Bool { textFocused }
+    func isTextFocused() -> Bool { fieldFocused }
     func focusedText() -> FocusedText? { onFieldRead?(); return field }
     func setSelection(_ span: TextSpan) -> Bool { selections.append(span); return selectionTakes }
     /// Page find: what the walk returns (nil: no match), where a scroll lands the element (nil: the scroll fails),
@@ -98,6 +109,12 @@ final class FakeElements: ElementProviding, @unchecked Sendable {
     var walkedOnMainThread: [Bool] = []
     /// Screen rects passed in by the caller of `actionableElements(screens:)` (nil entry: read here).
     var walkScreens: [[CGRect]?] = []
+    var fullScreen: Bool? = nil
+    var textFocused = false
+    /// Set to make the window leave full screen after the first read (Escape worked).
+    var fullScreenAfterFirstRead: Bool?
+    func focusedWindowIsFullScreen() -> Bool? { defer { fullScreenAfterFirstRead.map { fullScreen = $0 } }; return fullScreen }
+    func focusedElementIsTextInput() -> Bool { textFocused }
     func focusedWindowTitle() -> String? { windowTitle }
     func webURL() -> String? { url }
     func frontmostAppName() -> String? { front }
