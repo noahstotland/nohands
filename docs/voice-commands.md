@@ -74,5 +74,16 @@ An app can have phrases that work only while it is in front and win on a shared 
 | Terminal | `split pane`, `close pane` | Splits the window, or closes the split pane |
 | Terminal | `bigger font`, `smaller font`, `default font size` | Changes the font size |
 | Terminal | `interrupt`, `cancel command` | Sends control-C to the running command |
+| Messages | `new message`, `compose` | Starts a new message (command-N) |
+| Messages | `next conversation`, `previous conversation` | Moves between conversations |
+| Messages | `search`, `search messages` | Focuses the conversation search field |
+| Messages | `show details`, `info` | Shows the conversation details |
+| Messages | `mark as unread`, `mark as read` | Marks the conversation through the Conversation menu |
+| Messages | `emoji`, `add emoji` | Opens the emoji picker |
+| Messages | `tapback`, `react` | Opens the tapback picker |
+| Messages | `close window` | Closes the Messages window (command-W) |
+| Messages | `delete conversation` | Opens Messages' own delete confirm |
 
 The global `new tab`, `close tab`, `close window`, `next tab`, `previous tab`, `find`, `page up` and `page down` also work in Terminal. Closing a tab or window with a running command shows Terminal's own confirm, which NoHands does not answer (say `enter` or `escape`). `stop` never interrupts a shell command; say `interrupt`.
+
+The global `find`, `next tab`, `previous tab` and `search for <name>` also work in Messages. `delete conversation` asks first, and NoHands does not answer that question for you (say `enter` or `escape`). Sending stays `enter` (or `press return`), so there is no `send` phrase. Pin and unpin are not phrases yet: say them as a request and the model handles them.

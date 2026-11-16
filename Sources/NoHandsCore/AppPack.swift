@@ -18,7 +18,7 @@ public struct AppPack: Sendable {
 
 public enum AppPacks {
     /// The shipped packs; each app ticket adds an entry here and a row in the README.
-    public static let all: [AppPack] = [.terminal]
+    public static let all: [AppPack] = [.terminal, .messages]
 }
 
 /// The lead words the grammar drops before a phrase lookup, so "open a new tab" and "go to the downloads" reach
