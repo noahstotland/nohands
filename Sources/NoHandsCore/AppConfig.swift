@@ -68,6 +68,8 @@ public struct AppConfig: Codable, Equatable, Sendable {
     /// Task loop, Claude backend only: send a picture of the focused window on steps where the accessibility tree
     /// failed (see `visionEnabled`). Off by default; needs the Screen Recording permission.
     public var visionFallback: Bool = false
+    /// The user's own words: misheard spellings swapped for the right ones in every transcript (see `Vocabulary`).
+    public private(set) var vocabulary = Vocabulary()
 
     public static let defaultOllamaURL = "http://127.0.0.1:11434"
     public static let efforts = ["low", "medium", "high", "xhigh", "max"]
@@ -81,7 +83,7 @@ public struct AppConfig: Codable, Equatable, Sendable {
         case maxTaskSteps, maxMediaTaskSteps, llmDeadlineMs, settleMs, maxObservedElements
         case localLlmDeadlineMs, localMaxObservedElements
         case desktopHarness, agentDesktopPath, agentDesktopTimeoutMs, agentDesktopSnapshotMs, agentDesktopHeadedFallback, agentDesktopTrace
-        case echoCancellation, attentionWord, visionFallback
+        case echoCancellation, attentionWord, visionFallback, vocabulary
     }
 
     public init(from decoder: Decoder) throws {
@@ -119,6 +121,8 @@ public struct AppConfig: Codable, Equatable, Sendable {
         d.echoCancellation = try c.decodeIfPresent(Bool.self, forKey: .echoCancellation) ?? d.echoCancellation
         d.attentionWord = try c.decodeIfPresent(String.self, forKey: .attentionWord) ?? d.attentionWord
         d.visionFallback = try c.decodeIfPresent(Bool.self, forKey: .visionFallback) ?? d.visionFallback
+        // Lenient: a `vocabulary` that is not a list is ignored; each bad entry is skipped inside `Vocabulary`.
+        d.vocabulary = (try? c.decodeIfPresent(Vocabulary.self, forKey: .vocabulary)) ?? Vocabulary()
         self = d
     }
 
