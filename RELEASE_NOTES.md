@@ -1,5 +1,13 @@
 # Release notes
 
+## 2026-11-16 spoken feedback (NH-60) (#167)
+
+Merged 2026-11-16 6:55 pm UTC.
+
+NoHands can now speak how a task ended ("Done: open the menu", "Stuck: no Raptors game listed"). Choose Speak Feedback in the menu or say "spoken feedback on"; it is off until you do. "All" also speaks questions and what it read, and "stop" cuts it off.
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
 ## 2026-11-16 pack new drafts an app pack from the menu bar (NH-98) (#166)
 
 Merged 2026-11-16 6:38 pm UTC.
