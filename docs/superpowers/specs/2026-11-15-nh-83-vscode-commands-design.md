@@ -2,7 +2,7 @@
 
 **Date:** 2026-11-15  **Ticket:** [NH-83](https://github.com/noahstotland/nohands/issues/83)
 **Status:** Shipped
-**Shipped:** in PR #144, as specified
+**Shipped:** in PR #144, with differences: [as-built](../as-built/2026-11-15-nh-83-vscode-commands.md)
 
 ## Intent
 

@@ -2,7 +2,8 @@ import Foundation
 
 extension AppPack {
     /// VS Code's default macOS keybindings (1.109). Overrides the global new tab, next/previous tab and go back/forward,
-    /// whose chords mean something else in VS Code. There is no "stop debugging" phrase: no pack phrase may contain "stop".
+    /// whose chords mean something else in VS Code. No bare verbs (replace, rename, format, comment, debug, continue): a one-word phrase counts as complete, so it would fire before the
+    /// rest of a longer sentence arrived. There is no "stop debugging" phrase: no pack phrase may contain "stop".
     static let vscode: AppPack = {
         func chord(_ key: Key, _ modifiers: Set<Modifier> = [.command]) -> [Action] { [.pressKey(KeyChord(key, modifiers))] }
         let groups: [([String], [Action])] = [
@@ -22,18 +23,18 @@ extension AppPack {
             (["extensions", "show extensions"], chord(.x, [.command, .shift])),
             (["problems", "show problems"], chord(.m, [.command, .shift])),
             (["save all"], chord(.s, [.command, .option])),
-            (["format document", "format file", "format"], chord(.f, [.shift, .option])),
-            (["rename symbol", "rename"], chord(.f2, [])),
-            (["toggle comment", "comment line", "comment", "uncomment"], chord(.slash)),
+            (["format document", "format file"], chord(.f, [.shift, .option])),
+            (["rename symbol"], chord(.f2, [])),
+            (["toggle comment", "comment line"], chord(.slash)),
             (["move line up"], chord(.up, [.option])),
             (["move line down"], chord(.down, [.option])),
             (["duplicate line", "copy line down"], chord(.down, [.shift, .option])),
             (["find in files", "search in files", "search files"], chord(.f, [.command, .shift])),
-            (["replace", "find and replace"], chord(.f, [.command, .option])),
+            (["find and replace"], chord(.f, [.command, .option])),
             (["replace in files"], chord(.h, [.command, .shift])),
             (["toggle terminal", "show terminal", "hide terminal"], chord(.grave, [.control])),
             (["new terminal"], chord(.grave, [.control, .shift])),
-            (["start debugging", "debug", "continue", "continue debugging"], chord(.f5, [])),
+            (["start debugging", "continue debugging"], chord(.f5, [])),
             (["toggle breakpoint", "breakpoint", "add breakpoint", "remove breakpoint"], chord(.f9, [])),
             (["step over"], chord(.f10, [])),
             (["step into", "step in"], [.menuItem("Step Into")]),  // plain F11 is macOS Show Desktop
