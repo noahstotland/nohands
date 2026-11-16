@@ -166,6 +166,7 @@ public struct CommandGrammar: Sendable {
             // Multi-word only: "open home" stays the Home app, not the Home key.
             if dropped == .open, stripped.count > 1, let hit = Self.exact[phrase] { return hit }
         }
+        if let pack, let hit = Self.typingLead(tokens, transcript: transcript, pack: pack) { return hit }
         if tokens.count > 1, tokens[0] == "menu" {
             let words = Self.rawWords(transcript, matching: tokens) ?? tokens
             return [.menuItem(words.dropFirst().joined(separator: " "))]
@@ -175,6 +176,20 @@ public struct CommandGrammar: Sendable {
         if let hit = Self.parseMedia(tokens) { return hit }
         if let hit = parsePattern(tokens, transcript: transcript) { return hit }
         return Self.strippedExactMatch(tokens)
+    }
+
+    /// A pack's typing lead ("jump to design team"): the lead's actions, then the rest typed in the speaker's words,
+    /// minus one leading article and one trailing "channel". An empty rest is the lead's actions alone.
+    private static func typingLead(_ tokens: [String], transcript: String, pack: AppPack) -> [Action]? {
+        for (lead, actions) in pack.typingLeads {
+            let leadTokens = lead.split(separator: " ").map(String.init)
+            guard tokens.starts(with: leadTokens) else { continue }
+            var rest = (rawWords(transcript, matching: tokens) ?? tokens).dropFirst(leadTokens.count)
+            if let article = rest.first?.lowercased(), ["the", "a", "an"].contains(article) { rest = rest.dropFirst() }
+            if rest.last?.lowercased() == "channel" { rest = rest.dropLast() }
+            return rest.isEmpty ? actions : actions + [.typeText(rest.joined(separator: " "))]
+        }
+        return nil
     }
 
     private static let closeOtherTabsPhrases: Set<String> = ["close the other tabs", "close other tabs", "close all other tabs"]

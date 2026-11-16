@@ -8,11 +8,14 @@ public struct AppPack: Sendable {
     public let bundleIDs: Set<String>
     /// Keys are already normalized: lowercase, single spaces, no ASR punctuation.
     public let phrases: [String: [Action]]
+    /// Normalized lead phrases that carry a name: "jump to general" runs the lead's actions, then types "general".
+    public let typingLeads: [String: [Action]]
 
-    public init(name: String, bundleIDs: Set<String>, phrases: [String: [Action]]) {
+    public init(name: String, bundleIDs: Set<String>, phrases: [String: [Action]], typingLeads: [String: [Action]] = [:]) {
         self.name = name
         self.bundleIDs = bundleIDs
         self.phrases = phrases
+        self.typingLeads = typingLeads
     }
 }
 
