@@ -13,3 +13,5 @@
 - The done row ends in `…` only when the answer is longer than six words.
 - The `rewriting…` row shows only after the field read, subject choice and cap check pass, so a refused rewrite never shows it.
 - The "rewrite needs a model" and "rewrite is off" messages are chosen when the pipeline sets the rewriter, which also follows a live backend switch from the menu.
+- A stop while the answer is being typed leaves what was typed so far; `undo` removes it. A stop during the model wait types nothing.
+- `rewrite …` and `translate … to …` keep the full silence window (`CommandGrammar.opensRewrite`, `carriesSpokenText`), so a paused instruction merges into one utterance; the presets still close early.
