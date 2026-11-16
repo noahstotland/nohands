@@ -12,3 +12,4 @@
 - A rewrite's finish line at `all` is spoken as the preview alone, without "Done".
 - A line that never reports its end is cut by a 45 s watchdog (not in the spec).
 - A private "failed" line says "Stuck." when its detail starts with "stuck", else "Failed."; the 300-character cut leaves room for the final full stop.
+- Text the model only saw on screen (not read through a read action) is not marked private, so an `outcomes` finish line may quote it.

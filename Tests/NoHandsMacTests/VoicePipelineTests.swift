@@ -668,6 +668,27 @@ private let nightGame = #"{"night game":["click","play the newest video","scroll
     #expect(r.resolver?.requests.dropFirst().first?.history.first?.userAnswer == "the knicks one")
 }
 
+@MainActor @Test func aLineHeardBackAtItsEndIsMeasuredFromTheVoiceNotTheVadsSilenceWait() async {
+    // The line ended 1.5 s ago and its echo stopped 0.2 s after that; the VAD closes the utterance only now.
+    // (voiceEnd, speechEnd, dropped as the line's own voice)
+    let table: [(Duration?, Duration, Bool)] = [(.seconds(-1.3), .zero, true), (nil, .zero, false)]
+    for (voiceEnd, speechEnd, dropped) in table {
+        let (r, fake, _) = talking(.all, sleep: { d in if d == TaskRunner.answerTimeout { try? await Task.sleep(for: .seconds(30)) } })
+        r.resolver?.scripted = [step("Which game?", .ask), step("type a", .done, [.typeText("a")])]
+        await r.pipeline.handle(transcript: "play the newest video", trace: trace())
+        for _ in 0..<400 where r.runner?.awaitedAnswer != .question { try? await Task.sleep(for: .milliseconds(5)) }
+        fake.current = SpokenLine(text: "Which game?", start: .now.advanced(by: .seconds(-4)), end: .now.advanced(by: .seconds(-1.5)))
+        let cuts = fake.cuts
+        var t = trace()
+        t.speechEnd = .now.advanced(by: speechEnd)
+        t.voiceEnd = voiceEnd.map { .now.advanced(by: $0) }
+        await r.pipeline.handle(transcript: "which game", trace: t)
+        #expect((fake.cuts == cuts) == dropped, "voiceEnd \(String(describing: voiceEnd))")
+        await r.pipeline.handle(transcript: "the knicks one", trace: trace())
+        await r.pipeline.waitForTask()
+    }
+}
+
 @MainActor @Test func theVoicePhrasesChangeTheLevelAtOnce() async {
     // (phrase, level after, what is said)
     let table: [(String, SpeakLevel, [String])] = [

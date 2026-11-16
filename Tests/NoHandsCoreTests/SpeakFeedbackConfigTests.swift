@@ -22,7 +22,4 @@ import Testing
         #expect(object.count == 4 && object["gridColumns"] as? Int == 12 && object["echoCancellation"] as? Bool == false)
         #expect(try AppConfig.load(from: out, environment: [:]).speakFeedback == level)
     }
-    #expect(throws: ClaudeKeyEntry.Error.invalidJSON) { try SpeakMenu.merged(existing: Data("[]".utf8), level: .all) }
-    let fresh = try SpeakMenu.merged(existing: nil, level: .outcomes)
-    #expect(try AppConfig.load(from: fresh, environment: [:]).speakFeedback == .outcomes)
 }

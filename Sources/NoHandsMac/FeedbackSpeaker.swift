@@ -82,12 +82,15 @@ extension Action {
         timeout?.cancel()
         timeout = nil
         self.utterance = nil
+        tracker = nil
         if current?.end == nil { current?.end = .now }
     }
 
     nonisolated public func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
         let id = ObjectIdentifier(utterance)
-        Task { @MainActor in self.finished(id) }
+        // While a tracker plays the line, the synthesizer finishing only means synthesis is done: the tracker (or the
+        // watchdog) ends the line.
+        Task { @MainActor in if self.tracker == nil { self.finished(id) } }
     }
 
     /// Synthesizes `utterance` into buffers and plays them through `capture`. Nonisolated on purpose: AVFoundation

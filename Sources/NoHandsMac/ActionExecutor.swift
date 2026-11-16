@@ -158,8 +158,7 @@ extension OverlayController: OverlayPresenting {
     let menus: any MenuReading
     let clipboard: any ClipboardAccess
     public var onModeChange: ((Mode) -> Void)?
-    /// Called when `.setSpokenFeedback` runs. Not connected yet: NH-60 Task 5 wires it to the pipeline, so until then
-    /// the action is a no-op.
+    /// Called when `.setSpokenFeedback` runs.
     public var onSpokenFeedbackChange: ((SpeakLevel) -> Void)?
     private let frontTimeout: Duration
     private let audio: any AudioOutputProbing

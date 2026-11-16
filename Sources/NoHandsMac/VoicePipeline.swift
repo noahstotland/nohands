@@ -159,7 +159,7 @@ import NoHandsCore
     private func ownVoiceHeard(_ text: String, trace: LatencyTrace) -> Bool {
         guard let speaker else { return false }
         if attention.isStop(text) { speaker.cut(); return false }
-        guard SelfEcho.isEcho(transcript: text, utteranceEnd: trace.speechEnd ?? .now, spoken: speaker.current) else {
+        guard SelfEcho.isEcho(transcript: text, utteranceEnd: trace.utteranceEnd ?? .now, spoken: speaker.current) else {
             speaker.cut()
             return false
         }

@@ -44,6 +44,9 @@ public final class MicrophoneCapture: @unchecked Sendable {
     // Playback (NH-60), confined to `playbackQueue`:
     private let playbackQueue = DispatchQueue(label: "nohands.mic.playback", qos: .userInitiated)
     private var player: AVAudioPlayerNode?
+    /// Serializes every change to the engine's graph (the rebuild in `installTapAndStart`, the player's attach and
+    /// connect, its detach), which run on different threads. Never held while waiting on another queue.
+    private let graphLock = NSLock()
     private var playbackConverters: [AVAudioFormat: AVAudioConverter] = [:]
     private static var playbackFormat: AVAudioFormat? { AVAudioFormat(standardFormatWithSampleRate: 24_000, channels: 1) }
     // Queue-confined:
@@ -134,8 +137,10 @@ public final class MicrophoneCapture: @unchecked Sendable {
     private func attachedPlayer() -> AVAudioPlayerNode {
         if let player { return player }
         let node = AVAudioPlayerNode()
+        graphLock.lock()
         engine.attach(node)
         engine.connect(node, to: engine.mainMixerNode, format: Self.playbackFormat)
+        graphLock.unlock()
         player = node
         return node
     }
@@ -145,7 +150,9 @@ public final class MicrophoneCapture: @unchecked Sendable {
         playbackQueue.sync {
             guard let node = player else { return }
             node.stop()
+            graphLock.lock()
             engine.detach(node)
+            graphLock.unlock()
             player = nil
         }
     }
@@ -204,6 +211,8 @@ public final class MicrophoneCapture: @unchecked Sendable {
     }
 
     private func installTapAndStart(generation gen: Int) throws {
+        graphLock.lock()
+        defer { graphLock.unlock() }
         guard isCurrent(gen) else { return }
         let input = engine.inputNode
         applyVoiceProcessing(input)
