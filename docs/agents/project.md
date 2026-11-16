@@ -80,7 +80,7 @@ Skills and the Chief of Staff restate these in every child task.
 
 - Brand in the interface: NoHands.
 - Speech and the fast grammar stay on-device; the model is optional and the app must keep working with it off ("LLM off").
-- Every command phrase in the `README.md` voice command table keeps working. A new phrase is added to the table in the same PR.
+- Every command phrase in the voice command table in `docs/voice-commands.md` keeps working. A new phrase is added to the table in the same PR.
 - The HUD and menu-bar text stay short: one line, no jargon, and every failure names what the user can do next (grant Accessibility, start Ollama, download the model).
 - Accessibility actions must be reversible by voice: anything that holds a state (hold click, dictation mode, sleep) has a spoken release.
 
@@ -107,7 +107,7 @@ Extra security-review checks on top of OWASP and "no secrets in repo".
 Read by the documenter subagent ([documenter.md](~/.collective-wisdom/docs/agents/documenter.md)).
 
 - Living docs to search: `README.md`, `AGENTS.md`, `docs/agents/`, `.claude/skills/`, `docs/superpowers/specs/2026-11-04-nohands-design.md` (the architecture spec).
-- Extra checks: the voice command and CLI subcommand tables in `README.md` when the diff touches `CommandGrammar.swift` or `Sources/nohands-cli/main.swift`; the Configuration section in `README.md` when it touches `AppConfig.swift`.
+- Extra checks: the voice command table in `docs/voice-commands.md` when the diff touches `CommandGrammar.swift`; the CLI subcommand table in `docs/cli.md` when it touches `Sources/nohands-cli/main.swift`; `docs/configuration.md` when it touches `AppConfig.swift`.
 
 ## Environments and deploy
 
