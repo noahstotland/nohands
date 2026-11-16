@@ -205,3 +205,18 @@ import Foundation
         #expect(try AppConfig.load(from: json.map { Data($0.utf8) }, environment: [:]).routeMemory == expected, "\(json ?? "nil")")
     }
 }
+
+@Test func packRegistryConfig() throws {
+    let key = Data(repeating: 7, count: 32).base64EncodedString(), url = URL(string: "https://packs.example.org/i.json")!
+    let table: [(String, PackRegistry.Setting, Int)] = [
+        ("{}", .none, PackRegistry.defaultKeys.count),
+        (#"{"packRegistryURL":""}"#, .off, 0),
+        (#"{"packRegistryURL":"https://packs.example.org/i.json"}"#, .url(url), 0),
+        (#"{"packRegistryURL":"https://packs.example.org/i.json","packRegistryKey":"\#(key)"}"#, .url(url), 1),
+        (#"{"packRegistryURL":"http://packs.example.org/i.json","packRegistryKey":"\#(key)"}"#, .invalid("Registry URL must be https"), 0),
+    ]
+    for (json, setting, keys) in table {
+        let c = try AppConfig.load(from: Data(json.utf8), environment: [:])
+        #expect(c.packRegistry == setting && c.packRegistryTrustedKeys.count == keys, "\(json)")
+    }
+}
