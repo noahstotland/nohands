@@ -20,7 +20,7 @@ PR #2's review deferred five minor findings. Checked against `main` at 558e4a6, 
 
 Non-goals: other agent-desktop commands' argument forms; a session started by a `startSession` call that a stop cancelled mid-flight (agent-desktop may have created it, but NoHands never got its ID; rare and harmless beyond a stale trace).
 
-Anti-goals: "stop" waiting on agent-desktop before the task ends (the HUD already shows "stopped" before the session ends, and that order stays); new `@unchecked Sendable` or `@preconcurrency`; a test that spawns a real agent-desktop.
+Anti-goals: the HUD waiting on agent-desktop after "stop" (it already shows "stopped" before the session ends, and that order stays; the run itself now ends only after `session end` returns, bounded by the agent-desktop deadline); new `@unchecked Sendable` or `@preconcurrency`; a test that spawns a real agent-desktop.
 
 ## Design
 
