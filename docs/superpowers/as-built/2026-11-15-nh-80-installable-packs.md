@@ -12,3 +12,6 @@
 - `PackFile.encode` skips a command holding an action the format cannot express (the built-ins have none).
 - `nohands-cli parse` also loads installed packs, so authors can dry-run a phrase.
 - The grammar is swapped on reload through `CommandGrammar.with(packs:)` and `ModeMachine.use(grammar:)`, with the merge window's copy behind a lock in `VoicePipeline`.
+- After security review the validator also: allows at most 2 plain (no command/control/option) key presses per command, no Return/space after a `menu_item`, rejects Command-Space, Command-Tab, Command-Option-Escape and the Empty Trash chords (unless the phrase says "empty" and "trash"), requires `open_app`/`open_url` to be a command's last action, holds menu titles that are word subsets of a guarded verb ("Empty"), and rejects `open_url` hosts that are IP literals, `localhost`, `.local` or have no dot.
+- `PackSummary` counts any phrase the grammar already parses (patterns included) as an override.
+- At most 100 packs load or install; `pack.json` is read up to 64 KiB + 1 bytes; the app coalesces `com.nohands.packs-changed` to one reload per 500 ms.
