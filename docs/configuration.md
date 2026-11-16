@@ -2,7 +2,7 @@
 
 Every setting, with defaults and ranges. Back to the [README](../README.md). Task behaviour is in [Tasks](tasks.md); data handling is in [Privacy](privacy.md).
 
-Optional file `~/.config/nohands/config.json`; every key may be omitted. Changes apply after a restart, except `intentBackend` set from the Model item. Invalid JSON falls back to defaults and is flagged in the menu.
+Optional file `~/.config/nohands/config.json`; every key may be omitted. Changes apply after a restart, except `intentBackend` set from the Model item and `speakFeedback` set from the Speak Feedback item or by voice. Invalid JSON falls back to defaults and is flagged in the menu.
 
 | Key | Default | Range / values |
 |---|---|---|
@@ -29,6 +29,7 @@ Optional file `~/.config/nohands/config.json`; every key may be omitted. Changes
 | `localLlmDeadlineMs` | `30000` | 2000 to 120000 |
 | `localMaxObservedElements` | `40` | 10 to 300 |
 | `echoCancellation` | `true` | |
+| `speakFeedback` | `off` | `off`, `outcomes`, `all` |
 | `attentionWord` | `""` | up to three words |
 | `visionFallback` | `false` | |
 | `followUpWindowMs` | `30000` | 0 to 120000; `0` turns follow-ups off |
@@ -44,7 +45,8 @@ The agent-desktop keys are under [agent-desktop harness keys](#agent-desktop-har
 - **Claude line in the menu** reads the config alone: `Claude: key set (config.json)`, `Claude: no key, using the local model`, `Claude: not used (intentBackend = local)`. Check Claude connection sends a one-token request: `Claude: connected at 14:32` or `Claude: key rejected at 14:32, check anthropicAPIKey`. Details: `docs/superpowers/specs/2026-11-09-nh-103-claude-status-menu-design.md`.
 - **Session total:** once Claude has made a call, a second line shows the running total for this app session, e.g. `Claude this session: 14 calls, 31k in, 9k cached, 2k out` ("in" is fresh input including cache writes, "cached" is cache reads). It counts every call that got a reply, including the connection check and stopped tasks, resets when NoHands restarts (not on config reload or backend change), and holds counts only, never text. Details: `docs/superpowers/specs/2026-11-15-nh-112-token-usage-design.md`.
 - **Pack registry.** `packRegistryURL` is where **Packs > Browse…**, **Check for pack updates** and `nohands-cli pack search|install|update` look for packs ([App packs](app-packs.md#get-packs-from-a-registry)). With no value, no registry is chosen yet and nothing is fetched; `""` turns it off. An address that is not `https`, or has a private host, is refused and the menu says why. `packRegistryKey` is the registry's public key, which its publisher gives you (base64 of 32 bytes); NoHands trusts only a list signed by that key. With a registry address but no key, the menu shows `Registry: no key` and nothing is fetched. Neither key is a secret. Nothing is fetched until you open Browse, check for updates or run a pack command.
-- **Echo cancellation.** `echoCancellation` removes what the Mac's speakers play (macOS voice processing); set `false` if an external audio interface clashes.
+- **Echo cancellation.** `echoCancellation` removes what the Mac's speakers play (macOS voice processing); set `false` if an external audio interface clashes. With it off, or when macOS refuses it, NoHands' own voice (see `speakFeedback`) plays through the system output and the microphone hears it: the transcript filter still drops what repeats the spoken line, but a `stop` said over its voice may be misheard and need saying again. The same filter has a cost with echo cancellation on: a `yes` or an answer said while NoHands is speaking its line, or within a second after it, can be dropped as an echo and may need repeating.
+- **Spoken feedback.** `speakFeedback` is `off` (nothing is spoken, no speech engine is started), `outcomes` (how a task, macro or rewrite ended: `Done: open the menu.`, `Stuck: no Raptors game listed.`) or `all` (also the model's questions, `Say yes to send.`, and the full text of a line that holds something the task read or rewrote, cut at 300 characters). Below `all` such a line is just `Done.`, `Stuck.` or `Failed.`. Grammar commands, `stopped` and `dropped` stay silent, and nothing is spoken in dictation mode, in sleep or while paused. The menu's Speak Feedback item and the voice phrases (see [Voice commands](voice-commands.md)) change it at once with no restart and save it here. The voice and rate follow System Settings > Accessibility > Spoken Content. Details: `docs/superpowers/specs/2026-11-16-nh-60-spoken-feedback-design.md`.
 - **Attention word.** `attentionWord` (empty = off): command mode acts only on utterances starting with it (`computer, new tab` works, `new tab` alone does nothing). More than three words, or a stop phrase, counts as off. `stop`, `wake up` and the dictation escapes (`stop dictating`, `command mode`) work with or without it. Details: `docs/superpowers/specs/2026-11-05-nh-12-attention-word-design.md`.
 - **Vocabulary.** `vocabulary` lists words the recognizer mishears; every transcript has each misheard spelling swapped for the right one before anything acts on it:
 

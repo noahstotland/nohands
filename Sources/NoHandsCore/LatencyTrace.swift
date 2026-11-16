@@ -8,6 +8,10 @@ public struct LatencyTrace: Sendable {
     public var voiceEnd: ContinuousClock.Instant?
     public init() {}
 
+    /// When the user's voice stopped: the last voiced chunk, else the VAD's speechEnd (which lags the voice by the
+    /// silence wait).
+    public var utteranceEnd: ContinuousClock.Instant? { voiceEnd ?? speechEnd }
+
     /// e.g. "asr=187ms total=412ms sinceVoice=700ms"; total and sinceVoice run to actionsDone, or asrDone if actions
     /// have not finished. sinceVoice starts at `voiceEnd`, so it includes the silence wait that total leaves out.
     public var summary: String {
