@@ -184,6 +184,13 @@ extension OverlayController: OverlayPresenting {
     /// Whether the last `editText` typed its `otherwise` words instead of editing: dictation, not an edit, so the
     /// dictation record ("scratch that") still matches the screen.
     public internal(set) var editTypedOtherwise = false
+    /// Rewrites ask this; nil when the model is off (the failure text then says what to do). See `useRewriter`.
+    var rewriter: (any TextRewriting)?
+    var rewriteUnavailable = ActionExecutor.rewriteNeedsModel
+    /// Called when a rewrite's request goes out, so the pipeline can show "rewriting…".
+    var onRewriteStart: (() -> Void)?
+    /// What the last rewrite changed, until `takeRewrite()`.
+    var rewriteReport: RewriteReport?
 
     public init(input: any InputSynthesizing, ax: any ElementProviding, overlay: any OverlayPresenting,
                 config: AppConfig, frontTimeout: Duration = .seconds(1.5), windowTimeout: Duration = .seconds(6),
@@ -397,6 +404,8 @@ extension OverlayController: OverlayPresenting {
                 if let failure = await listTabs() { return failure }
             case .editText(let edit, let otherwise):
                 if let failure = try await editText(edit, otherwise: otherwise) { return failure }
+            case .rewriteText(let how):
+                if let failure = try await rewriteText(how) { return failure }
             case .media(let command):
                 if let failure = try await runMedia(command) { return failure }
                 hideStaleOverlay()

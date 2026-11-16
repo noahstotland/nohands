@@ -120,11 +120,16 @@ public actor ClaudeIntentResolver: IntentResolving {
 
     /// One POST of `body()` with the key in the header only; returns the 2xx response body.
     private func post(key: String, body: () throws -> Data) async throws -> Data {
-        let request = Self.makeRequest(url: baseURL, key: key, deadline: deadline, body: try body())
+        try await Self.send(url: baseURL, key: key, body: try body(), session: session, deadline: deadline)
+    }
+
+    /// The one Claude POST, shared with the rewrite request: key in the header only, 2xx body back, else `IntentError.http`.
+    static func send(url: URL, key: String, body: Data, session: URLSession, deadline: Duration) async throws -> Data {
+        let request = makeRequest(url: url, key: key, deadline: deadline, body: body)
         let (data, http) = try await IntentHTTP.send(request, session: session, deadline: deadline)
         if !(200..<300).contains(http.statusCode) {
-            let text = String(decoding: data.prefix(Self.bodyPrefixLimit * 4), as: UTF8.self)
-            throw IntentError.http(http.statusCode, String(text.prefix(Self.bodyPrefixLimit)))
+            let text = String(decoding: data.prefix(bodyPrefixLimit * 4), as: UTF8.self)
+            throw IntentError.http(http.statusCode, String(text.prefix(bodyPrefixLimit)))
         }
         return data
     }

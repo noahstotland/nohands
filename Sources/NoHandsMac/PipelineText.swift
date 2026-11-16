@@ -14,6 +14,7 @@ public enum PipelineText {
     public static let dropped = "dropped"
     public static let cancelled = "cancelled"
     public static let stopping = "stopping the task"
+    public static let rewriting = "rewriting…"
 
     /// The finish HUD for a task.
     public static func hud(for outcome: TaskOutcome) -> String {

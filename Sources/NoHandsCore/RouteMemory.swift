@@ -83,6 +83,8 @@ public enum RouteMemory {
                 case .selectPhrase(let p), .deletePhrase(let p), .caretBefore(let p), .caretAfter(let p): [p]
                 case .replace(let a, let b): [a, b]
                 default: [] } })()
+        case .rewriteText(let how):
+            switch how { case .translate(let language): [language]; case .custom(let words): [words]; case .style: [] }
         default: []
         }
     }
@@ -157,6 +159,7 @@ public enum RouteMemory {
         case .closeOtherTabs: return "close_other_tabs"
         case .listTabs: return "list_tabs"
         case .editText: return "edit_text"
+        case .rewriteText: return "rewrite_text"
         case .media: return "media"
         case .volume: return "volume"
         case .system: return "system"
