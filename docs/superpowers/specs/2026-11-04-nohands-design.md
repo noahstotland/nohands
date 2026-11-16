@@ -14,7 +14,7 @@ A menu-bar macOS app that operates the whole computer by voice alone (dictation,
 
 ## 3. Architecture
 
-Mic (16 kHz mono, echo cancellation unless `echoCancellation` is false) → Silero VAD → Parakeet TDT v2 → vocabulary rewrite (`vocabulary` config key) → mode machine → dictation formatter, or command grammar (unmatched text is checked against `macros` names, then goes to the Claude resolver) → action executor.
+Mic (16 kHz mono, echo cancellation unless `echoCancellation` is false) → Silero VAD → Parakeet TDT v2 → vocabulary rewrite (`vocabulary` config key) → mode machine → dictation formatter, or command grammar (unmatched text is checked against `macros` names, then goes to the Claude resolver) → action executor. With `speakFeedback` not `off`, a task's finish line is spoken (through the capture engine, so echo cancellation removes it) and a transcript that repeats it is dropped before routing; a stop phrase is never dropped.
 
 - **One vocabulary.** `Action` is the enum every stage produces or consumes. A new capability adds a case in grammar, LLM decoder and executor.
 - **Grammar first, LLM second.** The common path is local (< 1 ms) and works offline. An untypeable `spell` phrase is rejected, not sent to the LLM.
@@ -26,7 +26,7 @@ Mic (16 kHz mono, echo cancellation unless `echoCancellation` is false) → Sile
 - `dictation`: everything is typed except "stop dictating", "command mode", "scratch that", "delete word", "delete that" and the text edits (`select the last sentence`, `delete <words>`, `replace x with y`, `go to the end of the line`, `uppercase that`; a phrase edit whose words are not in the field is typed as dictation).
 - `sleep`: everything ignored except "wake up".
 
-The menu bar shows `CMD` / `DICT` / `ZZZ`. The menu has Start at Login, Status Bar, Packs (turn an installed pack on or off, remove it; installing is `nohands-cli pack add`, see `docs/app-packs.md`), Model (`Claude|Local|Off`, no restart, saves `intentBackend`), Open config.json…, Recent commands (last 50) and View Logs…. The log is `~/.config/nohands/command-log.json`, local only, mode 600.
+The menu bar shows `CMD` / `DICT` / `ZZZ`. The menu has Start at Login, Status Bar, Packs (turn an installed pack on or off, remove it; installing is `nohands-cli pack add`, see `docs/app-packs.md`), Model (`Claude|Local|Off`, no restart, saves `intentBackend`), Speak Feedback (`Off|Outcomes|All`, no restart, saves `speakFeedback`), Open config.json…, Recent commands (last 50) and View Logs…. The log is `~/.config/nohands/command-log.json`, local only, mode 600.
 
 ## 5. Command grammar and dictation
 
