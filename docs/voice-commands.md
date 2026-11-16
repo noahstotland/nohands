@@ -100,8 +100,19 @@ An app can have phrases that work only while it is in front and win on a shared 
 | VS Code | `toggle terminal`, `new terminal` | Shows the integrated terminal, or opens a new one |
 | VS Code | `start debugging`, `toggle breakpoint`, `step over`, `step into`, `step out` | Drives the debugger |
 | VS Code | `zen mode`, `new window`, `settings` | Window and settings |
+| Messages | `new message`, `compose` | Starts a new message (command-N) |
+| Messages | `next conversation`, `previous conversation` | Moves between conversations |
+| Messages | `search`, `search messages` | Focuses the conversation search field |
+| Messages | `show details`, `info` | Shows the conversation details |
+| Messages | `mark as unread`, `mark as read` | Marks the conversation through the Conversation menu |
+| Messages | `emoji`, `add emoji` | Opens the emoji picker |
+| Messages | `tapback`, `react` | Opens the tapback picker |
+| Messages | `close window` | Closes the Messages window (command-W) |
+| Messages | `delete conversation` | Opens Messages' own delete confirm |
 
 The global `new tab`, `close tab`, `close window`, `next tab`, `previous tab`, `find`, `page up` and `page down` also work in Terminal. Closing a tab or window with a running command shows Terminal's own confirm, which NoHands does not answer (say `enter` or `escape`). `stop` never interrupts a shell command; say `interrupt`.
+
+The global `find`, `next tab`, `previous tab` and `search for <name>` also work in Messages. `delete conversation` asks first, and NoHands does not answer that question for you (say `enter` or `escape`). Sending stays `enter` (or `press return`), so there is no `send` phrase. Pin and unpin are not phrases yet: say them as a request and the model handles them.
 
 In Mail, read, flag, junk and the mailbox list are toggles. `go to inbox` and `go to sent` open the first Favorites mailbox and the Sent favorite, so they need Inbox and Sent in the Favorites bar. `next message` and `previous message` move the selection while the message list has focus. The global `delete`, `undo`, `find`, `up` and `down` keep their meaning while writing a message.
 
