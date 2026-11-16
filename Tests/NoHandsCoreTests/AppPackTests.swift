@@ -61,5 +61,11 @@ private let packed = CommandGrammar(packs: [chrome])
             #expect(!StopWords.isStop(phrase), "\(pack.name): \(phrase) is a stop word")
             #expect(CommandGrammar.normalize(phrase).joined(separator: " ") == phrase, "\(pack.name): \(phrase) is not normalized")
         }
+        for (lead, actions) in pack.typingLeads {
+            #expect(!actions.isEmpty && !lead.isEmpty, "\(pack.name): lead \(lead)")
+            #expect(!StopWords.isStop(lead), "\(pack.name): lead \(lead) is a stop word")
+            #expect(CommandGrammar.normalize(lead).joined(separator: " ") == lead, "\(pack.name): lead \(lead) is not normalized")
+            #expect(pack.phrases[lead] == nil, "\(pack.name): lead \(lead) is also an exact phrase")
+        }
     }
 }

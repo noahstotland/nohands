@@ -62,7 +62,7 @@ Details: `docs/superpowers/specs/2026-11-05-nh-10-spell-command-design.md`, `doc
 
 ## Per-app commands
 
-An app can have phrases that work only while it is in front and win on a shared phrase. Leading `open`, `go to` and `a` / `the` are ignored in lookup (`open a new tab`, `go to the new tab`, `new tab` are the same); where the app lacks the phrase, `open <phrase>` (two or more words) runs the global one (`open a new tab` presses command-T). Each app adds its rows below. Details: `docs/superpowers/specs/2026-11-15-nh-76-per-app-commands-design.md`.
+An app can have phrases that work only while it is in front and win on a shared phrase. Leading `open`, `go to` and `a` / `the` are ignored in lookup (`open a new tab`, `go to the new tab`, `new tab` are the same); where the app lacks the phrase, `open <phrase>` (two or more words) runs the global one (`open a new tab` presses command-T). A phrase can also start with a lead some apps define (Slack's `jump to <name>`). Each app adds its rows below. Details: `docs/superpowers/specs/2026-11-15-nh-76-per-app-commands-design.md`.
 
 | App | Say | Does |
 |---|---|---|
@@ -74,5 +74,19 @@ An app can have phrases that work only while it is in front and win on a shared 
 | Terminal | `split pane`, `close pane` | Splits the window, or closes the split pane |
 | Terminal | `bigger font`, `smaller font`, `default font size` | Changes the font size |
 | Terminal | `interrupt`, `cancel command` | Sends control-C to the running command |
+| Slack | `jump to <name>`, `quick switcher` | Opens the quick switcher (command-K) and types the name; say `enter` to go there |
+| Slack | `new message`, `compose` | Composes a new message |
+| Slack | `direct messages`, `dms` | Browses DMs |
+| Slack | `threads`, `activity`, `mentions`, `later`, `saved items`, `all unreads`, `people`, `home view` | Opens that view |
+| Slack | `browse channels`, `search`, `search this channel` | Browses channels, or searches Slack or the current conversation |
+| Slack | `previous channel`, `next channel`, `previous unread`, `next unread` | Moves between channels and DMs |
+| Slack | `mark as read`, `mark all as read` | Marks the current conversation, or everything, as read |
+| Slack | `upload a file`, `attach a file` | Opens the upload dialog |
+| Slack | `toggle sidebar`, `close panel`, `close thread` | Shows or hides the sidebar, or hides the right panel |
+| Slack | `huddle`, `start huddle`, `join huddle`, `leave huddle`, `end huddle` | Starts, joins or leaves a huddle (one toggle) |
+| Slack | `mute huddle`, `unmute huddle`, `mute myself` | Toggles mute in a huddle |
+| Slack | `close window`, `preferences`, `send`, `send message` | Closes the Slack window (command-W), opens preferences, or presses Return to send |
 
 The global `new tab`, `close tab`, `close window`, `next tab`, `previous tab`, `find`, `page up` and `page down` also work in Terminal. Closing a tab or window with a running command shows Terminal's own confirm, which NoHands does not answer (say `enter` or `escape`). `stop` never interrupts a shell command; say `interrupt`.
+
+The global `go back`, `go forward`, `find`, `escape`, `full screen` and `enter` also work in Slack. Bare `mute` stays the Mac's speakers; say `mute huddle` for the huddle. `jump to <name>` leaves the switcher open for `enter` or `down`. Any `jump to …` in Slack types into the switcher, and `open settings` or `open people` there means Slack's own view. The Later, sidebar and Home chords are unverified until checked against the Slack app.

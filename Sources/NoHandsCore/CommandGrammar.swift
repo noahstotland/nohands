@@ -149,7 +149,7 @@ public struct CommandGrammar: Sendable {
 
     /// nil when no rule matches (caller falls back to the LLM). `bundleID` is the frontmost app: its pack, if any,
     /// is checked before the global table. In order: a pack phrase that is also a global phrase, the global table on
-    /// the whole phrase, the pack on the phrase without its lead ("open", "go to", an article), "menu <words>", the
+    /// the whole phrase, the pack on the phrase without its lead ("open", "go to", an article), the pack's typing lead ("jump to <name>"), "menu <words>", the
     /// global table after an "open" lead, the text edits, the patterns, the filler-stripped table. A stop phrase never
     /// reaches a pack. `textFocused` is whether the front app has a text field focused: only then do edits that name
     /// words in the field ("delete the old files") belong to the grammar; without it they go to the model as before.
@@ -166,6 +166,7 @@ public struct CommandGrammar: Sendable {
             // Multi-word only: "open home" stays the Home app, not the Home key.
             if dropped == .open, stripped.count > 1, let hit = Self.exact[phrase] { return hit }
         }
+        if let pack, let hit = Self.typingLead(tokens, transcript: transcript, pack: pack) { return hit }
         if tokens.count > 1, tokens[0] == "menu" {
             let words = Self.rawWords(transcript, matching: tokens) ?? tokens
             return [.menuItem(words.dropFirst().joined(separator: " "))]
@@ -175,6 +176,20 @@ public struct CommandGrammar: Sendable {
         if let hit = Self.parseMedia(tokens) { return hit }
         if let hit = parsePattern(tokens, transcript: transcript) { return hit }
         return Self.strippedExactMatch(tokens)
+    }
+
+    /// A pack's typing lead ("jump to design team"): the lead's actions, then the rest typed in the speaker's words,
+    /// minus one leading article and one trailing "channel". An empty rest is the lead's actions alone.
+    private static func typingLead(_ tokens: [String], transcript: String, pack: AppPack) -> [Action]? {
+        for (lead, actions) in pack.typingLeads.sorted(by: { $0.key.count > $1.key.count }) {
+            let leadTokens = lead.split(separator: " ").map(String.init)
+            guard tokens.starts(with: leadTokens) else { continue }
+            var rest = (rawWords(transcript, matching: tokens) ?? tokens).dropFirst(leadTokens.count)
+            if let article = rest.first?.lowercased(), ["the", "a", "an"].contains(article) { rest = rest.dropFirst() }
+            if rest.last?.lowercased() == "channel" { rest = rest.dropLast() }
+            return rest.isEmpty ? actions : actions + [.typeText(rest.joined(separator: " "))]
+        }
+        return nil
     }
 
     private static let closeOtherTabsPhrases: Set<String> = ["close the other tabs", "close other tabs", "close all other tabs"]

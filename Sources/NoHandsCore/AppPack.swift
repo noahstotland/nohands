@@ -8,17 +8,20 @@ public struct AppPack: Sendable {
     public let bundleIDs: Set<String>
     /// Keys are already normalized: lowercase, single spaces, no ASR punctuation.
     public let phrases: [String: [Action]]
+    /// Normalized lead phrases that carry a name: "jump to general" runs the lead's actions, then types "general".
+    public let typingLeads: [String: [Action]]
 
-    public init(name: String, bundleIDs: Set<String>, phrases: [String: [Action]]) {
+    public init(name: String, bundleIDs: Set<String>, phrases: [String: [Action]], typingLeads: [String: [Action]] = [:]) {
         self.name = name
         self.bundleIDs = bundleIDs
         self.phrases = phrases
+        self.typingLeads = typingLeads
     }
 }
 
 public enum AppPacks {
-    /// The shipped packs; each app ticket adds an entry here and a row in the README.
-    public static let all: [AppPack] = [.terminal]
+    /// The shipped packs; each app ticket adds an entry here and a row in docs/voice-commands.md.
+    public static let all: [AppPack] = [.terminal, .slack]
 }
 
 /// The lead words the grammar drops before a phrase lookup, so "open a new tab" and "go to the downloads" reach
