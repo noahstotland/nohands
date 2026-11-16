@@ -1,7 +1,8 @@
 # NH-151: List every built-in pack id in the pack and CLI docs: Design
 
 **Date:** 2026-11-16  **Ticket:** [NH-151](https://github.com/noahstotland/nohands/issues/151)
-**Status:** Proposed
+**Status:** Shipped
+**Shipped:** in PR #176, as specified
 
 ## Intent
 
