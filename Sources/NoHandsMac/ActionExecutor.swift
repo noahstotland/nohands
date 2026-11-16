@@ -183,6 +183,13 @@ extension OverlayController: OverlayPresenting {
     /// Whether the last `editText` typed its `otherwise` words instead of editing: dictation, not an edit, so the
     /// dictation record ("scratch that") still matches the screen.
     public internal(set) var editTypedOtherwise = false
+    /// Where files are found and how they open (NH-58).
+    let files: any FileSource
+    let fileOpener: any FileOpening
+    /// Who is asking, for the current `execute`: only a spoken command may list several hits.
+    var fileContext = FileContext.model
+    /// The ranked hits a spoken "open file" found when several matched, until `takeFileOffer()`.
+    var fileOffer: [FileHit]?
 
     public init(input: any InputSynthesizing, ax: any ElementProviding, overlay: any OverlayPresenting,
                 config: AppConfig, frontTimeout: Duration = .seconds(1.5), windowTimeout: Duration = .seconds(6),
@@ -190,7 +197,10 @@ extension OverlayController: OverlayPresenting {
                 audio: any AudioOutputProbing = AudioOutputProbe(), mediaPoll: Duration = .milliseconds(500),
                 mediaAX: (any ElementProviding)? = nil, exposureSettle: Duration = .milliseconds(600),
                 menus: any MenuReading = AXMenuReader(), volume: any VolumeControlling = CoreAudioVolume(),
-                fullScreenSettle: Duration = .milliseconds(800)) {
+                fullScreenSettle: Duration = .milliseconds(800), files: any FileSource = SpotlightFileSource(),
+                fileOpener: any FileOpening = WorkspaceFileOpener()) {
+        self.files = files
+        self.fileOpener = fileOpener
         self.fullScreenSettle = fullScreenSettle
         self.menus = menus
         self.volume = volume
@@ -220,6 +230,9 @@ extension OverlayController: OverlayPresenting {
         return found
     }
 
+    /// A result the model reads as it is ("opened a file"), with no label.
+    func addResult(_ text: String) { readings.append(text) }
+
     func addReading(_ label: String, _ text: String) {
         // A label can come from the page (an element's title), so it can never spell the page reading's `page: `
         // prefix: colons go, and a bare "page" is renamed.
@@ -237,9 +250,12 @@ extension OverlayController: OverlayPresenting {
     /// the prompt's row). Any mouse button pressed by this call is released before a failure is returned.
     /// Returns `cancelled` when the calling task is cancelled before an action.
     @discardableResult
-    public func execute(_ actions: [Action], labels: [Int: UIElementInfo]? = nil, tabs: TabListing? = nil) async -> String? {
+    public func execute(_ actions: [Action], labels: [Int: UIElementInfo]? = nil, tabs: TabListing? = nil,
+                        files context: FileContext = .model) async -> String? {
         pressed = []
         editTypedOtherwise = false
+        fileContext = context
+        fileOffer = nil
         labelSnapshot = labels
         tabSnapshot = tabs
         defer { labelSnapshot = nil; tabSnapshot = nil }
@@ -342,6 +358,9 @@ extension OverlayController: OverlayPresenting {
                 guard ax.activate(appNamed: name) else { return "no app named \(name)" }
                 hideStaleOverlay()
                 if let failure = await waitReady(name, moreActionsFollow: !isLast) { return failure }
+            case .openFile(let request):
+                if let failure = await openFile(request) { return failure }
+                hideStaleOverlay()
             case .openURL(let url, let app):
                 if let failure = await openURLAction(url, app: app, isLast: isLast) { return failure }
             case .moveWindow(let placement):
