@@ -57,6 +57,8 @@ import NoHandsCore
     private let ax: any ElementProviding
     /// Where each command that ran is recorded for the View Logs window; nil records nothing.
     private let commandLog: CommandLogStore?
+    /// Saved routes (NH-46), handed to every runner this pipeline builds; "forget all routes" clears it.
+    private let routes: (any RouteStoring)?
     /// Which model a task is attributed to in the log. The app sets it when it builds or switches the resolver.
     public var resolverKind: CommandLogEntry.Resolver = .claude
 
@@ -121,16 +123,17 @@ import NoHandsCore
     public init(config: AppConfig, transcriber: any Transcribing, resolver: (any IntentResolving)?,
                 executor: ActionExecutor, overlay: any OverlayPresenting, ax: any ElementProviding = AXQuery(),
                 observer: ScreenObserver? = nil, taskRunner: TaskRunner? = nil, harness: (any DesktopHarness)? = nil,
-                commandLog: CommandLogStore? = nil) {
+                commandLog: CommandLogStore? = nil, routes: (any RouteStoring)? = nil) {
         self.config = config
         self.commandLog = commandLog
+        self.routes = routes
         self.attention = config.attentionGate
         self.transcriber = transcriber
         let observer = observer ?? ScreenObserver(ax: ax, maxElements: config.observedElementCap, harness: harness,
                                                   snapshotTimeoutMs: config.agentDesktopSnapshotMs)
         self.runner = taskRunner ?? resolver.map {
             TaskRunner(config: config, resolver: $0, executor: executor, observer: observer, overlay: overlay, harness: harness,
-                       screenshots: config.visionEnabled ? WindowScreenshotter(ax: ax) : nil)
+                       screenshots: config.visionEnabled ? WindowScreenshotter(ax: ax) : nil, routes: routes)
         }
         self.executor = executor
         self.overlay = overlay
@@ -162,7 +165,7 @@ import NoHandsCore
     public func switchBackend(config: AppConfig, resolver: any IntentResolving, observer: ScreenObserver) {
         replaceRunner(TaskRunner(config: config, resolver: resolver, executor: executor, observer: observer,
                                  overlay: overlay, harness: harness,
-                                 screenshots: config.visionEnabled ? WindowScreenshotter(ax: ax) : nil))
+                                 screenshots: config.visionEnabled ? WindowScreenshotter(ax: ax) : nil, routes: routes))
     }
 
     /// Takes `new` at once when no task is running; otherwise holds it (the newest wins) until the task loop is between runs.
@@ -611,6 +614,8 @@ import NoHandsCore
             } else {
                 overlay.report(job.id, text: text, status: .done(reading ?? ""))
             }
+        case .forgetRoutes(let all):
+            overlay.report(job.id, text: text, status: .done(forgetRoutes(all: all)))
         case .resolveWithLLM(let phrase):
             overlay.report(job.id, text: text, status: .heard)
             if runner == nil {
@@ -750,6 +755,7 @@ import NoHandsCore
                     failure = noResolverHint()
                 }
             case .reject(let message): failure = message
+            case .forgetRoutes(let all): _ = forgetRoutes(all: all)
             case .ignore, .macro: failure = PipelineText.didntCatch
             }
             if let failure {
@@ -770,6 +776,17 @@ import NoHandsCore
         trace.actionsDone = .now
         PipelineLog.utterance(trace: trace, transcript: text, outcome: "macro(\(kind))", detail: "macro(\(result.text))")
         publishStatus()
+    }
+
+    /// "Forget that route" drops the route the last task was hinted with and the one it saved; "forget all routes" empties
+    /// the store. Returns the row's text. The file is rewritten in the background.
+    private func forgetRoutes(all: Bool) -> String {
+        let dropped = runner?.takeRoutesToForget() ?? []
+        if all {
+            routes?.removeAll()
+            return "forgot all routes"
+        }
+        return routes?.remove(dropped) == true ? "forgot that route" : "no route to forget"
     }
 
     private func recordCommand(_ entry: CommandLogEntry) {

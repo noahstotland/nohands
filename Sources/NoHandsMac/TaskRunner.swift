@@ -46,6 +46,8 @@ public enum TaskOutcome: Equatable, Sendable {
     private let overlay: any OverlayPresenting
     /// Takes the vision fallback's picture; nil (flag off, local backend) means no step ever gets one.
     private let screenshots: (any ScreenshotProviding)?
+    /// Saved routes (NH-46); nil (the CLI, most tests) means no task is hinted with a route or saves one.
+    private let routes: (any RouteStoring)?
     /// Test hook: shortens the capture deadline.
     var captureDeadline = TaskRunner.captureDeadline
     /// The capture being waited for, if any. `cancel()` resumes it so a hung capture cannot hold up a stop.
@@ -89,6 +91,14 @@ public enum TaskOutcome: Equatable, Sendable {
     /// `failed`. Its goal chains the earlier goal with the follow-up's words, so a second follow-up still sees the first.
     public private(set) var lastTask: EarlierTask?
     private var runGoal = ""
+    /// The route this task was hinted with, and the one it saved (NH-46); both nil at the start of every task. "Forget
+    /// that route" drops both.
+    public private(set) var lastMatched: Route?
+    public private(set) var lastSaved: Route?
+    /// Whether the current run follows an earlier task: a follow-up neither gets a route nor saves one.
+    private var runIsFollowUp = false
+    /// Per step of `history`, the title each label number had on that step's screen, so a route is saved by name.
+    private var stepNames: [[Int: String]] = []
     /// Steps whose actions were executed in the current (or last) `run`.
     public private(set) var stepsRun = 0
     /// Each step's settle wait in ms, in the order `onStep` reported them, for the current (or last) `run`.
@@ -116,8 +126,10 @@ public enum TaskOutcome: Equatable, Sendable {
                 sleep: @escaping @Sendable (Duration) async -> Void = { try? await Task.sleep(for: $0) },
                 now: @escaping @Sendable () -> ContinuousClock.Instant = { .now },
                 harness: (any DesktopHarness)? = nil,
-                screenshots: (any ScreenshotProviding)? = nil) {
+                screenshots: (any ScreenshotProviding)? = nil,
+                routes: (any RouteStoring)? = nil) {
         self.config = config
+        self.routes = config.routeMemory ? routes : nil
         self.screenshots = config.visionEnabled ? screenshots : nil
         self.harness = harness
         self.resolver = resolver
@@ -154,6 +166,10 @@ public enum TaskOutcome: Equatable, Sendable {
         // The done-only-when-playing check follows the earlier goal unless the new words ask to pause, stop or mute.
         let playbackGoal = FollowUp.playbackGoal(earlier: earlier?.goal, goal: goal)
         lastTask = nil
+        lastMatched = nil
+        lastSaved = nil
+        runIsFollowUp = earlier != nil
+        stepNames = []
         planLimit = nil
         stepsRun = 0
         settleTimes = []
@@ -191,6 +207,10 @@ public enum TaskOutcome: Equatable, Sendable {
         var (observation, labels) = first.result
         await annotateTabs(&observation)
         var settled = settleStart.duration(to: .now)
+        // A saved route that fits this goal goes on every request as a hint; matching reads the in-memory list only.
+        if let routes, earlier == nil {
+            lastMatched = RouteMemory.match(goal: goal, currentHost: RouteMemory.host(of: observation.url), in: routes.routes)
+        }
 
         // A goal that looks multi-step may get a plan the model writes once; code then runs and checks it, and the
         // loop below takes over on any miss. Every step still goes through the guards below.
@@ -224,7 +244,7 @@ public enum TaskOutcome: Equatable, Sendable {
             }
             lastSeen = observation
             var request = StepRequest(goal: goal, step: n, maxSteps: maxSteps, history: history, observation: observation,
-                                      earlier: earlier)
+                                      earlier: earlier, pastRoute: lastMatched)
             var step: IntentStep
             if let planned {
                 step = planned
@@ -273,7 +293,7 @@ public enum TaskOutcome: Equatable, Sendable {
                 stepsRun = n
                 trail.end(number: n, failure: nil)
                 onTrail?(trail)
-                history.append(StepRecord(intent: question, actions: [], userAnswer: String(said.prefix(Self.answerLimit))))
+                record(StepRecord(intent: question, actions: [], userAnswer: String(said.prefix(Self.answerLimit))))
                 if n < maxSteps {
                     settleStart = ContinuousClock.now
                     pendingSurfaces = harness?.takeOpenSurfaces() ?? []
@@ -296,6 +316,8 @@ public enum TaskOutcome: Equatable, Sendable {
             // On a step that carried a picture, a point is in the picture's pixels: map it to the screen, and run
             // nothing if it is outside the picture or the photographed window has since moved.
             // A click by name is pointed at the element list the model read (list-dependent, so not in History).
+            // The name each label has on this screen, for a saved route (the numbers mean nothing on a later screen).
+            let titles = routes == nil ? [:] : labels.mapValues(\.title)
             var actions = ElementNames.bind(step.actions, labels: labels, menuBarTitles: observation.menuBarTitles, goal: goal)
             var pointFailure: String?
             if case .image(let shot)? = request.vision, ScreenshotGeometry.holdsPoint(actions) {
@@ -363,7 +385,7 @@ public enum TaskOutcome: Equatable, Sendable {
                 let hud = readings.first.map { "\(step.intent) — \($0.prefix(80))" }
                 // The kept history ends with this step, so a follow-up sees what was clicked last.
                 let doneRecord = StepRecord(intent: step.intent, actions: step.actions)
-                guard MediaSignal.wantsPlayback(goal: playbackGoal) else { history.append(doneRecord); return await finish(finished, hud: hud) }
+                guard MediaSignal.wantsPlayback(goal: playbackGoal) else { record(doneRecord, names: titles); return await finish(finished, hud: hud) }
                 // A goal to play something is done when it plays, not when the page loaded: look once more at the
                 // screen after this step's actions. A visible Play button sends the model round once more.
                 settleStart = ContinuousClock.now
@@ -372,13 +394,13 @@ public enum TaskOutcome: Equatable, Sendable {
                 settled = settleStart.duration(to: .now)
                 lastSeen = observation
                 if isCancelled { return await finish(.stopped) }
-                guard observation.media == .paused else { history.append(doneRecord); return await finish(finished, hud: hud) }
-                history.append(StepRecord(intent: step.intent, actions: step.actions, failure: Self.notPlaying))
+                guard observation.media == .paused else { record(doneRecord, names: titles); return await finish(finished, hud: hud) }
+                record(StepRecord(intent: step.intent, actions: step.actions, failure: Self.notPlaying), names: titles)
                 if askedAgainForMedia || n == maxSteps { return await finish(.stuck(Self.notPlaying)) }
                 askedAgainForMedia = true
                 continue
             }
-            history.append(StepRecord(intent: step.intent, actions: step.actions, failure: failure))
+            record(StepRecord(intent: step.intent, actions: step.actions, failure: failure), names: titles)
             if n < maxSteps {
                 settleStart = ContinuousClock.now
                 pendingSurfaces = harness?.takeOpenSurfaces() ?? []
@@ -388,6 +410,28 @@ public enum TaskOutcome: Equatable, Sendable {
             }
         }
         return await finish(.stuck(Self.stepLimit))
+    }
+
+    /// Adds a step to `history`; `names` are the label titles on its screen (see `stepNames`).
+    private func record(_ step: StepRecord, names: [Int: String] = [:]) {
+        history.append(step)
+        stepNames.append(names)
+    }
+
+    /// Saves the task as a route when it ended `done` after at least `RouteMemory.minSteps` clean steps; a follow-up
+    /// saves nothing. The store writes in the background, so this never waits for or fails the task.
+    private func saveRoute() {
+        guard let routes, !runIsFollowUp else { return }
+        guard let route = RouteMemory.route(goal: runGoal, url: lastSeen?.url, history: history, names: stepNames,
+                                            savedAt: Date()) else { return }
+        routes.save(route)
+        lastSaved = route
+    }
+
+    /// The routes "forget that route" drops: the one this task was hinted with and the one it saved. Cleared by the call.
+    func takeRoutesToForget() -> [Route] {
+        defer { lastMatched = nil; lastSaved = nil }
+        return [lastMatched, lastSaved].compactMap { $0 }
     }
 
     /// Asks the resolver for a plan and keeps it only if it passes `TaskPlan.validated`. Any error, including an
@@ -701,6 +745,7 @@ public enum TaskOutcome: Equatable, Sendable {
         observer.resetBrowserTokens()
         planLimit = nil
         lastTask = Self.earlierTask(goal: runGoal, history: history, outcome: outcome, seen: lastSeen)
+        if case .done = outcome { saveRoute() }
         if case .stuck(let why) = outcome { trail.ending = why == Self.stepLimit ? .stepCap : .stuck }
         trail.phase = nil
         onTrail?(trail)

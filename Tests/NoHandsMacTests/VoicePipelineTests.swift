@@ -43,7 +43,7 @@ private let reloadButton = UIElementInfo(id: 1, frame: CGRect(x: 100, y: 100, wi
 }
 
 @MainActor private func rig(withResolver: Bool = true, attentionWord: String = "", macros: String = "{}",
-                            commandLog: CommandLogStore? = nil,
+                            commandLog: CommandLogStore? = nil, routes: FakeRouteStore? = nil,
                             sleep: @escaping @Sendable (Duration) async -> Void = { _ in }) -> Rig {
     let input = FakeInput(), ax = FakeElements(), overlay = FakeOverlay()
     let executor = ActionExecutor(input: input, ax: ax, overlay: overlay, config: AppConfig(), frontTimeout: .milliseconds(100))
@@ -52,11 +52,11 @@ private let reloadButton = UIElementInfo(id: 1, frame: CGRect(x: 100, y: 100, wi
     config.attentionWord = attentionWord
     let observer = ScreenObserver(ax: ax, maxElements: config.maxObservedElements)
     let runner = resolver.map {
-        TaskRunner(config: config, resolver: $0, executor: executor, observer: observer, overlay: overlay, sleep: sleep)
+        TaskRunner(config: config, resolver: $0, executor: executor, observer: observer, overlay: overlay, sleep: sleep, routes: routes)
     }
     let p = VoicePipeline(config: config, transcriber: NullTranscriber(), resolver: resolver,
                           executor: executor, overlay: overlay, ax: ax, observer: observer, taskRunner: runner,
-                          commandLog: commandLog)
+                          commandLog: commandLog, routes: routes)
     p.macroStepPause = .zero
     return Rig(pipeline: p, input: input, ax: ax, overlay: overlay, resolver: resolver, executor: executor, observer: observer, runner: runner)
 }
@@ -536,5 +536,32 @@ private let nightGame = #"{"night game":["click","play the newest video","scroll
         #expect(r.overlay.statuses.last == last)
         #expect(r.input.calls.filter { $0 != "releaseAll" } == ["click:10,20"], "\(last)")
         #expect(r.overlay.reports.last?.status == .failed(last))
+    }
+}
+
+@MainActor @Test func forgetPhrasesDropTheLastRoutesOrAllOfThem() async {
+    let click = Action.click(.cursor, button: .left, count: 1)
+    let past = Route(goal: "other goal", host: nil, steps: [RouteStep(intent: "x", actions: ["click"])], savedAt: .distantPast)
+    // (phrase, the row it ends on, routes left of the other one and this task's)
+    let table: [(String, String, Int)] = [
+        ("forget that route", "forgot that route", 1), ("forget all routes", "forgot all routes", 0),
+        ("night game", "done · 1 step", 0),   // a macro step saying "forget all routes" does what the spoken phrase does
+    ]
+    for (phrase, row, left) in table {
+        let store = FakeRouteStore()
+        store.routes = [past]
+        let r = rig(macros: #"{"night game":["forget all routes"]}"#, routes: store)
+        r.resolver?.scripted = [step("a", .continue, [click]), step("b", .done, [click])]
+        await r.pipeline.handle(transcript: "tidy up the desk", trace: trace())
+        await r.pipeline.waitForTask()
+        #expect(store.routes.count == 2, "\(phrase)")   // the other route and this task's
+        await r.pipeline.handle(transcript: phrase, trace: trace())
+        await r.pipeline.waitForTask()
+        #expect(r.overlay.reports.last?.status.text.hasPrefix(row) == true, "\(phrase): \(r.overlay.reports.last?.status.text ?? "")")
+        #expect(store.routes.count == left, "\(phrase)")
+        if phrase == "forget that route" {
+            await r.pipeline.handle(transcript: phrase, trace: trace())   // nothing left to drop
+            #expect(r.overlay.reports.last?.status.text == "no route to forget")
+        }
     }
 }
