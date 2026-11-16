@@ -109,15 +109,16 @@ through agent-desktop as the model's drag does. The native path changes for both
 - any throw after the press releases the button before the failure is returned.
 - a spoken stop during the drag: the drag is one action, so it runs to its release (a third of a second) and the
   task then stops. A drag never stops with the button down.
-- the overlay is hidden after a drag that used it, as `click 12` does: the labels are stale once something moved.
+- the overlay is hidden after a drag that used it and succeeded, as `click 12` does: the labels are stale once something moved. A failed drag leaves it up so the numbers can be tried again.
 
 ### Stop releases a held button (Mac, `VoicePipeline`)
 
-Any stop phrase (`StopWords.isStop`) now also releases a held mouse button, whether or not a task is running:
+Any stop phrase (the pipeline's `attention.isStop`, so an addressed "computer, stop" counts, and before the stale-job check) now also releases a held mouse button, whether or not a task is running:
 `executor.releaseHeldButton()` calls `input.releaseAll()` without hiding the overlay (so after `click 12 and hold`, a
 `stop` releases and the grid stays up for the next try; `cancel` still hides it as today). The stop still halts the
 task exactly as before, is still never merged, and still never starts a task. Releasing with nothing held does
-nothing.
+nothing. While a native drag is in flight `releaseHeldButton()` does nothing, so a stop never cuts a drag short; the
+drag's own release (or its failure path) lets go.
 
 ### What is reversible
 
