@@ -1,5 +1,11 @@
 # Release notes
 
+## 2026-11-16 harness minors from the PR #2 review (NH-7) (#147)
+
+Merged 2026-11-16 2:36 pm UTC.
+
+Dragging to a point left of or above the main display now works with the agent-desktop backend, and saying "stop" during a traced task closes the trace session.
+
 ## 2026-11-16 follow-up commands that refer to the last task (NH-48) (#146)
 
 Merged 2026-11-16 2:29 pm UTC.
