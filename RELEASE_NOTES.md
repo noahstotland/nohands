@@ -1,5 +1,11 @@
 # Release notes
 
+## 2026-11-16 follow-up commands that refer to the last task (NH-48) (#146)
+
+Merged 2026-11-16 2:29 pm UTC.
+
+Say "no, the other one", "the next one" or "also mute it" within 30 seconds of a task and NoHands continues that task instead of starting over. Set `followUpWindowMs` to `0` in the config to turn it off.
+
 ## 2026-11-16 custom vocabulary for misheard words (NH-56) (#145)
 
 Merged 2026-11-16 2:25 pm UTC.
