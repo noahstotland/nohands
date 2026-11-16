@@ -1,5 +1,11 @@
 # Release notes
 
+## 2026-11-16 pointer and page grammar: drag, page edges, zoom, centre (NH-59) (#164)
+
+Merged 2026-11-16 6:18 pm UTC.
+
+You can now say "drag 5 to 12", "click 12 and hold", "top of page", "zoom in", "actual size" and "move to center". Saying "stop" now also lets go of a mouse button you were holding.
+
 ## 2026-11-16 open files, folders and recent documents by voice (NH-58) (#165)
 
 Merged 2026-11-16 6:16 pm UTC.
