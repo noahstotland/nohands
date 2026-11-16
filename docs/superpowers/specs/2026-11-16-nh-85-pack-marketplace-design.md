@@ -1,7 +1,8 @@
 # NH-85: Pack marketplace: Design
 
 **Date:** 2026-11-16  **Ticket:** [NH-85](https://github.com/noahstotland/nohands/issues/85)
-**Status:** Draft
+**Status:** Shipped
+**Shipped:** in PR #168, with differences: [as-built](../as-built/2026-11-16-nh-85-pack-marketplace.md)
 **Builds on:** [NH-80 installable packs](2026-11-15-nh-80-installable-packs-design.md) ([as-built](../as-built/2026-11-15-nh-80-installable-packs.md))
 
 ## Intent
