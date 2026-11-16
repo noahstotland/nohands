@@ -32,6 +32,8 @@ import NoHandsCore
         var goal: String
         var transcript: String
         var trace: LatencyTrace
+        /// Set when the utterance named a macro: `goal` is its name and the steps run inside the same `activeTask`.
+        var macro: Macro?
     }
 
     private let config: AppConfig
@@ -59,6 +61,8 @@ import NoHandsCore
     public var resolverKind: CommandLogEntry.Resolver = .claude
 
     private var modeMachine: ModeMachine
+    /// Pause after a macro's grammar step, so an app the step opened can come forward. Tests set it to zero.
+    var macroStepPause: Duration = .milliseconds(500)
     /// The grammar the merge window asks off the main actor. Behind a lock so a pack reload can swap it; the mode
     /// machine holds its own copy, swapped with it on the main actor.
     private let mergeGrammar: OSAllocatedUnfairLock<CommandGrammar>
@@ -134,7 +138,7 @@ import NoHandsCore
         self.harness = harness
         let grammar = CommandGrammar(config: config.grammarConfig)
         self.mergeGrammar = OSAllocatedUnfairLock(initialState: grammar)
-        self.modeMachine = ModeMachine(grammar: grammar, attention: config.attentionGate)
+        self.modeMachine = ModeMachine(grammar: grammar, attention: config.attentionGate, macros: config.macros)
         executor.onModeChange = { [weak self] mode in
             guard let self else { return }
             self.modeMachine.apply(mode: mode)
@@ -186,7 +190,7 @@ import NoHandsCore
     /// Skips the merge window: a complete grammar command in command mode, a stop phrase in any mode, and the
     /// dictation commands (escape phrases, "scratch that", "delete word", text edits) in dictation mode. Internal so tests build their MergeBuffer the same way.
     /// With the attention word on, a command mode grammar command counts only after the word ("computer, go back").
-    nonisolated static func isComplete(_ transcript: String, mode: Mode, grammar: CommandGrammar,
+    nonisolated static func isComplete(_ transcript: String, mode: Mode, grammar: CommandGrammar, macros: Macros = Macros(),
                                        attention: AttentionGate = .off, frontmost: String? = nil,
                                        textFocused: @Sendable () -> Bool = { false }) -> Bool {
         if attention.isStop(transcript) { return true }
@@ -195,7 +199,8 @@ import NoHandsCore
             // "spell" always waits the merge window: a pause mid-spelling must not type half and send the rest to the model.
             func complete(_ phrase: String) -> Bool {
                 CommandGrammar.normalize(phrase).first != "spell"
-                    && parsed(phrase, grammar: grammar, frontmost: frontmost, textFocused: textFocused) != nil
+                    && (parsed(phrase, grammar: grammar, frontmost: frontmost, textFocused: textFocused) != nil
+                        || macros.match(phrase) != nil)   // a macro name is whole, like a grammar command
             }
             switch attention.check(transcript) {
             case .off: return complete(transcript)
@@ -305,12 +310,13 @@ import NoHandsCore
         let mergeGrammar = self.mergeGrammar
         let attention = self.attention
         let vocabulary = config.vocabulary
+        let macros = config.macros
         let front = FrontmostApp.shared   // a pack phrase closes the merge window early, like a global one
         let ax = self.ax   // asked only for a text edit that names words in the field
         let merge = MergeBuffer(
             merger: UtteranceMerger(windowMs: config.mergeWindowMs, unfinishedWindowMs: config.mergeWindowUnfinishedMs),
             gate: attention,
-            isComplete: { Self.isComplete($0, mode: $1, grammar: mergeGrammar.withLock { $0 }, attention: attention, frontmost: front.bundleID,
+            isComplete: { Self.isComplete($0, mode: $1, grammar: mergeGrammar.withLock { $0 }, macros: macros, attention: attention, frontmost: front.bundleID,
                                           textFocused: { ax.isTextFocused() }) },
             carriesSpokenText: { Self.carriesSpokenText($0, grammar: mergeGrammar.withLock { $0 }, attention: attention, frontmost: front.bundleID,
                                                         textFocused: { ax.isTextFocused() }) },
@@ -563,6 +569,13 @@ import NoHandsCore
         var detail = PipelineText.summary(routing, detailed: true)     // private: with payloads
 
         switch routing {
+        case .macro(let macro):
+            overlay.report(job.id, text: text, status: .heard)
+            guard canExecute else {
+                overlay.report(job.id, text: text, status: .dropped(PipelineText.cancelled))
+                outcome += " (cancelled)"; detail += " (cancelled)"; break
+            }
+            return PendingTask(id: job.id, goal: macro.name, transcript: text, trace: trace, macro: macro)
         case .ignore(let reason):
             // Nothing on the board (this also keeps sleep silent), unless the merge window already put the words
             // there: that row must not stay "listening".
@@ -623,14 +636,17 @@ import NoHandsCore
     /// Runs `first` in `activeTask`, then the held job (if any) inside the same task so it stays serialized; a held
     /// job that routes to the LLM runs as the next task.
     private func startTask(_ first: PendingTask) {
-        guard runner != nil else { return }
+        guard runner != nil || first.macro != nil else { return }
         activeTask = Task { [self] in
             var next: PendingTask? = first
             while let pending = next {
                 next = nil
                 applyPendingRunner()
-                guard let runner else { break }
-                await runTask(pending, runner: runner)
+                if let macro = pending.macro {
+                    await runMacro(macro, pending: pending)
+                } else if let runner {
+                    await runTask(pending, runner: runner)
+                } else { break }
                 applyPendingRunner()
                 while next == nil, canExecute, let held = heldJob {
                     heldJob = nil
@@ -647,10 +663,16 @@ import NoHandsCore
         }
     }
 
-    private func runTask(_ pending: PendingTask, runner: TaskRunner) async {
+    /// `row` is the words on the prompt's row when they are not `pending.transcript` (a macro step: the row shows the
+    /// macro's name, the log the step); `relabel` rewrites each line the runner reports, nil hides it.
+    @discardableResult
+    private func runTask(_ pending: PendingTask, runner: TaskRunner, row: String? = nil,
+                         relabel: @escaping (PromptStatus) -> PromptStatus? = { $0 }) async -> TaskOutcome {
         // The runner's step and finish lines go on this prompt's row.
-        let id = pending.id, text = pending.transcript
-        runner.onStatus = { [weak self] status in self?.overlay.report(id, text: text, status: status) }
+        let id = pending.id, text = row ?? pending.transcript
+        runner.onStatus = { [weak self] status in
+            if let shown = relabel(status) { self?.overlay.report(id, text: text, status: shown) }
+        }
         runner.onTrail = { [weak self] trail in self?.overlay.report(id, trail: trail) }
         let kind = resolverKind
         _ = await runner.takeUsage()   // a cancelled earlier task's calls must not count here
@@ -680,6 +702,66 @@ import NoHandsCore
         PipelineLog.utterance(trace: trace, transcript: pending.transcript,
                               outcome: "task(\(Self.kind(outcome)), steps=\(steps)\(settle))",
                               detail: "task(\(Self.kind(outcome, detailed: true)), steps=\(steps)\(settle))")
+        publishStatus()
+        return outcome
+    }
+
+    /// Runs a macro's steps in order on one row, inside `activeTask`: a stop reaches it through `busy()` like any task.
+    /// The first step that fails, is not understood, changes the mode or is stopped ends it.
+    private func runMacro(_ macro: Macro, pending: PendingTask) async {
+        let id = pending.id, text = pending.transcript, total = macro.steps.count
+        func at(_ n: Int, _ detail: String) -> String { "step \(n) of \(total) · \(detail)" }
+        var result = PromptStatus.done("done · \(total) steps")
+        for (index, step) in macro.steps.enumerated() {
+            let n = index + 1
+            guard canExecute else { result = .stopped("stopped at step \(n) of \(total)"); break }
+            overlay.report(id, text: text, status: .running(at(n, step)))
+            var textFocused = false
+            if ModeMachine.namesTextEdit(step) {
+                let ax = self.ax
+                textFocused = await Task.detached { ax.isTextFocused() }.value
+            }
+            let phrase = "\(macro.name) › \(step)"
+            let routing = modeMachine.routeStep(step, frontmost: NSWorkspace.shared.frontmostApplication?.bundleIdentifier,
+                                                textFocused: textFocused)
+            var failure: String?
+            switch routing {
+            case .execute(let actions):
+                let began = Date(), clock = ContinuousClock.now
+                failure = await executor.execute(actions)
+                recordCommand(.grammar(date: began, phrase: phrase, action: PipelineText.describe(actions), failure: failure,
+                                       durationMs: CommandLogEntry.milliseconds(clock.duration(to: .now))))
+                if failure == nil, n < total { try? await Task.sleep(for: macroStepPause) }
+            case .resolveWithLLM(let goal):
+                if let runner {
+                    var task = pending
+                    task.goal = goal; task.transcript = phrase; task.macro = nil
+                    let outcome = await runTask(task, runner: runner, row: text) { status in
+                        if case .running(let detail) = status { .running(at(n, detail)) } else { nil }
+                    }
+                    switch outcome {
+                    case .done: break
+                    case .stopped: failure = ActionExecutor.cancelled
+                    case .stuck(let why), .failed(let why): failure = why
+                    case .ignored: failure = PipelineText.didntCatch
+                    }
+                } else {
+                    failure = noResolverHint()
+                }
+            case .reject(let message): failure = message
+            case .ignore, .macro: failure = PipelineText.didntCatch
+            }
+            if let failure {
+                let ended = failure == ActionExecutor.cancelled || !canExecute
+                result = ended ? .stopped("stopped at step \(n) of \(total)") : .failed(at(n, failure))
+                break
+            }
+            if modeMachine.mode != .command { result = .failed(at(n, "changed mode")); break }
+        }
+        overlay.report(id, text: text, status: result)
+        var trace = pending.trace
+        trace.actionsDone = .now
+        PipelineLog.utterance(trace: trace, transcript: text, outcome: "macro(\(result.text))", detail: "macro(\(result.text))")
         publishStatus()
     }
 
