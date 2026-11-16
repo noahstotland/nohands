@@ -1,7 +1,8 @@
 # NH-56: Custom vocabulary: Design
 
 **Date:** 2026-11-16  **Ticket:** [NH-56](https://github.com/noahstotland/nohands/issues/56)
-**Status:** Draft
+**Status:** Shipped
+**Shipped:** in PR #145, as specified
 
 ## Intent
 
