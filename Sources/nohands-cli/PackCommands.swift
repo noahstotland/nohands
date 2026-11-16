@@ -2,7 +2,7 @@ import Foundation
 import NoHandsCore
 import NoHandsMac
 
-/// `nohands-cli pack add|list|remove|builtin|search|install|update`. A pack is data; `add`, `install` and `update` show
+/// `nohands-cli pack add|list|remove|builtin|new|search|install|update`. A pack is data; `add`, `install` and `update` show
 /// what it can do and write it only on a typed yes. There is no flag to skip the question. `search`, `install` and
 /// `update` are the only ones that reach the network: the registry, and only because you ran them.
 func packCommand(_ args: [String]) async {
@@ -15,6 +15,7 @@ func packCommand(_ args: [String]) async {
     case ("list", 1): listPacks(store)
     case ("remove", 2): removePack(args[1], store: store)
     case ("builtin", 2): printBuiltIn(args[1])
+    case ("new", _): newPack(Array(args.dropFirst()))
     default: usage()
     }
 }

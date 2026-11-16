@@ -84,6 +84,18 @@ Requests follow at most 3 redirects, and each must go to `https` and a public ho
 
 ## Write a pack
 
+The quickest start is to let NoHands read the app's menus. Bring the app forward and run `swift run nohands-cli pack new` (it waits 3 s), or name a running app with `--app Safari`, and add `--out <file>` to pick the file name (the default is `<id>.json` here; an existing file is never overwritten). It writes a draft with one phrase per top-level menu item: the item's title as the phrase, its keyboard shortcut when it has one, otherwise a `menu_item` that presses it. It prints what it left out and why:
+
+- `disabled`: the item was greyed out when read. Open a window with content and run again to catch more.
+- `opens a submenu`, `no title`, `title has >`, `no words to say` or `too long to say`: nothing a phrase can press or say.
+- `same phrase as ...`: two items with one title; the first stays.
+- `already a NoHands phrase`: NoHands already understands it, such as `copy` or `new tab`.
+- `irreversible`: Send, Delete and the like (Empty Trash shows as `already a NoHands phrase`). Add one by hand if you want it.
+- `rejected: ...`: the pack check refuses it, such as a reserved phrase or a blocked shortcut.
+- `over the 200 command limit`.
+
+Edit the draft, then install it with `pack add` like any other file. `pack new` never installs.
+
 `swift run nohands-cli pack builtin terminal` prints the Terminal pack in this format as a starting point. A pack is one JSON file, up to 64 KiB:
 
 ```json

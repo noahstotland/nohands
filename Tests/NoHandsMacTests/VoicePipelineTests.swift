@@ -202,6 +202,7 @@ private func step(_ intent: String, _ status: StepStatus, _ actions: [Action] = 
     #expect(r.pipeline.isTaskActive)                       // handle returned while the task runs
     await entered.wait()                                   // step 2 is resolving
     await r.pipeline.handle(transcript: "stop", trace: trace())
+    #expect(r.input.calls.contains("releaseAll"))          // the stop let go of a held button at once, before the runner unwinds
     release.open()
     await r.pipeline.waitForTask()
     #expect(r.pipeline.lastTaskOutcome == .stopped)
@@ -349,7 +350,7 @@ private func step(_ intent: String, _ status: StepStatus, _ actions: [Action] = 
     }
     #expect(r.resolver?.calls == 0)
     #expect(r.overlay.reports.isEmpty && r.overlay.huds.isEmpty)
-    #expect(r.input.calls.isEmpty)
+    #expect(r.input.calls == ["releaseAll", "releaseAll", "releaseAll"])   // each stop lets go of a held button, nothing else
 }
 
 @MainActor @Test func jobHeldAfterStopNeverReplaysInNextTask() async {

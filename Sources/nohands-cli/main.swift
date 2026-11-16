@@ -34,6 +34,10 @@ func usage() -> Never {
       nohands-cli pack list          (installed packs: id, version, on or off, phrases, notes)
       nohands-cli pack remove <id>   (removes an installed pack)
       nohands-cli pack builtin <id>  (prints a built-in pack as a pack file, as a template)
+      nohands-cli pack new [--app <name or bundle id>] [--out <file>]
+                                     (reads the app's top-level menu items, waits 3 s without --app to read the app in
+                                      front, and writes a draft pack file, listing what it left out; never overwrites a
+                                      file or installs: edit it, then pack add)
       nohands-cli pack search [words]  (fetches the pack registry's signed list and shows the packs that match; the
                                       network is used only when you run this, install or update)
       nohands-cli pack install <id>  (fetches that pack from the registry, shows what it does, installs only if you answer y)
