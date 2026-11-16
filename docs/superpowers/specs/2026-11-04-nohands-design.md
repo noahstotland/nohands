@@ -5,63 +5,32 @@
 
 ## 1. Goal
 
-A menu-bar macOS app that lets the user operate the whole computer with their voice and nothing else: dictate text into any app, press keys and shortcuts, move and click the mouse, and issue natural-language commands — with low enough latency that it feels like a keyboard and mouse replacement rather than an accessibility afterthought.
+A menu-bar macOS app that operates the whole computer by voice alone (dictation, keys, mouse, natural-language commands), fast enough to replace a keyboard and mouse. Targets macOS 14.5+, Apple Silicon. Only the LLM path uses the network.
 
-## 2. Non-goals (this version)
+## 2. Non-goals
 
-- Wake word. The app is always listening; "go to sleep" / "wake up" gate it (an optional transcript-matched attention word exists, NH-12).
-- Vision-model fallback (screenshot → click). The accessibility tree plus a numbered grid covers element targeting; a vision fallback shipped later as an opt-in, Claude-only fallback (NH-41, `docs/superpowers/specs/2026-11-08-nh-41-vision-fallback-design.md`).
-- LLM "polish" of dictated text (Wispr-Flow-style rewriting). Spoken punctuation and auto-capitalization are deterministic in this version; LLM polish is a follow-up.
-- Custom vocabulary boosting, multi-language ASR, Intel Macs, macOS < 14.
-- App Store distribution / notarization.
+- Wake word. The app always listens; "go to sleep" / "wake up" gate it (optional attention word, NH-12).
+- Vision fallback (shipped later, NH-41), LLM polish of dictation, custom vocabulary, Intel, notarization.
 
-## 3. Target environment
+## 3. Architecture
 
-- macOS 14.5+, Apple Silicon (tested on M1 Pro, 16 GB).
-- Xcode 16.2 / Swift 6.0.3 toolchain. Swift Package Manager only; no `.xcodeproj`.
-- Network only for the LLM path. Speech recognition is fully on-device.
+Mic (16 kHz mono, echo cancellation unless `echoCancellation` is false) → Silero VAD → Parakeet TDT v2 → mode machine → dictation formatter, or command grammar (unmatched text goes to the Claude resolver) → action executor.
 
-## 4. Architecture
+- **One vocabulary.** `Action` is the enum every stage produces or consumes. A new capability adds a case in grammar, LLM decoder and executor.
+- **Grammar first, LLM second.** The common path is local (< 1 ms) and works offline. An untypeable `spell` phrase is rejected, not sent to the LLM.
+- **Targets resolve late.** `numbered(42)` means grid cell or label, by which overlay is visible.
 
-```
-mic (AVAudioEngine with voice processing / echo cancellation unless `echoCancellation` is false, 16 kHz mono Float32)
-  → Silero VAD (FluidAudio VadManager, streaming)        ~ per 4096-sample chunk
-  → UtteranceAssembler  (speechStart…speechEnd + padding) → [Float] utterance
-  → Transcriber (FluidAudio AsrManager, Parakeet TDT v2)  → text   ≤ 250 ms
-  → ModeMachine (command / dictation / sleep)
-      ├─ dictation  → DictationFormatter → Action.typeText
-      ├─ command    → CommandGrammar (deterministic, <1 ms) → [Action]
-      │                  └─ unmatched → ClaudeIntentResolver (HTTP) → [Action]
-      └─ sleep      → only "wake up" is honored
-  → ActionExecutor
-      ├─ InputSynthesizer (CGEvent keys / unicode typing / mouse)
-      ├─ AXQuery (element lookup in the frontmost app)
-      └─ OverlayController (grid, numbered labels, prompt board, status bar, corner task panel)
-```
+## 4. Modes and menu
 
-**Single vocabulary.** `Action` is the one enum every stage produces or consumes. The grammar, the LLM decoder, and the executor all speak `Action`; adding a capability means adding a case and handling it in three places.
+- `command` (default): every utterance is a command (with `attentionWord` set, only those starting with it).
+- `dictation`: everything is typed except "stop dictating", "command mode", "scratch that", "delete word", "delete that" and the text edits (`select the last sentence`, `delete <words>`, `replace x with y`, `go to the end of the line`, `uppercase that`; a phrase edit whose words are not in the field is typed as dictation).
+- `sleep`: everything ignored except "wake up".
 
-**Grammar first, LLM second.** Every phrase in §6 is matched deterministically with no network. Only unmatched utterances go to the LLM (a `spell` phrase that can't be typed is rejected instead), so the common path is fully local and fast, and the app degrades to "grammar only" when offline.
+The menu bar shows `CMD` / `DICT` / `ZZZ`. The menu has Start at Login, Status Bar, Model (`Claude|Local|Off`, no restart, saves `intentBackend`), Open config.json…, Recent commands (last 50) and View Logs…. The log is `~/.config/nohands/command-log.json`, local only, mode 600.
 
-**Targets are resolved late.** The grammar emits `ClickTarget.numbered(42)`; the executor decides whether 42 means a grid cell or a label based on which overlay is currently visible.
+## 5. Command grammar and dictation
 
-## 5. Modes
-
-| Mode | Entered by | Behavior |
-|---|---|---|
-| `command` (default) | launch, "command mode", "stop dictating", "wake up" | every utterance is a command (with `attentionWord` set, only those that start with it) |
-| `dictation` | "start dictating", "dictation mode" | every utterance is typed, except "stop dictating" / "command mode", "scratch that", "delete word", "delete that" and the text edits (`select the last sentence`, `delete <words>`, `replace x with y`, `go to the end of the line`, `uppercase that`; a phrase edit whose words are not in the field is typed as dictation) |
-| `sleep` | "go to sleep" | everything ignored except "wake up" |
-
-Mode is shown in the menu bar: the winking-face glyph (`Resources/MenuBarIcon.png`, with an `@2x`; the `mic` symbol only when they are missing, as in an unbundled `swift run`) + `CMD` / `DICT` / `ZZZ` text.
-
-The menu ends with a group above Quit: **Start at Login** (a checkbox backed by `SMAppService.mainApp`, read from the system each time the menu opens), **Status Bar** (a submenu Off / Bottom Right for the status bar, kept in user defaults), **Model** (a submenu that shows the backend in use as `Model: Claude|Local|Off`, switches between Claude and the local model with no restart, and saves `intentBackend` to config.json) and **Open config.json…** (creates the file with mode 600 if missing, opens it in the default editor, and says to restart NoHands to apply changes).
-
-Below the last transcript the menu has **Recent commands** (a submenu of the last 50 commands, newest first) and **View Logs…** (a window listing each command with every step's action, result and timing, and Claude token counts). The log is `~/.config/nohands/command-log.json`, owner-only (folder 700, file 600), local only.
-
-## 6. Command grammar (deterministic)
-
-Input is normalized first: lowercased, ASR punctuation stripped (`.,!?`), whitespace collapsed. Numbers may be digits or words ("forty two"); in a number slot, "to"/"too" → 2 and "for" → 4 (common ASR homophones).
+Input is lowercased and stripped of `.,!?`. In a number slot "to"/"too" mean 2 and "for" means 4.
 
 | Phrase | Action |
 |---|---|
@@ -69,7 +38,7 @@ Input is normalized first: lowercased, ASR punctuation stripped (`.,!?`), whites
 | `spell <tokens>` | `.typeText(string)`: letters, letter-name homophones, NATO words, digits, `space`/`dash`/`dot`/`underscore`/`at sign`; `capital` uppercases the next letter. One unknown token or a dangling `capital` types nothing |
 | `press <modifiers…> <key>` e.g. "press command shift s" | `.pressKey(KeyChord)` |
 | `enter`, `tab`, `escape`, `space`, `delete` / `backspace`, `forward delete`, `up`/`down`/`left`/`right` | `.pressKey` of that key |
-| `undo`, `redo`, `copy`, `paste`, `cut`, `select all`, `save`, `find`, `new tab`, `close tab`, `close window`, `quit app`, `switch app`, `spotlight`, `delete word` | the standard ⌘ shortcut (`redo` = ⇧⌘Z, `switch app` = ⌘⇥, `spotlight` = ⌘␣, `delete word` = ⌥⌫); `delete line` and other spoken text edits are in the README voice commands and the NH-54 spec) |
+| `undo`, `redo`, `copy`, `paste`, `cut`, `select all`, `save`, `find`, `new tab`, `close tab`, `close window`, `quit app`, `switch app`, `spotlight`, `delete word` | the standard ⌘ shortcut (`redo` = ⇧⌘Z, `switch app` = ⌘⇥, `spotlight` = ⌘␣, `delete word` = ⌥⌫); `delete line` and other spoken text edits are in the README voice commands and the NH-54 spec |
 | `find <words>`, `scroll to <words>` | `.findOnPage(words, movePointer: true)`; bare `find` stays ⌘F, and `scroll to` an end of the page or a direction goes to the LLM |
 | `click` | `.click(.cursor)` left, count 1 |
 | `double click`, `triple click` | count 2 / 3 |
@@ -88,73 +57,53 @@ Input is normalized first: lowercased, ASR punctuation stripped (`.,!?`), whites
 | `start dictating`, `dictation mode`, `stop dictating`, `command mode`, `go to sleep`, `wake up` | `.setMode(...)` |
 | anything else (except a `spell` with an unknown word, which is rejected on the HUD and never sent to the LLM) | unmatched → LLM |
 
-## 7. Dictation formatting (deterministic)
 
 Spoken tokens → characters: `period` `.`, `comma` `,`, `question mark` `?`, `exclamation point|mark` `!`, `colon` `:`, `semicolon` `;`, `dash` ` - `, `hyphen` `-`, `open quote` `"`, `close quote` `"`, `open paren` `(`, `close paren` `)`, `new line` `\n`, `new paragraph` `\n\n`. No space before `.,?!:;)`; space after them when followed by a word; capitalize the first letter of the utterance and of any word following `.`, `?`, `!`, or a newline. Across utterances, `DictationSession` inserts a leading space when the previous insertion ended in a word character and the new text starts with one. Parakeet already emits punctuation and casing; the formatter preserves it and only adds what is spoken.
 
-## 8. Mouse targeting
+The README voice table is the user-facing list; the table above is the grammar contract.
 
-- **Grid:** 10 columns × 8 rows over the screen containing the pointer, cells numbered 1–80 left-to-right, top-to-bottom, drawn as a translucent overlay with the number centered in each cell. `zoom <n>` replaces the grid with a 10×8 grid inside cell n; on a 1512×982 screen the zoomed cells are about 15×12 px, small enough to hit any control. `click <n>` clicks the cell center and hides the grid.
-- **Labels:** numbered badges on every actionable accessibility element of the frontmost app (roles: button, link, text field, text area, checkbox, radio button, pop-up button, menu item, menu bar item, tab, slider, combo box, cell, row, disclosure triangle, increment/decrement). Elements are gathered depth-first with a depth limit of 12 and a time budget of 150 ms and 2000 nodes (in a browser: 600 ms and 5000 nodes, the page's web area first after the menu bar), deduplicated by frame, capped at 200, sorted top-to-bottom then left-to-right, numbered from 1.
-- **By name:** `click <name>` finds, among those same elements, the one whose title / description / value matches `name` (case-insensitive; exact match preferred, then prefix, then contains). The executor moves the pointer there and clicks.
-- **Coordinates:** CGEvent and the accessibility API both use a top-left-origin global coordinate space; AppKit windows use bottom-left. One `CoordinateMapper` does the flip using the primary screen's height.
+- `spell` takes letters, NATO words, digits and symbol words; one unknown token or a dangling `capital` types nothing.
+- `find <words>` and `scroll to <words>` find on the page; bare `find` is ⌘F.
+- `move` defaults to 50 px; `scroll` to 5 lines, max 50. `zoom <n>` puts a fresh 10×8 grid inside cell n.
+- Dictation: spoken punctuation becomes characters; capitalize the utterance start and after `.`, `?`, `!`, newline; add a leading space between utterances when both sides touch words.
 
-## 9. Text input
+## 6. Mouse targeting
 
-Text is typed with `CGEvent` keyboard events carrying a Unicode string, in chunks of at most 20 UTF-16 code units, split only on `Character` boundaries (so emoji and combining sequences are never torn). No clipboard use, so the user's pasteboard is never clobbered. Key chords are posted as key-down / key-up pairs with modifier flags set on the event.
+- **Grid:** 10×8 on the screen with the pointer, cells 1–80; zoomed cells are about 15×12 px.
+- **Labels:** numbered badges on actionable accessibility elements of the frontmost app. Depth limit 12, budget 150 ms and 2000 nodes (browser: 600 ms and 5000, web area first), deduplicated by frame, capped at 200.
+- **By name:** `click <name>` matches title, description or value: exact, then prefix, then contains.
+- **Typing:** `CGEvent` Unicode events, at most 20 UTF-16 units per chunk, split on `Character` boundaries so emoji are never torn. No clipboard use.
 
-## 10. LLM intent resolution
+## 7. LLM intent resolution
 
-- **Provider:** Anthropic Messages API over raw HTTPS (`URLSession`); there is no official Swift SDK. Endpoint `POST https://api.anthropic.com/v1/messages`, headers `x-api-key`, `anthropic-version: 2026-10-21`, `anthropic-beta: server-side-fallback-2026-07-01`.
-- **Model:** default `claude-haiku-5-5` at `output_config.effort: "low"` (NH-95, for cost; it started as `claude-opus-5-5`). `intentModel` and `intentEffort` in the config file override it; `claude-opus-5-5` at `medium` is the stronger alternative. `fallbacks: "default"` stays on: it re-runs a safety refusal server-side on Opus, but Haiku has no fallback, so there a declined request just fails.
-- **Request:** `system` = fixed description of the `Action` vocabulary and the rules below (stable prefix, cacheable); `messages` = one user turn containing a compact context block (frontmost app name, current mode, up to 60 visible element titles with their label numbers) followed by the transcript. `max_tokens: 2048` (1 for the connection check). `output_config.format` = `{type: "json_schema", schema: ActionsSchema}` so the reply is guaranteed to parse.
-- **ActionsSchema:** the Claude request sends `{intent, status, actions}`, all required, where `actions.items` is an `anyOf` of 13 branches, each a closed object (`additionalProperties: false`) with every field required (a field that does not apply is `""` or `0`, which the decoder reads as omitted). Anthropic rejects the flat one-object shape (32 optional fields) and one branch per kind (grammar too large); see the NH-104 spec for the limits and measurements. The request is serialized with its keys in declared order. Ollama still receives the flat `ActionJSON` object (required `kind`, optional fields). No recursion, no numeric constraints (the API rejects both).
-- **Rules in the system prompt:** emit the fewest actions that accomplish the request; if the request is ambiguous or not an action, return `[{"kind":"ignore"}]`; refer to visible elements by their label number when one is listed; never invent app names.
-- **Failure handling:** timeout 4 s; `stop_reason == "refusal"`, HTTP error, decode failure, or unknown `kind` → no actions, the prompt's row shows "didn't catch that"; missing API key → the LLM path is disabled and a notice line above the prompt rows says so once.
+- **Provider:** Anthropic Messages API over raw HTTPS (no Swift SDK), `anthropic-version: 2026-10-21`, beta `server-side-fallback-2026-07-01`.
+- **Model:** default `claude-haiku-5-5` at effort `low` (NH-95, for cost); `intentModel` and `intentEffort` override. Haiku has no fallback, so a declined request fails.
+- **Request:** cacheable `system` prompt; one user turn with frontmost app, mode, up to 60 visible element titles with label numbers, then the transcript. `max_tokens` 2048. Output is forced to a JSON schema.
+- **Schema:** `{intent, status, actions}`, all required; `actions.items` is an `anyOf` of 13 closed branches, every field required (`""` or `0` means omitted). Anthropic rejects one flat 32-field object and one branch per kind (NH-104 spec). Ollama still gets flat `ActionJSON`. No recursion or numeric constraints.
+- **Prompt rules:** fewest actions; ambiguous requests return `ignore`.
+- **Failures:** timeout 4 s. Any refusal, error or undecodable reply gives no actions and "didn't catch that". A missing key disables the path with a one-time notice.
 
-## 11. Configuration
+## 8. Configuration
 
-`~/.config/nohands/config.json`, all keys optional:
+`~/.config/nohands/config.json`, all keys optional (the README lists them); `ANTHROPIC_API_KEY` wins over `anthropicAPIKey`. Defaults: `asrModelVersion` `v2` (English; `v3` multilingual), `silenceMs` 1000 (raised from 350 to allow pauses mid-command), `earlySilenceMs` 350 (ends a complete grammar command or "stop" early; 0 = off), grid 10×8, `moveStepPx` 50, `scrollStepLines` 5.
 
-```json
-{
-  "anthropicAPIKey": "sk-ant-…",       // or env ANTHROPIC_API_KEY (env wins)
-  "intentModel": "claude-haiku-5-5",
-  "intentEffort": "low",
-  "asrModelVersion": "v2",             // "v2" English-only (default) | "v3" multilingual
-  "silenceMs": 1000,                   // VAD end-of-utterance silence (raised from 350 so you can pause mid-command)
-  "earlySilenceMs": 350,               // shorter silence that ends a complete grammar command or "stop" early (0 = off)
-  "gridColumns": 10, "gridRows": 8,
-  "moveStepPx": 50, "scrollStepLines": 5
-}
-```
+## 9. Latency budget (grammar path)
 
-## 12. Latency budget (voice-to-action, grammar path)
+- End of speech 350 ms (`earlySilenceMs`; others wait `silenceMs`). Parakeet on ≤ 5 s, M1 Pro: ≤ 250 ms. Grammar plus executor ≤ 20 ms.
+- Browser `show numbers` and `click <name>` add up to about 450 ms, plus a 600 ms settle the first time a Chromium browser is walked.
+- **Total ≤ 650 ms**. The LLM path adds 1–3 s.
 
-| Stage | Budget |
-|---|---|
-| end-of-speech detection (silence) | 350 ms (`earlySilenceMs`, complete grammar commands and stop phrases only; anything else waits `silenceMs`, 1000 ms) |
-| Parakeet TDT v2 on a ≤ 5 s utterance, M1 Pro | ≤ 250 ms |
-| grammar + executor | ≤ 20 ms (browser `show numbers` and `click <name>` are outside this: up to about 450 ms more, and a 600 ms settle plus a second walk the first time a Chromium browser is walked) |
-| **total** | **≤ 650 ms** |
+## 10. Permissions and packaging
 
-Measured numbers for the early-close path are in [the NH-36 as-built](../as-built/2026-11-08-nh-36-early-grammar-endpointing.md).
+`scripts/bundle.sh` builds `NoHands.app` (`LSUIElement`, `dev.nohands.app`), signed with `$CODESIGN_IDENTITY` (default ad-hoc). Accessibility trust follows the signature, so ad-hoc builds need re-granting each rebuild.
 
-The LLM path adds one network round trip (typically 1–3 s). Every utterance logs `t_speech_end, t_asr_done, t_actions_done` to the console so the budget can be verified.
+## 11. Acceptance (manual, end to end)
 
-## 13. Permissions and packaging
-
-- Microphone (`NSMicrophoneUsageDescription`) and Accessibility (`AXIsProcessTrustedWithOptions`) are requested on first launch; the menu shows a red dot and an "Open Accessibility Settings" item until granted.
-- The SwiftPM executable is wrapped into `NoHands.app` by `scripts/bundle.sh` (Info.plist with `LSUIElement = true`, bundle id `dev.nohands.app`), signed with `$CODESIGN_IDENTITY` (default ad-hoc `-`). Accessibility trust is tied to the code signature, so with ad-hoc signing every rebuild needs re-granting; a stable self-signed or Apple Development identity avoids that.
-- `nohands-cli` (same package) exposes each subsystem for manual verification and latency measurement: `listen`, `transcribe <wav>`, `endpoint-test <wav>…`, `bench <dir>`, `parse "<text>"`, `type "<text>"`, `elements`, `click "<name>"`, `grid`, `resolve "<text>"`.
-
-## 14. Acceptance (manual, end to end)
-
-1. Launch `NoHands.app`, grant both permissions, menu shows `CMD`.
-2. Open TextEdit. Say "start dictating". Say "hello world period this is a test exclamation mark new line second line". TextEdit shows `Hello world. This is a test!⏎Second line`.
+1. Launch `NoHands.app`, grant both permissions; the menu shows `CMD`.
+2. In TextEdit say "start dictating", then "hello world period this is a test exclamation mark new line second line". TextEdit shows `Hello world. This is a test!⏎Second line`.
 3. Say "stop dictating", "select all", "copy", "open safari", "new tab", "press command l", "type news dot ycombinator dot com", "enter". Safari loads the page.
-4. Say "show numbers", "click <n>" for a visible link. The link opens. Say "grid", "zoom 35", "click 40". The pointer clicks inside the chosen sub-cell.
-5. Say "scroll down 10", "hold click", "move down 100", "release click" — a drag happens.
+4. Say "show numbers", then "click <n>" on a visible link: it opens. Say "grid", "zoom 35", "click 40": the pointer clicks inside the sub-cell.
+5. Say "scroll down 10", "hold click", "move down 100", "release click": a drag happens.
 6. Say "go to sleep", "click" (nothing happens), "wake up", "click" (click happens).
-7. With an API key configured, say "make this window full screen" (unmatched by grammar). The LLM returns `press_key control command f` and the window toggles.
-8. Console shows per-utterance latency lines; grammar-path totals are under 650 ms for complete grammar commands and stop phrases (early close, NH-36).
+7. With an API key set, say "make this window full screen" (unmatched by the grammar): the model returns `press_key control command f` and the window toggles.
+8. The console shows per-utterance latency lines; grammar-path totals are under 650 ms for complete grammar commands and stop phrases (early close, NH-36).

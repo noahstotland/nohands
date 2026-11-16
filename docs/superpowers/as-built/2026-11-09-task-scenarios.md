@@ -19,7 +19,7 @@ The backend was the **local model, `qwen2.5:7b-instruct`**, not Claude: no Anthr
 | textedit-save | fail | 0 | 45.2 s |
 | cookie-banner | start-failed | 0 | 0.0 s |
 
-1 of 6 pass. The four `fail` rows with 0 steps are the local model timing out on its first request (`status: timed out`, the 30 s `localLlmDeadlineMs`), the same cold-start failure the README describes for this model. They say nothing about the suite's checks or about Claude. The one `pass` was a single `open_url` to the Wikipedia article.
+1 of 6 pass. The four `fail` rows with 0 steps are the local model timing out on its first request (`status: timed out`, the 30 s `localLlmDeadlineMs`), the same cold-start failure the README describes for this model. They say nothing about the suite's checks or Claude. The one `pass` was a single `open_url` to the Wikipedia article.
 
 `cookie-banner` is `https://www.forbes.com/` with the accept button guessed as `Accept All`. It never showed that button in 20 s, so it scored `start-failed`. The site and button title are unverified; a rerun needs a site and title checked by eye first. Once a banner is accepted the browser remembers it, so a rerun on the same site is `start-failed` until its cookies are cleared.
 
