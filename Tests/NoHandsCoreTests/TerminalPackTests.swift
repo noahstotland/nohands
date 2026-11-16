@@ -23,7 +23,7 @@ private let packOnly: [(String, [Action])] = [
         #expect(grammar.parse(phrase, frontmost: term) == expected, Comment(rawValue: phrase))
     }
     for (phrase, expected) in packOnly {
-        for app in ["com.apple.Safari", nil] { #expect(grammar.parse(phrase, frontmost: app) != expected, Comment(rawValue: phrase)) }
+        for app in ["com.apple.mail", nil] { #expect(grammar.parse(phrase, frontmost: app) != expected, Comment(rawValue: phrase)) }
     }
 }
 
