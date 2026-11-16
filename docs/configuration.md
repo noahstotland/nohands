@@ -31,6 +31,7 @@ Optional file `~/.config/nohands/config.json`; every key may be omitted. Changes
 | `echoCancellation` | `true` | |
 | `attentionWord` | `""` | up to three words |
 | `visionFallback` | `false` | |
+| `followUpWindowMs` | `30000` | 0 to 120000; `0` turns follow-ups off |
 | `vocabulary` | `[]` | up to 200 entries; see Vocabulary |
 
 The agent-desktop keys are under [agent-desktop harness keys](#agent-desktop-harness-keys).

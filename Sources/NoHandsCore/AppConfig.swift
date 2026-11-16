@@ -68,6 +68,8 @@ public struct AppConfig: Codable, Equatable, Sendable {
     /// Task loop, Claude backend only: send a picture of the focused window on steps where the accessibility tree
     /// failed (see `visionEnabled`). Off by default; needs the Screen Recording permission.
     public var visionFallback: Bool = false
+    /// How long (ms) after a task ends that "no, the other one" and similar requests refer back to it. 0 turns it off.
+    public var followUpWindowMs: Int = 30000
     /// The user's own words: misheard spellings swapped for the right ones in every transcript (see `Vocabulary`).
     public private(set) var vocabulary = Vocabulary()
 
@@ -83,7 +85,7 @@ public struct AppConfig: Codable, Equatable, Sendable {
         case maxTaskSteps, maxMediaTaskSteps, llmDeadlineMs, settleMs, maxObservedElements
         case localLlmDeadlineMs, localMaxObservedElements
         case desktopHarness, agentDesktopPath, agentDesktopTimeoutMs, agentDesktopSnapshotMs, agentDesktopHeadedFallback, agentDesktopTrace
-        case echoCancellation, attentionWord, visionFallback, vocabulary
+        case echoCancellation, attentionWord, visionFallback, vocabulary, followUpWindowMs
     }
 
     public init(from decoder: Decoder) throws {
@@ -121,6 +123,7 @@ public struct AppConfig: Codable, Equatable, Sendable {
         d.echoCancellation = try c.decodeIfPresent(Bool.self, forKey: .echoCancellation) ?? d.echoCancellation
         d.attentionWord = try c.decodeIfPresent(String.self, forKey: .attentionWord) ?? d.attentionWord
         d.visionFallback = try c.decodeIfPresent(Bool.self, forKey: .visionFallback) ?? d.visionFallback
+        d.followUpWindowMs = try c.decodeIfPresent(Int.self, forKey: .followUpWindowMs) ?? d.followUpWindowMs
         // Lenient: a `vocabulary` that is not a list is ignored and counted as one skipped entry; each bad entry is skipped inside `Vocabulary`.
         if c.contains(.vocabulary) {
             d.vocabulary = (try? c.decode(Vocabulary.self, forKey: .vocabulary)) ?? Vocabulary(skipped: 1)
@@ -150,6 +153,7 @@ public struct AppConfig: Codable, Equatable, Sendable {
         config.maxObservedElements = min(max(config.maxObservedElements, 10), 300)
         config.localLlmDeadlineMs = min(max(config.localLlmDeadlineMs, 2000), 120000)
         config.localMaxObservedElements = min(max(config.localMaxObservedElements, 10), 300)
+        config.followUpWindowMs = min(max(config.followUpWindowMs, 0), 120000)
         config.agentDesktopTimeoutMs = min(max(config.agentDesktopTimeoutMs, 1000), 60000)
         config.agentDesktopSnapshotMs = min(max(config.agentDesktopSnapshotMs, 500), 10000)
         config.anthropicKeySource = (config.anthropicAPIKey ?? "").isEmpty ? nil : .file

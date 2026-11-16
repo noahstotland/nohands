@@ -158,6 +158,14 @@ import Foundation
     }
 }
 
+@Test func followUpWindowDefaultsAndClamps() throws {
+    let table: [(String?, Int)] = [(nil, 30000), ("{}", 30000), (#"{"followUpWindowMs":0}"#, 0), (#"{"followUpWindowMs":-5}"#, 0),
+                                   (#"{"followUpWindowMs":5000}"#, 5000), (#"{"followUpWindowMs":999999}"#, 120000)]
+    for (json, expected) in table {
+        #expect(try AppConfig.load(from: json.map { Data($0.utf8) }, environment: [:]).followUpWindowMs == expected, "\(json ?? "nil")")
+    }
+}
+
 @Test func vocabularyEntriesAreCleanedAndCounted() throws {
     let many = (0..<203).map { #"{"hear":"w\#($0)","say":"W"}"# }.joined(separator: ",")
     let table: [(json: String, kept: [Vocabulary.Entry], skipped: Int)] = [

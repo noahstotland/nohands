@@ -1153,3 +1153,29 @@ private actor SleepRecorder {
     var all: [Duration] = []
     func add(_ d: Duration) { all.append(d) }
 }
+
+@MainActor @Test func followUpSeesTheEarlierTaskAndLastTaskTracksTheOutcome() async {
+    let click = Action.click(.cursor, button: .left, count: 1)
+    let earlier = EarlierTask(goal: "play the latest video", history: [StepRecord(intent: "open channel", actions: [click])], result: "done: playing")
+    let r = rig(FakeResolver([step("open it", .continue, [click]), step("playing", .done, [click])]))
+    r.resolver.planResult = .success(TaskPlan(steps: [PlanStep(intent: "x", kind: .waitForMedia, check: PlanCheck(kind: .mediaPlaying, text: ""))]))
+    _ = await r.runner.run(goal: "no, the other one on youtube please", mode: .command, earlier: earlier)
+    // Every request carries it, a follow-up is never planned, and the kept goal chains the two requests.
+    #expect(r.resolver.requests.count == 2 && r.resolver.requests.allSatisfy { $0.earlier == earlier })
+    #expect(r.resolver.planGoals.isEmpty)
+    #expect(r.runner.lastTask?.goal == "play the latest video; then: no, the other one on youtube please")
+    #expect(r.runner.lastTask?.result == "done: playing" && r.runner.lastTask?.history.count == 2 && r.runner.lastTask?.history.last?.intent == "playing")
+    // (steps, stop mid-task, expected `lastTask?.result`): kept after done, stuck and stop; cleared after ignore and failure.
+    let table: [(Result<IntentStep, IntentError>, Bool, String?)] = [
+        (.success(step("ok", .done)), false, "done: ok"), (.success(step("hmm", .stuck)), false, "stuck: hmm"),
+        (.success(step("go", .continue, [click])), true, "stopped"),
+        (.success(step("nah", .ignore)), false, nil), (.failure(.timeout), false, nil),
+    ]
+    let runner = r.runner
+    for (result, stop, kept) in table {
+        r.resolver.steps = [result]; r.resolver.requests = []
+        if stop { r.resolver.onResolve = { @Sendable _ in await runner.cancel() } } else { r.resolver.onResolve = nil }
+        _ = await r.runner.run(goal: "do it", mode: .command)
+        #expect(r.runner.lastTask?.result == kept, "\(result)")
+    }
+}

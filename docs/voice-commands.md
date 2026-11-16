@@ -14,6 +14,7 @@ Everything NoHands understands without a model. Anything else goes to Claude or 
 | `go to the end of the line`, `go to the start of the line` (`beginning`), `go to the end of the document`, `go to the start of the document` (`top`, `bottom`) | Moves the caret with the arrow keys, in any text field, with no read |
 | `capitalize that`, `uppercase that`, `lowercase that` | Changes the case of the selection, or of the word before the caret when nothing is selected (`capitalize` raises each word's first letter) |
 | `new tab`, `close tab`, `close window`, `quit app`, `switch app`, `spotlight` | App and window shortcuts; filler ignored (`close the current tab`, `close this window`) |
+| `no, the other one`, `the next one`, `also …`, `instead …` (within 30 s of a task) | A follow-up that refers to the task that just ended: the model sees its goal and steps. Goes to the model as a task, not the grammar; see [Tasks](tasks.md#multi-step-tasks) |
 | `minimize`, `full screen`, `hide app`, `reload` / `refresh` | Window and app shortcuts |
 | `left half`, `right half`, `snap left`, `top left`, `maximize`, `center window` | Moves and resizes the front window; richer phrasing such as `make the window half width and snap to the left side of the screen` goes to the model |
 | `go back`, `go forward`, `next tab`, `previous tab` | Browser and tab navigation |
