@@ -61,19 +61,34 @@ public enum MenuMatch {
         return Dictionary(pairs.map { ($0.first!, $0.last!) }, uniquingKeysWith: { a, _ in a })
     }()
 
+    /// The script block a letter belongs to (Cyrillic, Greek, Armenian), nil for any other.
+    private static func script(_ ch: Character) -> Int? {
+        guard let v = ch.unicodeScalars.first?.value else { return nil }
+        switch v {
+        case 0x0370...0x03FF: return 1
+        case 0x0400...0x052F: return 2
+        case 0x0530...0x058F: return 3
+        default: return nil
+        }
+    }
+
     /// Whether a title holds an ASCII word in disguise, checked word by word so another accented or CJK word beside it
-    /// cannot hide it ("Sеnd Ägain" with a Cyrillic е). A word is a disguise when a non-ASCII letter in it reads as ASCII
-    /// (NFKC, then look-alike Cyrillic, Greek and Armenian letters mapped to Latin) and the word either also holds a
-    /// real ASCII letter or reads as ASCII all through. "Закрыть Safari", "Envoyer à nouveau" and "URLを開く" are not.
+    /// cannot hide it ("Sеnd Ägain" with a Cyrillic е). A non-ASCII letter that reads as ASCII (NFKC, then look-alike
+    /// Cyrillic, Greek and Armenian letters mapped to Latin) marks its word when the word also holds a real ASCII letter.
+    /// A word of such letters alone ("Сору") marks it unless the title shows the letters are really that script: a
+    /// letter of the same script that does not look Latin ("О программе Safari", "και στιλ"). "Закрыть Safari",
+    /// "Envoyer à nouveau" and "URLを開く" are not disguises.
     public static func isLookalike(_ title: String) -> Bool {
-        title.split(whereSeparator: { !$0.isLetter && !$0.isNumber }).contains { word in
-            var converted = 0, ascii = 0, other = 0
-            for ch in word where ch.isLetter {
-                if ch.isASCII { ascii += 1; continue }
-                let skeleton = String(ch).precomposedStringWithCompatibilityMapping.map { confusables[$0] ?? $0 }
-                if skeleton.allSatisfy({ !$0.isLetter || $0.isASCII }) { converted += 1 } else { other += 1 }
-            }
-            return converted > 0 && (ascii > 0 || other == 0)
+        func converts(_ ch: Character) -> Bool {
+            String(ch).precomposedStringWithCompatibilityMapping.map { confusables[$0] ?? $0 }.allSatisfy { !$0.isLetter || $0.isASCII }
+        }
+        let genuine = Set(title.filter { $0.isLetter && !$0.isASCII && !converts($0) }.compactMap(script))
+        return title.split(whereSeparator: { !$0.isLetter && !$0.isNumber }).contains { word in
+            let letters = word.filter(\.isLetter)
+            let converted = letters.filter { !$0.isASCII && converts($0) }
+            guard !converted.isEmpty else { return false }
+            if letters.contains(where: \.isASCII) { return true }
+            return converted.count == letters.count && converted.allSatisfy { script($0).map { !genuine.contains($0) } ?? true }
         }
     }
 
