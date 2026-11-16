@@ -1,7 +1,8 @@
 # NH-163: Dark mode and Do Not Disturb by voice: Design
 
 **Date:** 2026-11-16  **Ticket:** [NH-163](https://github.com/noahstotland/nohands/issues/163)
-**Status:** Draft
+**Status:** Shipped
+**Shipped:** in PR #172, as specified
 
 ## Intent
 
