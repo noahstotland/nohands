@@ -21,13 +21,14 @@ public enum ShortcutGuard {
 
     /// Whether the goal has a close word (the list command-w uses); `TabGuard` closes tabs on the same words.
     static func allowsClose(goal: String) -> Bool {
-        !allowWords[.w]!.isDisjoint(with: Set(CommandGrammar.normalize(goal)))
+        !allowWords[.w]!.isDisjoint(with: IrreversibleGuard.goalVerbs(goal))
     }
 
     /// A failure message when `actions` contain a guarded chord (or a `close_app`) the goal does not ask for;
     /// nil when allowed.
     public static func blocked(_ actions: [Action], goal: String) -> String? {
-        let words = Set(CommandGrammar.normalize(goal))
+        // A word after a negation in its clause ("don't quit Safari") asks for nothing.
+        let words = IrreversibleGuard.goalVerbs(goal)
         for action in actions {
             switch action {
             case .pressKey(let chord):
@@ -37,7 +38,7 @@ public enum ShortcutGuard {
                 }
             case .closeApp:
                 if closeAppWords.isDisjoint(with: words) { return "blocked: close_app not allowed for this request" }
-            case .menuItem(let title):
+            case .menuItem(let title, _):
                 // "Close Window", "Quit Chrome": the menu form of the guarded chords asks the same of the goal.
                 // Split like IrreversibleGuard does (every non letter or digit is a break), so "File>Close Window"
                 // and "Close…" are seen. "Exit Full Screen" and "Reopen Closed Tab" are not close or quit commands.

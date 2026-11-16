@@ -51,7 +51,7 @@ public struct PackSummary: Equatable, Sendable {
             let order: [Modifier] = [.command, .option, .shift, .control, .function]
             let key = chord.key.rawValue.count == 1 ? chord.key.rawValue.uppercased() : chord.key.rawValue
             return (order.filter(chord.modifiers.contains).map(\.rawValue) + [key]).joined(separator: "-")
-        case .menuItem(let title): return "menu item " + quoted(title)
+        case .menuItem(let title, _): return "menu item " + quoted(title)
         case .openURL(let url, _): return "open " + printable(url.absoluteString)
         case .openApp(let app): return "open app " + printable(app)
         default: return "(unsupported action)"

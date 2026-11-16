@@ -105,8 +105,9 @@ public enum Action: Equatable, Codable, Sendable {
     case drag(from: MoveTarget, to: MoveTarget)
     /// Click a named item in a surface (menubar, dock, sheet, …).
     case clickIn(DesktopSurface, name: String)
-    /// Run a menu bar command by name ("Save As…" or "File > Save As…").
-    case menuItem(String)
+    /// Run a menu bar command by name ("Save As…" or "File > Save As…"). `exact` presses only the item with that very
+    /// title (installed packs); otherwise the closest match may be pressed (the user's own "menu <words>", built-in packs).
+    case menuItem(String, exact: Bool = false)
     case closeApp(String)
     case windowAction(DesktopWindowOp, app: String?, title: String?)
     case clipboardSet(String)

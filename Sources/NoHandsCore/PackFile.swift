@@ -90,7 +90,7 @@ public enum PackFile {
                 throw PackError("held phrase (an irreversible menu item the phrase does not name)")
             }
             // Menu titles match by words at run time, so a short title can press a longer irreversible one.
-            for case .menuItem(let title) in actions where IrreversibleGuard.namesLoosely(title: title, goal: phrase) != nil {
+            for case .menuItem(let title, _) in actions where IrreversibleGuard.namesLoosely(title: title, goal: phrase) != nil {
                 throw PackError("held phrase (a menu_item title matches an irreversible item loosely; name the full title)")
             }
             phrases[key] = actions
@@ -221,7 +221,10 @@ public enum PackFile {
                 .contains(where: { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) else {
                 throw PackError("bad menu_item title (empty part around >)")
             }
-            return .menuItem(title)
+            guard !title.split(separator: ">").contains(where: { MenuMatch.isLookalike(String($0)) }) else {
+                throw PackError("bad menu_item title (lookalike letters)")
+            }
+            return .menuItem(title, exact: true)
         case "open_app":
             try expectKeys(o, required: ["kind", "app"], in: kind)
             return .openApp(try text(o["app"], "app", max: 60))
@@ -280,7 +283,7 @@ public enum PackFile {
             var o: [String: Any] = ["kind": "press_key", "key": chord.key.rawValue]
             if !chord.modifiers.isEmpty { o["modifiers"] = chord.modifiers.map(\.rawValue).sorted() }
             return o
-        case .menuItem(let title): return ["kind": "menu_item", "title": title]
+        case .menuItem(let title, _): return ["kind": "menu_item", "title": title]
         case .openApp(let app): return ["kind": "open_app", "app": app]
         case .openURL(let url, let app) where app == nil: return ["kind": "open_url", "url": url.absoluteString]
         default: return nil

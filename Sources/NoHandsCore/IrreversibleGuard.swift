@@ -50,7 +50,7 @@ public enum IrreversibleGuard {
 
     /// The goal's words, minus any word in the same clause after a negation ("don't send it", "I don't want to send
     /// it" do not allow Send). A comma, full stop, "but" or "then" ends the clause.
-    private static func goalVerbs(_ goal: String) -> Set<String> {
+    static func goalVerbs(_ goal: String) -> Set<String> {
         let negations: Set<String> = ["not", "never", "dont", "doesnt", "didnt", "wont", "cant", "shouldnt", "wouldnt",
                                       "isnt", "cannot", "no", "nor", "without"]
         let breaks: Set<String> = ["but", "then"]
@@ -71,7 +71,7 @@ public enum IrreversibleGuard {
         let goalWords = goalVerbs(goal)
         var asked: [String] = []
         for action in actions {
-            if case .menuItem(let path) = action, MenuMatch.leaf(of: path) == nil {
+            if case .menuItem(let path, _) = action, MenuMatch.leaf(of: path) == nil {
                 if !asked.contains(unnamedMenuItem) { asked.append(unnamedMenuItem) }
                 continue
             }
@@ -149,7 +149,7 @@ public enum IrreversibleGuard {
         switch action {
         case .click(.label(let n), _, _), .click(.numbered(let n), _, _): return labels[n]?.title
         case .click(.element(let name), _, _), .clickIn(_, let name): return name
-        case .menuItem(let path): return MenuMatch.leaf(of: path)
+        case .menuItem(let path, _): return MenuMatch.leaf(of: path)
         case .setValue(.label(let n), _): return labels[n]?.title
         case .setValue(.named(let name), _), .selectOption(.named(let name), _), .typeInto(.named(let name), _),
              .setChecked(.named(let name), _): return name
