@@ -47,6 +47,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private let overlay = OverlayController()
     private let commandLog = CommandLogStore()
+    /// Saved routes (NH-46), read once at launch; matching and saving use the in-memory list.
+    private let routeStore = RouteStore()
     /// Created on first show, so no command builds it unless the user opens the logs.
     private var logWindow: LogWindowController?
     private var config = AppConfig()
@@ -835,7 +837,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                                               snapshotTimeoutMs: config.agentDesktopSnapshotMs)
                 let p = VoicePipeline(config: config, transcriber: transcriber, resolver: resolver,
                                       executor: executor, overlay: overlay, ax: ax, observer: observer, harness: harness,
-                                      commandLog: commandLog)
+                                      commandLog: commandLog, routes: routeStore)
                 p.resolverKind = Self.logResolver(builtBackend)
                 p.setPacks(packSet)
                 p.onStatus = { [weak self] mode, transcript in self?.apply(mode: mode, transcript: transcript) }

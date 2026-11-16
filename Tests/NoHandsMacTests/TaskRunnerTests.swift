@@ -53,7 +53,7 @@ private func el(_ id: Int, _ title: String, x: CGFloat = 100) -> UIElementInfo {
 }
 
 @MainActor private func rig(_ resolver: FakeResolver, maxSteps: Int = 12, settleMs: Int = 3000,
-                            vision: FakeScreenshots? = nil, visionFlag: Bool = true,
+                            vision: FakeScreenshots? = nil, visionFlag: Bool = true, routes: FakeRouteStore? = nil, routeMemory: Bool = true,
                             sleep: @escaping @Sendable (Duration) async -> Void = { _ in }) -> Rig {
     let input = FakeInput(), ax = FakeElements(), overlay = FakeOverlay(), audio = FakeAudio()
     ax.front = "Safari"
@@ -62,12 +62,13 @@ private func el(_ id: Int, _ title: String, x: CGFloat = 100) -> UIElementInfo {
     config.maxTaskSteps = maxSteps
     config.settleMs = settleMs
     config.visionFallback = visionFlag
+    config.routeMemory = routeMemory
     config.intentBackend = .claude
     config.anthropicAPIKey = "test-key"
     let executor = ActionExecutor(input: input, ax: ax, overlay: overlay, config: config, frontTimeout: .milliseconds(100), audio: audio)
     let runner = TaskRunner(config: config, resolver: resolver, executor: executor,
                             observer: ScreenObserver(ax: ax, maxElements: config.maxObservedElements, audio: audio),
-                            overlay: overlay, sleep: sleep, screenshots: vision)
+                            overlay: overlay, sleep: sleep, screenshots: vision, routes: routes)
     let log = StatusLog()
     runner.onStatus = { log.texts.append($0.text) }
     runner.onTrail = { log.trails.append($0) }
@@ -1191,5 +1192,43 @@ private actor SleepRecorder {
         if stop { r.resolver.onResolve = { @Sendable _ in await runner.cancel() } } else { r.resolver.onResolve = nil }
         _ = await r.runner.run(goal: "do it", mode: .command)
         #expect(r.runner.lastTask?.result == kept, "\(result)")
+    }
+}
+
+@MainActor @Test func aDoneTaskSavesItsRouteByNameAndTheStoredRouteReachesTheRequest() async {
+    let reload = Action.click(.label(1), button: .left, count: 1)
+    let twoSteps = [step("press reload", .continue, [reload]), step("type it", .done, [.typeText("secret words")])]
+    let earlier = EarlierTask(goal: "reload page", history: [], result: "done: ok")
+    // (name, steps, earlier, routeMemory, stop mid-task, saved?)
+    let table: [(String, [IntentStep], EarlierTask?, Bool, Bool, Bool)] = [
+        ("done, two clean steps", twoSteps, nil, true, false, true),
+        ("one step", [step("press reload", .done, [reload])], nil, true, false, false),
+        ("stuck", [twoSteps[0], step("hmm", .stuck)], nil, true, false, false),
+        ("stopped", twoSteps, nil, true, true, false),
+        ("follow-up", twoSteps, earlier, true, false, false),
+        ("route memory off", twoSteps, nil, false, false, false),
+    ]
+    for (name, steps, earlier, on, stop, saved) in table {
+        let store = FakeRouteStore()
+        let r = rig(FakeResolver(steps), routes: store, routeMemory: on)
+        let runner = r.runner
+        if stop { r.resolver.onResolve = { @Sendable n in if n == 2 { await runner.cancel() } } }
+        _ = await r.runner.run(goal: "reload the page", mode: .command, earlier: earlier)
+        #expect(store.routes.count == (saved ? 1 : 0), "\(name)")
+        #expect((r.runner.lastSaved != nil) == saved, "\(name)")
+        guard saved, let route = store.routes.first else { continue }
+        // By element name, with the typed words left out.
+        #expect(route.goal == "reload the page" && route.steps.map(\.actions) == [["click \"Reload\""], ["type_text"]], "\(name)")
+        #expect(!(try! RouteMemory.encoded([route])).contains(Data("secret".utf8)), "\(name)")
+    }
+    // A stored match goes on every request and is what "forget that route" drops; a follow-up gets none.
+    let past = Route(goal: "reload the page", host: nil, steps: [RouteStep(intent: "press reload", actions: ["click \"Reload\""])], savedAt: Date())
+    for followUp in [false, true] {
+        let store = FakeRouteStore()
+        store.routes = [past]
+        let r = rig(FakeResolver(twoSteps), routes: store)
+        _ = await r.runner.run(goal: "reload the page", mode: .command, earlier: followUp ? earlier : nil)
+        #expect(r.resolver.requests.map(\.pastRoute) == Array(repeating: followUp ? nil : past, count: 2), "follow-up: \(followUp)")
+        #expect(r.runner.lastMatched == (followUp ? nil : past))
     }
 }

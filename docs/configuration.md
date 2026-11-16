@@ -32,6 +32,7 @@ Optional file `~/.config/nohands/config.json`; every key may be omitted. Changes
 | `attentionWord` | `""` | up to three words |
 | `visionFallback` | `false` | |
 | `followUpWindowMs` | `30000` | 0 to 120000; `0` turns follow-ups off |
+| `routeMemory` | `true` | `false` stops saving and using routes for finished tasks (an existing `routes.json` is left as is); see [Tasks](tasks.md#multi-step-tasks) |
 | `vocabulary` | `[]` | up to 200 entries; see Vocabulary |
 | `macros` | `{}` | up to 50 macros of 20 steps; see Macros |
 

@@ -343,3 +343,15 @@ func isPhaseLine(_ text: String) -> Bool { text.hasPrefix("Reading \u{00B7} ") |
     func entries() -> [MenuEntry] { items }
     func press(_ index: Int) -> Bool { pressed.append(index); return pressWorks }
 }
+
+/// Route memory held in an array, with no file.
+@MainActor final class FakeRouteStore: RouteStoring {
+    var routes: [Route] = []
+    func save(_ route: Route) { routes = RouteMemory.saving(route, into: routes) }
+    @discardableResult func remove(_ dropped: [Route]) -> Bool {
+        let before = routes.count
+        routes.removeAll { dropped.contains($0) }
+        return routes.count != before
+    }
+    func removeAll() { routes = [] }
+}
