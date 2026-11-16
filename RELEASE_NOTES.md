@@ -1,5 +1,11 @@
 # Release notes
 
+## 2026-11-16 system controls by voice (NH-52) (#161)
+
+Merged 2026-11-16 4:34 pm UTC.
+
+Say `lock screen`, `screenshot`, `mission control`, `next space`, `open settings for bluetooth` and similar to do Mac chores by voice. `empty trash` uses Finder's own confirm: say `enter` or `escape`.
+
 ## 2026-11-16 remember routes that worked (NH-46) (#162)
 
 Merged 2026-11-16 4:28 pm UTC.
