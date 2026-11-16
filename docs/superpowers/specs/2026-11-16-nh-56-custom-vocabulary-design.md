@@ -2,7 +2,7 @@
 
 **Date:** 2026-11-16  **Ticket:** [NH-56](https://github.com/noahstotland/nohands/issues/56)
 **Status:** Shipped
-**Shipped:** in PR #145, as specified
+**Shipped:** in PR #145, with differences: [as-built](../as-built/2026-11-16-nh-56-custom-vocabulary.md)
 
 ## Intent
 
