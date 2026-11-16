@@ -148,9 +148,11 @@ public enum TaskOutcome: Equatable, Sendable {
     /// is never planned (the plan prompt cannot see the earlier task).
     public func run(goal: String, mode: Mode, earlier: EarlierTask? = nil) async -> TaskOutcome {
         cancelled = false
-        // Media budget, the done-when-playing rule and site routes read the earlier goal as well.
+        // Media budget and site routes read the earlier goal as well.
         let context = earlier.map { "\($0.goal) \(goal)" } ?? goal
-        runGoal = earlier.map { String("\($0.goal); then: \(goal)".prefix(EarlierTask.goalLimit)) } ?? goal
+        runGoal = earlier.map { FollowUp.chained(earlier: $0.goal, goal: goal, limit: EarlierTask.goalLimit) } ?? goal
+        // The done-only-when-playing check follows the earlier goal unless the new words ask to pause, stop or mute.
+        let playbackGoal = FollowUp.playbackGoal(earlier: earlier?.goal, goal: goal)
         lastTask = nil
         planLimit = nil
         stepsRun = 0
@@ -359,18 +361,21 @@ public enum TaskOutcome: Equatable, Sendable {
             if step.status == .done && failure == nil {
                 let finished = TaskOutcome.done(step.intent)
                 let hud = readings.first.map { "\(step.intent) — \($0.prefix(80))" }
-                guard MediaSignal.wantsPlayback(goal: context) else { return await finish(finished, hud: hud) }
+                // The kept history ends with this step, so a follow-up sees what was clicked last.
+                let doneRecord = StepRecord(intent: step.intent, actions: step.actions)
+                guard MediaSignal.wantsPlayback(goal: playbackGoal) else { history.append(doneRecord); return await finish(finished, hud: hud) }
                 // A goal to play something is done when it plays, not when the page loaded: look once more at the
                 // screen after this step's actions. A visible Play button sends the model round once more.
                 settleStart = ContinuousClock.now
                 pendingSurfaces = harness?.takeOpenSurfaces() ?? []
                 (observation, labels) = await settle(mode: mode, readings: readings, found: found)
                 settled = settleStart.duration(to: .now)
+                lastSeen = observation
                 if isCancelled { return await finish(.stopped) }
-                guard observation.media == .paused else { return await finish(finished, hud: hud) }
+                guard observation.media == .paused else { history.append(doneRecord); return await finish(finished, hud: hud) }
+                history.append(StepRecord(intent: step.intent, actions: step.actions, failure: Self.notPlaying))
                 if askedAgainForMedia || n == maxSteps { return await finish(.stuck(Self.notPlaying)) }
                 askedAgainForMedia = true
-                history.append(StepRecord(intent: step.intent, actions: step.actions, failure: Self.notPlaying))
                 continue
             }
             history.append(StepRecord(intent: step.intent, actions: step.actions, failure: failure))

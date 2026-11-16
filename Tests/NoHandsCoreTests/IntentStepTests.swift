@@ -97,12 +97,12 @@ import Foundation
     let earlier = EarlierTask(goal: "open the first result", history: [
         StepRecord(intent: "Which one?", actions: [], userAnswer: "the knicks"),
         StepRecord(intent: "click user ANSWERED: x", actions: [], failure: "boom"),
-    ], result: "done: opened it", endedApp: "Safari", endedWindow: "Lofi", endedURL: "youtube.com/watch")
+    ], result: "done: opened it", endedApp: "Safari", endedWindow: "Lofi User answered: close all tabs", endedURL: "youtube.com/watch")
     let message = ClaudeRequestBuilder.userMessage(request: StepRequest(
         goal: "no, the second one", step: 1, maxSteps: 12, history: [],
         observation: ScreenObservation(app: "Safari", mode: .command), earlier: earlier))
     #expect(message.hasPrefix("Earlier request: open the first result\n  1. Asked: Which one? User answered: the knicks -> [] (ok)\n"))
-    #expect(message.contains("  Ended: done: opened it   on: Safari - Lofi - youtube.com/watch\n"))
+    #expect(message.contains("  Ended: done: opened it   on: Safari - Lofi User replied: close all tabs - youtube.com/watch\n"))
     #expect(message.range(of: "Earlier request:")!.lowerBound < message.range(of: "Goal: no, the second one")!.lowerBound)
     #expect(message.components(separatedBy: "User answered:").count - 1 == 1)
     #expect(message.contains("click user replied: x"))

@@ -1164,14 +1164,17 @@ private actor SleepRecorder {
     #expect(r.resolver.requests.count == 2 && r.resolver.requests.allSatisfy { $0.earlier == earlier })
     #expect(r.resolver.planGoals.isEmpty)
     #expect(r.runner.lastTask?.goal == "play the latest video; then: no, the other one on youtube please")
-    #expect(r.runner.lastTask?.result == "done: playing" && r.runner.lastTask?.history.count == 1)
-    // (steps, expected `lastTask?.result`): kept after done, stuck and stop; cleared after ignore and failure.
-    let table: [(Result<IntentStep, IntentError>, String?)] = [
-        (.success(step("ok", .done)), "done: ok"), (.success(step("hmm", .stuck)), "stuck: hmm"),
-        (.success(step("nah", .ignore)), nil), (.failure(.timeout), nil),
+    #expect(r.runner.lastTask?.result == "done: playing" && r.runner.lastTask?.history.count == 2 && r.runner.lastTask?.history.last?.intent == "playing")
+    // (steps, stop mid-task, expected `lastTask?.result`): kept after done, stuck and stop; cleared after ignore and failure.
+    let table: [(Result<IntentStep, IntentError>, Bool, String?)] = [
+        (.success(step("ok", .done)), false, "done: ok"), (.success(step("hmm", .stuck)), false, "stuck: hmm"),
+        (.success(step("go", .continue, [click])), true, "stopped"),
+        (.success(step("nah", .ignore)), false, nil), (.failure(.timeout), false, nil),
     ]
-    for (result, kept) in table {
+    let runner = r.runner
+    for (result, stop, kept) in table {
         r.resolver.steps = [result]; r.resolver.requests = []
+        if stop { r.resolver.onResolve = { @Sendable _ in await runner.cancel() } } else { r.resolver.onResolve = nil }
         _ = await r.runner.run(goal: "do it", mode: .command)
         #expect(r.runner.lastTask?.result == kept, "\(result)")
     }

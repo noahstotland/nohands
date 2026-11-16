@@ -10,10 +10,28 @@ public enum FollowUp {
     ]
 
     /// Whether `goal` starts like a follow-up. Grammar commands never get here (the pipeline asks only about words
-    /// the grammar did not take), so "go back" alone is still the browser command.
+    /// the grammar did not take), so "go back" alone is still the browser command. An opener must be followed by at
+    /// least one more word: a lone "no" or "actually" is not a request.
     public static func refers(_ goal: String) -> Bool {
         let words = CommandGrammar.normalize(goal.filter { !$0.isPunctuation })
-        return openers.contains { words.starts(with: $0) }
+        return openers.contains { words.count > $0.count && words.starts(with: $0) }
+    }
+
+    /// The goal words the done-only-when-playing check reads: the earlier goal joined to `goal`, unless `goal` asks to
+    /// pause, stop or mute ("no, pause it" must not be held to the earlier "play ...").
+    public static func playbackGoal(earlier: String?, goal: String) -> String {
+        let stopWords: Set<String> = ["pause", "stop", "mute"]
+        let words = goal.lowercased().split(whereSeparator: { !$0.isLetter && !$0.isNumber }).map(String.init)
+        guard let earlier, !words.contains(where: stopWords.contains) else { return goal }
+        return "\(earlier) \(goal)"
+    }
+
+    /// The goal a follow-up keeps for the next one: the earlier goal, then the new words whole. Over `limit`, the older
+    /// part is cut (its start, the first goal, lasts longest), never the new words.
+    public static func chained(earlier: String, goal: String, limit: Int) -> String {
+        let hop = "; then: " + goal
+        if hop.count >= limit { return String(goal.prefix(limit)) }
+        return String(earlier.prefix(limit - hop.count)) + hop
     }
 
     /// The earlier task a request for `goal` follows up on, or nil for a normal request: a task was kept, the window

@@ -47,6 +47,8 @@ import NoHandsCore
     /// alone; a task that is not a follow-up, a mode change and a backend switch replace or clear it.
     private var lastTask: EarlierTask?
     private var lastTaskEnded = ContinuousClock.now
+    /// Bumped by `replaceRunner`; a task that started under another value must not keep its result as memory.
+    private var runnerGeneration = 0
     private let harness: (any DesktopHarness)?
     private let executor: ActionExecutor
     private let overlay: any OverlayPresenting
@@ -162,6 +164,7 @@ import NoHandsCore
     /// Takes `new` at once when no task is running; otherwise holds it (the newest wins) until the task loop is between runs.
     func replaceRunner(_ new: TaskRunner) {
         lastTask = nil
+        runnerGeneration += 1
         if activeTask == nil { runner = new; pendingRunner = nil } else { pendingRunner = new }
     }
 
@@ -397,6 +400,7 @@ import NoHandsCore
     /// Stops the microphone and drops any queued audio. Safe to call repeatedly.
     public func stop() {
         stopGeneration += 1
+        lastTask = nil
         stopped = true
         mic?.stop()
         mic = nil
@@ -648,9 +652,15 @@ import NoHandsCore
         _ = await runner.takeUsage()   // a cancelled earlier task's calls must not count here
         let began = Date(), clock = ContinuousClock.now
         let earlier = FollowUp.memory(lastTask, endedAt: lastTaskEnded, now: .now, windowMs: config.followUpWindowMs, goal: pending.goal)
+        let generation = runnerGeneration, stops = stopGeneration
         let outcome = await runner.run(goal: pending.goal, mode: modeMachine.mode, earlier: earlier)
-        lastTask = runner.lastTask   // nil after ignored or failed; replaces the old one when this was not a follow-up
-        lastTaskEnded = .now
+        if generation != runnerGeneration || stops != stopGeneration {
+            lastTask = nil   // a backend switch or a pause during the run ends the conversation
+        } else if let kept = runner.lastTask {
+            lastTask = kept; lastTaskEnded = .now
+        } else if earlier == nil {
+            lastTask = nil   // a new request that was ignored or failed replaces the old memory; a follow-up leaves it (and its end time)
+        }
         recordTask(pending, runner: runner, outcome: outcome, kind: kind, began: began,
                    durationMs: CommandLogEntry.milliseconds(clock.duration(to: .now)), usage: await runner.takeUsage())
         runner.onStatus = nil
