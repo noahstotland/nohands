@@ -10,7 +10,7 @@ public enum Routing: Equatable, Sendable {
 
 public struct ModeMachine: Sendable {
     public private(set) var mode: Mode
-    private let grammar: CommandGrammar
+    private var grammar: CommandGrammar
     private let attention: AttentionGate
     private var session = DictationSession()
 
@@ -19,6 +19,9 @@ public struct ModeMachine: Sendable {
         self.mode = mode
         self.attention = attention
     }
+
+    /// Routes the next utterance with `grammar`; the mode and any dictation session carry on.
+    public mutating func use(grammar: CommandGrammar) { self.grammar = grammar }
 
     /// Forces the mode (e.g. an LLM-produced `.setMode`). Idempotent: re-applying the current mode changes
     /// nothing, so an ongoing dictation session is not reset. Entering dictation starts a fresh session.

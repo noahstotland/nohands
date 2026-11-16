@@ -84,6 +84,7 @@ The full list of what is sent is in [Privacy](docs/privacy.md).
 - [Voice commands](docs/voice-commands.md): every phrase
 - [Using NoHands](docs/using-nohands.md): panels, permissions, signing, logs
 - [Configuration](docs/configuration.md): config keys and the local model
+- [App packs](docs/app-packs.md): add voice commands for more apps from a pack file
 - [Tasks](docs/tasks.md): how multi-step requests run, guards, the agent-desktop harness
 - [CLI tools](docs/cli.md): `nohands-cli` subcommands for trying each piece by hand
 - [Privacy](docs/privacy.md)

@@ -1,5 +1,6 @@
 import Foundation
 import AppKit
+import os
 import NoHandsCore
 
 /// mic -> VAD -> assembler -> (bounded queue, newest 4: early and full jobs) -> ASR -> (serial job stream) -> ModeMachine -> executor / resolver.
@@ -52,6 +53,9 @@ import NoHandsCore
     public var resolverKind: CommandLogEntry.Resolver = .claude
 
     private var modeMachine: ModeMachine
+    /// The grammar the merge window asks off the main actor. Behind a lock so a pack reload can swap it; the mode
+    /// machine holds its own copy, swapped with it on the main actor.
+    private let mergeGrammar: OSAllocatedUnfairLock<CommandGrammar>
     private var vad: VoiceActivity?
     private var mic: MicrophoneCapture?
     private var tasks: [Task<Void, Never>] = []
@@ -122,12 +126,24 @@ import NoHandsCore
         self.overlay = overlay
         self.ax = ax
         self.harness = harness
-        self.modeMachine = ModeMachine(grammar: CommandGrammar(config: config.grammarConfig), attention: config.attentionGate)
+        let grammar = CommandGrammar(config: config.grammarConfig)
+        self.mergeGrammar = OSAllocatedUnfairLock(initialState: grammar)
+        self.modeMachine = ModeMachine(grammar: grammar, attention: config.attentionGate)
         executor.onModeChange = { [weak self] mode in
             guard let self else { return }
             self.modeMachine.apply(mode: mode)
             self.publishStatus()
         }
+    }
+
+    /// Looks pack phrases up in `packs` from the next utterance on. An utterance already being routed finishes on the
+    /// old set: routing runs on the main actor, as this does.
+    public func setPacks(_ packs: PackSet) {
+        let grammar = mergeGrammar.withLock { state -> CommandGrammar in
+            state = state.with(packs: packs)
+            return state
+        }
+        modeMachine.use(grammar: grammar)
     }
 
     /// Moves new tasks to another backend from the next command on, without stopping the microphone. Builds a runner
@@ -275,16 +291,16 @@ import NoHandsCore
         let (utterances, uttCont) = AsyncStream<ASRJob>.makeStream(bufferingPolicy: .bufferingNewest(4))
         let (jobs, jobCont) = AsyncStream<Job>.makeStream(bufferingPolicy: .bufferingNewest(2))
 
-        let grammar = CommandGrammar(config: config.grammarConfig)
+        let mergeGrammar = self.mergeGrammar
         let attention = self.attention
         let front = FrontmostApp.shared   // a pack phrase closes the merge window early, like a global one
         let ax = self.ax   // asked only for a text edit that names words in the field
         let merge = MergeBuffer(
             merger: UtteranceMerger(windowMs: config.mergeWindowMs, unfinishedWindowMs: config.mergeWindowUnfinishedMs),
             gate: attention,
-            isComplete: { Self.isComplete($0, mode: $1, grammar: grammar, attention: attention, frontmost: front.bundleID,
+            isComplete: { Self.isComplete($0, mode: $1, grammar: mergeGrammar.withLock { $0 }, attention: attention, frontmost: front.bundleID,
                                           textFocused: { ax.isTextFocused() }) },
-            carriesSpokenText: { Self.carriesSpokenText($0, grammar: grammar, attention: attention, frontmost: front.bundleID,
+            carriesSpokenText: { Self.carriesSpokenText($0, grammar: mergeGrammar.withLock { $0 }, attention: attention, frontmost: front.bundleID,
                                                         textFocused: { ax.isTextFocused() }) },
             onHold: { [weak self] text in
                 Task { @MainActor in self?.listening(text) }
