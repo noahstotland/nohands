@@ -1,6 +1,6 @@
 # As-built: Remember routes that worked
 
-**Shipped:** in PR #PRNUM
+**Shipped:** in PR #162
 **Ticket:** NH-46
 **Spec:** [2026-11-16-nh-46-route-memory-design.md](../specs/2026-11-16-nh-46-route-memory-design.md)
 
