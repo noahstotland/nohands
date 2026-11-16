@@ -54,7 +54,7 @@ FluidAudio vocabulary boosting is not used. In the resolved revision (e396cf7) `
 
 - Core, one table: replacement in the middle, at the start, next to punctuation, case-insensitive, no partial-word match, multi-word `hear`, longest `hear` wins, no rescan of replaced text.
 - `AppConfigTests`, one table: string and list `hear`, entries skipped for each rule, the 200 cap, the skipped count, a non-list `vocabulary` ignored.
-- `VoicePipelineTests`: `runASR` with a fake transcriber hearing "search for raptures" emits "search for Raptors" to the merge buffer, and a stop transcript passes unchanged.
+- `ASRLoopTests`: `runASR` with a fake transcriber hearing "search for raptures" emits "search for Raptors" to the merge buffer, and a stop transcript passes unchanged.
 
 ### Docs
 
