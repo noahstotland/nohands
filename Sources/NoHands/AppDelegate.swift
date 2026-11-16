@@ -28,6 +28,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private static let statusBarDefaultsKey = "statusBarPosition"
     private let backendItem = NSMenuItem(title: "Model", action: nil, keyEquivalent: "")
     private let backendMenu = NSMenu(title: "Model")
+    private let speakItem = NSMenuItem(title: "Speak Feedback", action: nil, keyEquivalent: "")
+    private let speakMenu = NSMenu(title: "Speak Feedback")
     private let packsItem = NSMenuItem(title: "Packs", action: nil, keyEquivalent: "")
     private let packsMenu = NSMenu(title: "Packs")
     private let packStore = PackStore()
@@ -138,6 +140,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             statusBarMenu.addItem(item)
         }
         statusBarItem.submenu = statusBarMenu
+        for level in SpeakLevel.allCases {
+            let item = NSMenuItem(title: level.rawValue.capitalized, action: #selector(speakChosen(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = level.rawValue
+            speakMenu.addItem(item)
+        }
+        speakItem.submenu = speakMenu
         packsItem.submenu = packsMenu
         reloadPacks()
         refreshStatusBarMenu()
@@ -147,7 +156,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         recentItem.submenu = recentMenu
         rebuildRecentMenu()
         for item in [stateItem, configItem, NSMenuItem.separator(), transcriptItem, recentItem, viewLogsItem, localModelItem, harnessItem, claudeItem, claudeUsageItem, checkClaudeItem, NSMenuItem.separator(),
-                     pauseItem, retryItem, accessibilityItem, screenRecordingItem, micItem, NSMenuItem.separator(), loginItem, statusBarItem, packsItem, backendItem, claudeKeyItem, openConfigItem,
+                     pauseItem, retryItem, accessibilityItem, screenRecordingItem, micItem, NSMenuItem.separator(), loginItem, statusBarItem, speakItem, packsItem, backendItem, claudeKeyItem, openConfigItem,
                      NSMenuItem.separator(), quit] {
             menu.addItem(item)
         }
@@ -194,6 +203,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         refreshClaudeItems()
         refreshBackendMenu()
+        for item in speakMenu.items { item.state = item.representedObject as? String == config.speakFeedback.rawValue ? .on : .off }
         claudeKeyItem.title = fileHasKey ? "Change Claude API key…" : "Set Claude API key…"
         refreshLoginItem()
         pauseItem.title = userPaused ? "Resume Listening" : "Pause Listening"
@@ -291,6 +301,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         refreshLocalModel()
         overlay.showHUD(target == .claude ? "Using Claude from the next command" : "Using the local model from the next command",
                         duration: .seconds(3))
+    }
+
+    // MARK: - spoken feedback
+
+    @objc private func speakChosen(_ sender: NSMenuItem) {
+        guard let raw = sender.representedObject as? String, let level = SpeakLevel(rawValue: raw) else { return }
+        applySpeakLevel(level)
+        pipeline?.setSpeakLevel(level)
+    }
+
+    /// Saves `level` to config.json (the choice survives a restart) and checks its menu row. The pipeline applies it
+    /// at once; it needs no restart. If the file cannot be written the level still applies for this session.
+    private func applySpeakLevel(_ level: SpeakLevel) {
+        guard level != config.speakFeedback else { return }
+        config.speakFeedback = level
+        do {
+            try ConfigFile.saveSpeakFeedback(level, at: ConfigFile.defaultURL)
+        } catch {
+            PipelineLog.warning("couldn't save spoken feedback setting", detail: "\(error)")
+            overlay.showHUD("spoken feedback changed, but not saved: check config.json", duration: .seconds(4))
+        }
+        PipelineLog.info("speak feedback: \(level.rawValue)")
+        refresh()
     }
 
     private static func backendName(_ backend: EffectiveBackend) -> String {
@@ -841,6 +874,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 p.resolverKind = Self.logResolver(builtBackend)
                 p.setPacks(packSet)
                 p.onStatus = { [weak self] mode, transcript in self?.apply(mode: mode, transcript: transcript) }
+                p.onSpeakLevelChange = { [weak self] level in self?.applySpeakLevel(level) }
                 p.onNotice = { PipelineLog.info("notice: \($0)") }
                 p.onError = { [weak self] message in self?.errorText = message; self?.refresh() }
                 try await p.start()

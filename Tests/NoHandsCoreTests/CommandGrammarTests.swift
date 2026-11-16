@@ -406,6 +406,19 @@ let g = CommandGrammar()
     }
 }
 
+@Test func spokenFeedbackPhrasesSetTheLevel() {
+    let table: [(String, [Action]?)] = [
+        ("spoken feedback on", [.setSpokenFeedback(.outcomes)]), ("turn on spoken feedback", [.setSpokenFeedback(.outcomes)]),
+        ("Spoken feedback off.", [.setSpokenFeedback(.off)]), ("turn off spoken feedback", [.setSpokenFeedback(.off)]),
+        ("spoken feedback all", [.setSpokenFeedback(.all)]), ("speak everything", [.setSpokenFeedback(.all)]),
+        // Unchanged: the stop phrases and near neighbours keep their meaning.
+        ("stop", nil), ("stop dictating", [.setMode(.command)]), ("stop the music", nil), ("turn on the lights", nil),
+        ("stop spoken feedback", nil), ("speak", nil),
+    ]
+    for (said, expected) in table { #expect(g.parse(said) == expected, "\(said)") }
+    for said in ["spoken feedback on", "speak everything", "turn off spoken feedback"] { #expect(!StopWords.isStop(said), "\(said)") }
+}
+
 @Test func pointerAndPageControlPhrases() {
     func key(_ k: Key, _ m: Set<Modifier> = [.command]) -> [Action] { [.pressKey(KeyChord(k, m))] }
     let drag: [Action] = [.drag(from: .numbered(5), to: .numbered(12))]

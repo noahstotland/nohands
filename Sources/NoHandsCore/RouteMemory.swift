@@ -122,6 +122,7 @@ public enum RouteMemory {
         case .showLabels: return "show_labels"
         case .hideOverlay: return "hide_overlay"
         case .setMode: return "set_mode"
+        case .setSpokenFeedback: return "set_spoken_feedback"
         case .openApp(let app): return named("open_app", app)
         case .openFile(let request):
             // The words the speaker said for a name are dropped, like typed text.

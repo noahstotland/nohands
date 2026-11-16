@@ -572,12 +572,14 @@ private func harnessSnapshot() -> DesktopSnapshot {
     let r = harnessRig(FakeResolver([step("read it", .done, [.readClipboard])]), harness: h)
     #expect(await r.runner.run(goal: "read the clipboard", mode: .command) == .done("read it"))
     #expect(r.statuses.last == "read it — clipboard: hello world (1 step)")
+    #expect(r.runner.readText)   // the finish line holds what was read: it is spoken only at the `all` level (NH-60)
 }
 
 @MainActor @Test func sessionStartsAndEndsWhenTracing() async {
     let h = FakeHarness(); h.snapshotResults = [harnessSnapshot()]
     let r = harnessRig(FakeResolver([step("done", .done)]), harness: h, trace: true)
     _ = await r.runner.run(goal: "nothing", mode: .command)
+    #expect(!r.runner.readText)
     #expect(h.calls.first == "session:start" && h.calls.last == "session:end:sess-1")
     let h2 = FakeHarness(); h2.snapshotResults = [harnessSnapshot()]
     let r2 = harnessRig(FakeResolver([step("done", .done)]), harness: h2)

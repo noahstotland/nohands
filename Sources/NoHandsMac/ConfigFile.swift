@@ -55,6 +55,12 @@ public enum ConfigFile {
         try save(at: url, keepMode: true) { try BackendMenu.merged(existing: $0, choice: choice) }
     }
 
+    /// Sets `speakFeedback` in the file at `url`, keeping every other key (see `SpeakMenu.merged`). Same steps and
+    /// refusals as `saveIntentBackend`.
+    public static func saveSpeakFeedback(_ level: SpeakLevel, at url: URL) throws {
+        try save(at: url, keepMode: true) { try SpeakMenu.merged(existing: $0, level: level) }
+    }
+
     private static func save(at url: URL, keepMode: Bool, merge: (Data?) throws -> Data) throws {
         let dir = url.deletingLastPathComponent()
         do {

@@ -37,7 +37,7 @@ extension Action {
         case .volume(let change):
             if case .mute = change { return false }
             return true
-        case .pressKey, .pressMouse, .releaseMouse, .scroll, .showGrid, .zoomGrid, .showLabels, .hideOverlay, .setMode,
+        case .pressKey, .pressMouse, .releaseMouse, .scroll, .showGrid, .zoomGrid, .showLabels, .hideOverlay, .setMode, .setSpokenFeedback,
              .moveWindow, .wait, .checkMedia, .ignore, .clearField, .setChecked, .setExpanded, .focusElement, .scrollTo,
              .scrollIn, .drag, .readClipboard, .readPage, .readValue, .readNotifications, .dismissNotifications, .waitFor,
              .closeTab, .closeWindow, .selectTab, .closeOtherTabs, .listTabs, .look, .system:

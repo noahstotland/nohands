@@ -596,3 +596,111 @@ private let nightGame = #"{"night game":["click","play the newest video","scroll
         }
     }
 }
+
+// MARK: - Spoken feedback (NH-60)
+
+@MainActor private final class FakeSpeaker: FeedbackSpeaking {
+    var said: [String] = []
+    var cuts = 0
+    var current: SpokenLine?
+    func speak(_ text: String) { said.append(text); current = SpokenLine(text: text, start: .now) }
+    func cut() { cuts += 1; if current?.end == nil { current?.end = .now } }
+}
+
+/// A rig whose pipeline speaks at `level` through a fake speaker, built only when a line is first said.
+@MainActor private func talking(_ level: SpeakLevel, attentionWord: String = "",
+                                sleep: @escaping @Sendable (Duration) async -> Void = { _ in }) -> (Rig, FakeSpeaker, built: () -> Int) {
+    let r = rig(attentionWord: attentionWord, sleep: sleep), fake = FakeSpeaker()
+    var built = 0
+    r.pipeline.speakerFactory = { built += 1; return fake }
+    r.pipeline.setSpeakLevel(level)
+    return (r, fake, { built })
+}
+
+@MainActor @Test func aTasksFinishLineIsSpokenOnceAtTheLevelAndNeverWhenOffOrAway() async {
+    // (level, what the task ends as, what the model does last, what is said)
+    let table: [(SpeakLevel, IntentError?, [Action], [String])] = [
+        (.off, nil, [], []),
+        (.outcomes, nil, [], ["Done: open the menu."]),
+        (.outcomes, .timeout, [], ["Timed out."]),
+        (.outcomes, nil, [.setMode(.dictation)], []),   // the words would be typed
+        (.all, nil, [.setMode(.sleep)], []),
+    ]
+    for (level, failure, actions, said) in table {
+        let (r, fake, built) = talking(level)
+        if let failure { r.resolver?.result = .failure(failure) } else { r.resolver?.scripted = [step("open the menu", .done, actions)] }
+        await r.pipeline.handle(transcript: "play the newest video", trace: trace())
+        await r.pipeline.waitForTask()
+        #expect(fake.said == said, "\(level) \(actions)")
+        if level == .off { #expect(built() == 0) }   // nothing is created while off
+    }
+}
+
+@MainActor @Test func aStopPhraseCutsTheSpeechEvenIfItEchoesAndStillCancelsTheTask() async {
+    let (r, fake, _) = talking(.outcomes)
+    await r.pipeline.handle(transcript: "spoken feedback on", trace: trace())   // a line is playing (and the speaker exists)
+    fake.current = SpokenLine(text: "stop", start: .now.advanced(by: .seconds(-1)))   // and it holds the word
+    let entered = Gate(), release = Gate()
+    r.resolver?.scripted = [step("type a", .continue, [.typeText("a")]), step("type b", .done, [.typeText("b")])]
+    r.resolver?.onResolve = { n in if n == 2 { entered.open(); await release.wait() } }
+    await r.pipeline.handle(transcript: "play the newest video", trace: trace())
+    await entered.wait()
+    let before = fake.cuts
+    await r.pipeline.handle(transcript: "stop", trace: trace())
+    #expect(fake.cuts == before + 1)   // cut, not dropped as an echo of its own word
+    release.open()
+    await r.pipeline.waitForTask()
+    #expect(r.pipeline.lastTaskOutcome == .stopped && r.typed == ["type:a"])
+    #expect(fake.said == ["Spoken feedback on."])   // a stopped task says nothing more
+}
+
+@MainActor @Test func aQuestionIsSpokenAtAllAndItsEchoIsNeverTheAnswer() async {
+    let (r, fake, _) = talking(.all, sleep: { d in if d == TaskRunner.answerTimeout { try? await Task.sleep(for: .seconds(30)) } })
+    r.resolver?.scripted = [step("Which game?", .ask), step("type a", .done, [.typeText("a")])]
+    await r.pipeline.handle(transcript: "play the newest video", trace: trace())
+    for _ in 0..<400 where r.runner?.awaitedAnswer != .question { try? await Task.sleep(for: .milliseconds(5)) }
+    #expect(fake.said == ["Which game?"])
+    let cuts = fake.cuts
+    await r.pipeline.handle(transcript: "which game", trace: trace())   // its own voice, heard back
+    #expect(r.runner?.awaitedAnswer == .question && fake.cuts == cuts)
+    await r.pipeline.handle(transcript: "the knicks one", trace: trace())   // the user: cuts the speech and answers
+    await r.pipeline.waitForTask()
+    #expect(fake.cuts > cuts)
+    #expect(r.resolver?.requests.dropFirst().first?.history.first?.userAnswer == "the knicks one")
+}
+
+@MainActor @Test func aLineHeardBackAtItsEndIsMeasuredFromTheVoiceNotTheVadsSilenceWait() async {
+    // The line ended 1.5 s ago and its echo stopped 0.2 s after that; the VAD closes the utterance only now.
+    // (voiceEnd, speechEnd, dropped as the line's own voice)
+    let table: [(Duration?, Duration, Bool)] = [(.seconds(-1.3), .zero, true), (nil, .zero, false)]
+    for (voiceEnd, speechEnd, dropped) in table {
+        let (r, fake, _) = talking(.all, sleep: { d in if d == TaskRunner.answerTimeout { try? await Task.sleep(for: .seconds(30)) } })
+        r.resolver?.scripted = [step("Which game?", .ask), step("type a", .done, [.typeText("a")])]
+        await r.pipeline.handle(transcript: "play the newest video", trace: trace())
+        for _ in 0..<400 where r.runner?.awaitedAnswer != .question { try? await Task.sleep(for: .milliseconds(5)) }
+        fake.current = SpokenLine(text: "Which game?", start: .now.advanced(by: .seconds(-4)), end: .now.advanced(by: .seconds(-1.5)))
+        let cuts = fake.cuts
+        var t = trace()
+        t.speechEnd = .now.advanced(by: speechEnd)
+        t.voiceEnd = voiceEnd.map { .now.advanced(by: $0) }
+        await r.pipeline.handle(transcript: "which game", trace: t)
+        #expect((fake.cuts == cuts) == dropped, "voiceEnd \(String(describing: voiceEnd))")
+        await r.pipeline.handle(transcript: "the knicks one", trace: trace())
+        await r.pipeline.waitForTask()
+    }
+}
+
+@MainActor @Test func theVoicePhrasesChangeTheLevelAtOnce() async {
+    // (phrase, level after, what is said)
+    let table: [(String, SpeakLevel, [String])] = [
+        ("spoken feedback on", .outcomes, ["Spoken feedback on."]), ("spoken feedback all", .all, ["Spoken feedback all."]),
+        ("turn off spoken feedback", .off, []),
+    ]
+    for (phrase, level, said) in table {
+        let (r, fake, _) = talking(.outcomes)
+        var heard: [SpeakLevel] = []
+        r.pipeline.onSpeakLevelChange = { heard.append($0) }
+        await r.pipeline.handle(transcript: phrase, trace: trace())
+        #expect(r.pipeline.speakLevel == level && heard == [level] && fake.said == said, "\(phrase)")
+    }
+}

@@ -158,6 +158,8 @@ extension OverlayController: OverlayPresenting {
     let menus: any MenuReading
     let clipboard: any ClipboardAccess
     public var onModeChange: ((Mode) -> Void)?
+    /// Called when `.setSpokenFeedback` runs.
+    public var onSpokenFeedbackChange: ((SpeakLevel) -> Void)?
     private let frontTimeout: Duration
     private let audio: any AudioOutputProbing
     private let mediaPoll: Duration
@@ -366,6 +368,8 @@ extension OverlayController: OverlayPresenting {
                 overlay.hide()
             case .setMode(let mode):
                 onModeChange?(mode)
+            case .setSpokenFeedback(let level):
+                onSpokenFeedbackChange?(level)
             case .openApp(let name):
                 guard ax.activate(appNamed: name) else { return "no app named \(name)" }
                 hideStaleOverlay()

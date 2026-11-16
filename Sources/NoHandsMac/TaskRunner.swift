@@ -111,6 +111,12 @@ public enum TaskOutcome: Equatable, Sendable {
     /// The prompt's status as the task goes: each step as it starts, a step's failure, and the finish line. The
     /// pipeline puts it on the prompt's row; the CLI prints it.
     public var onStatus: ((PromptStatus) -> Void)?
+    /// Called when the task starts waiting for an answer: the question the model asked, or the irreversible step it
+    /// holds for a spoken yes. The pipeline speaks it at the `all` level (NH-60); the board shows the same words.
+    public var onPrompt: ((FeedbackCue) -> Void)?
+    /// True once a step of the current (or last) `run` read text the user did not say (clipboard, a field, the page,
+    /// notifications) or rewrote the selection: its finish line may repeat that text, so it is spoken only at `all`.
+    public private(set) var readText = false
     /// The steps so far as data, for the corner panel: emitted when the run starts (empty), when a step starts, when
     /// it ends and when the run ends stuck. The CLI leaves it nil.
     public var onTrail: ((TaskTrail) -> Void)?
@@ -172,6 +178,7 @@ public enum TaskOutcome: Equatable, Sendable {
         stepNames = []
         planLimit = nil
         stepsRun = 0
+        readText = false
         settleTimes = []
         // A goal about playing media gets a longer budget: stream sites throw overlays and pop-unders first.
         let maxSteps = max(1, MediaGoal.matches(context) ? config.maxMediaTaskSteps : config.maxTaskSteps)
@@ -282,6 +289,7 @@ public enum TaskOutcome: Equatable, Sendable {
                 let question = Self.clipped(step.intent, to: Self.questionLimit)
                 if isCancelled { return await finish(.stopped) }
                 onStatus?(.running("step \(n) · ? \(question)"))
+                onPrompt?(.question(question))
                 trail.begin(number: n, intent: question)
                 trail.phase = .reading
                 onTrail?(trail)
@@ -348,6 +356,7 @@ public enum TaskOutcome: Equatable, Sendable {
                 // a stop ends the task before the step runs.
                 if let verb = IrreversibleGuard.held(actions, labels: labels, goal: goal) {
                     onStatus?(.running("step \(n) · say yes to \(verb)"))
+                    onPrompt?(.confirm(verb: verb))
                     let reply = await awaitAnswer(.confirm, timeout: Self.answerTimeout)
                     if isCancelled { return await finish(.stopped) }
                     guard let reply, ConfirmAnswer.isYes(reply, attention: config.attentionGate) else {
@@ -356,6 +365,7 @@ public enum TaskOutcome: Equatable, Sendable {
                     onStatus?(.running("step \(n) · \(step.intent)"))
                 }
                 let shown = overlay.state
+                if actions.contains(where: \.readsText) { readText = true }
                 failure = await executeCancellable(actions, labels: labels, tabs: observation.tabs)
                 // Only a step that ran clean left the task's page in front; a failed one may not have navigated.
                 if failure == nil, step.actions.contains(where: Self.navigates) { markTaskTab = true }

@@ -27,6 +27,8 @@ Build from an up-to-date `main` (`scripts/bundle.sh` warns when behind `origin/m
 CODESIGN_IDENTITY="Apple Development: Your Name (TEAMID)" scripts/bundle.sh
 ```
 
+**Speak Feedback:** a submenu with Off, Outcomes and All (the current one ticked). Off, the default, says nothing. Outcomes says how a task, macro or rewrite ended (`Done: open the menu.`, `Stuck: no Raptors game listed.`); All adds the model's questions and `Say yes to …`, and reads out what a task read. It applies at once and is saved to `config.json`. `spoken feedback on`, `spoken feedback all` and `spoken feedback off` do the same by voice. Say `stop` to cut it off, or just give the next command. See [Configuration](configuration.md) and [Privacy](privacy.md).
+
 **Start at Login:** a menu item registers a login item and shows a tick; if turned off in Login Items it says `allow in Login Items`. Disabled under `swift run`.
 
 **Logs:** each utterance logs `[asr=…ms total=…ms sinceVoice=…ms] <transcript> -> <what it did>`, plus `claude: step N <ms>ms cache=<read>/<written> in=<n> out=<n>`, `claude: session calls=<n> in=<n> cache=<read>/<written> out=<n>` (when each Claude task ends, the running total for this app session), `ollama: step N <ms>ms` and `intent backend: claude|local|off` lines:
