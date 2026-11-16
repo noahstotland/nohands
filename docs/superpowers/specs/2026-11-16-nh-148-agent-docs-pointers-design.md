@@ -1,7 +1,8 @@
 # NH-148: Point the agent docs at docs/voice-commands.md and docs/configuration.md: Design
 
 **Date:** 2026-11-16  **Ticket:** [NH-148](https://github.com/noahstotland/nohands/issues/148)
-**Status:** Draft
+**Status:** Shipped
+**Shipped:** in PR #178, with a small difference: the Extra checks trigger files are paired with their own doc (see PR)
 
 ## Intent
 
