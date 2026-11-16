@@ -1,5 +1,11 @@
 # Release notes
 
+## 2026-11-16 custom vocabulary for misheard words (NH-56) (#145)
+
+Merged 2026-11-16 2:25 pm UTC.
+
+Add a `vocabulary` list to `config.json` to fix words NoHands mishears: `{"hear": "raptures", "say": "Raptors"}`. Every command and dictation then uses your spelling. Restart NoHands after editing the file.
+
 ## 2026-11-16 Mail voice commands (NH-79) (#140)
 
 Merged 2026-11-16 2:24 pm UTC.
