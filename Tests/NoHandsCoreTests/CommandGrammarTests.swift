@@ -347,3 +347,61 @@ let g = CommandGrammar()
     #expect(g.parse("stop") == nil)
     #expect(g.parse("stop the music") == nil)
 }
+
+@Test func systemControlPhrases() {
+    let lock = Action.system(.lockScreen), shot = Action.system(.screenshot(.screen))
+    let table: [(String, Action)] = [
+        ("lock screen", lock), ("lock the screen", lock), ("lock computer", lock), ("lock the mac", lock),
+        ("screenshot", shot), ("take a screenshot", shot), ("screenshot screen", shot),
+        ("screenshot selection", .system(.screenshot(.selection))), ("screenshot area", .system(.screenshot(.selection))),
+        ("screenshot window", .system(.screenshot(.window))),
+        ("mission control", .system(.missionControl)), ("open mission control", .system(.missionControl)),
+        ("show desktop", .system(.showDesktop)), ("show the desktop", .system(.showDesktop)),
+        ("next space", .system(.space(.right))), ("previous space", .system(.space(.left))),
+        ("notification center", .system(.notificationCenter)), ("notification centre", .system(.notificationCenter)),
+        ("show notifications", .system(.notificationCenter)),
+        ("empty trash", .system(.emptyTrash)), ("empty the trash", .system(.emptyTrash)),
+        ("open settings for bluetooth", .system(.openSettings(.bluetooth))),
+        ("open settings for the wifi", .system(.openSettings(.wifi))),
+        ("open sound settings", .system(.openSettings(.sound))), ("privacy and security settings", .system(.openSettings(.privacy))),
+        ("login items settings", .system(.openSettings(.loginItems))),
+    ]
+    for (said, action) in table { #expect(g.parse(said) == [action], "\(said)") }
+    // Unchanged phrases, and the stop: none of them is a system command.
+    #expect(g.parse("space") == [.pressKey(KeyChord(.space))])
+    #expect(g.parse("spotlight") == [.pressKey(KeyChord(.space, [.command]))])
+    #expect(g.parse("open system settings") == [.openApp("system settings")])
+    #expect(g.parse("open slack settings") == [.openApp("slack settings")])
+    #expect(g.parse("open settings") == [.openApp("settings")])
+    #expect(CommandGrammar(packs: .builtIns).parse("open settings", frontmost: "com.microsoft.VSCode") == [.pressKey(KeyChord(.comma, [.command]))])
+    #expect(g.parse("hide") == [.hideOverlay])
+    for said in ["stop", "stop screenshot", "lock screen stop", "empty trash and stop"] { #expect(g.parse(said) == nil, "\(said)") }
+}
+
+@Test func settingsPaneNames() {
+    let table: [(SettingsPane, [String])] = [
+        (.wifi, ["wifi", "wi-fi", "wi fi"]), (.bluetooth, ["bluetooth"]), (.sound, ["sound", "audio"]),
+        (.displays, ["display", "displays"]), (.accessibility, ["accessibility"]),
+        (.privacy, ["privacy", "privacy and security", "security"]), (.loginItems, ["login items", "startup items"]),
+        (.notifications, ["notifications", "notification"]), (.battery, ["battery"]), (.general, ["general"]),
+    ]
+    #expect(Set(table.map(\.0)) == Set(SettingsPane.allCases))
+    for (pane, names) in table {
+        for said in names { #expect(SettingsPane.parse(said.split(separator: " ").map(String.init)) == pane, "\(said)") }
+    }
+    for said in ["slack", "", "settings", "system"] { #expect(SettingsPane.parse(said.split(separator: " ").map(String.init)) == nil, "\(said)") }
+    let open: [(String, SettingsPane)] = [
+        ("open the settings for wifi", .wifi), ("open settings for display please", .displays),
+        ("open settings for privacy & security", .privacy), ("notification settings", .notifications),
+    ]
+    for (said, pane) in open { #expect(g.parse(said) == [.system(.openSettings(pane))], "\(said)") }
+    // An unknown pane after "open settings for" is rejected on the device, never opened and never sent to the model.
+    #expect(g.parse("open settings for slack") == nil)
+    #expect(g.rejection("open settings for slack") == "no settings pane called slack: say open system settings")
+    #expect(g.rejection("open settings for") != nil)
+    #expect(g.rejection("open settings for bluetooth") == nil && g.rejection("open system settings") == nil)
+    // A compound or long request goes to the model as before, with no rejection.
+    for said in ["open settings for bluetooth and turn it off", "open settings for slack and type hello", "open settings for slack bluetooth wifi sound off", "open settings for bluetooth to connect airpods", "open settings for sound to fifty"] {
+        #expect(g.parse(said) == nil && g.rejection(said) == nil, "\(said)")
+    }
+}

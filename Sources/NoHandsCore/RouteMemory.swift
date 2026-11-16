@@ -159,6 +159,7 @@ public enum RouteMemory {
         case .editText: return "edit_text"
         case .media: return "media"
         case .volume: return "volume"
+        case .system: return "system"
         case .look: return "look"
         }
     }
