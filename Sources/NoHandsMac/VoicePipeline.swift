@@ -731,6 +731,7 @@ import NoHandsCore
                 failure = await executor.execute(actions)
                 recordCommand(.grammar(date: began, phrase: phrase, action: PipelineText.describe(actions), failure: failure,
                                        durationMs: CommandLogEntry.milliseconds(clock.duration(to: .now))))
+                _ = executor.takeReadings()   // a reading ("is it playing") belongs to this step, not the next spoken command
                 if failure == nil, n < total { try? await Task.sleep(for: macroStepPause) }
             case .resolveWithLLM(let goal):
                 if let runner {
@@ -756,7 +757,7 @@ import NoHandsCore
                 result = ended ? .stopped("stopped at step \(n) of \(total)") : .failed(at(n, failure))
                 break
             }
-            if modeMachine.mode != .command { result = .failed(at(n, "changed mode")); break }
+            if modeMachine.mode != .command { lastTask = nil; result = .failed(at(n, "changed mode")); break }
         }
         overlay.report(id, text: text, status: result)
         let kind: String
