@@ -76,7 +76,7 @@ extension AppPack {
 }
 ```
 
-and `AppPacks.all = [.terminal, .messages]`. Phrases (normalized keys):
+and `AppPacks.all = [.terminal, .vscode, .messages]`. Phrases (normalized keys):
 
 | Phrases | Action |
 |---|---|
