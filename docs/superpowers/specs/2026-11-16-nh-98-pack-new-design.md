@@ -1,8 +1,9 @@
 # NH-98: Create a new app pack from the app in front
 
 **Date:** 2026-11-16
-**Status:** Draft
+**Status:** Shipped
 **Ticket:** [NH-98](https://github.com/noahstotland/nohands/issues/98)
+**Shipped:** in PR #166, with differences: [as-built](../as-built/2026-11-16-nh-98-pack-new.md)
 
 ## Goal
 
