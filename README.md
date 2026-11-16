@@ -99,6 +99,10 @@ Installs Ollama with Homebrew if needed, starts it, pulls the model, smoke tests
 | `press command shift s` | Presses a key chord |
 | `enter`, `tab`, `escape`, `delete`, arrow names | Presses that key |
 | `undo`, `redo`, `copy`, `paste`, `cut`, `select all`, `save`, `find` | Standard shortcuts |
+| `select word`, `select line`, `select sentence`, `select paragraph`, `select the last word`, `select the last sentence` | Selects that unit at the caret in the focused text field (the last whole word or sentence that ends before the caret). The same with `delete` removes it (`delete the last sentence`, `delete line` takes the whole line and its newline). Without a text field the row says `no text field: click into one first` |
+| `select <words>`, `delete <words>`, `replace <words> with <words>`, `go before <words>`, `go after <words>` | Finds the words in the focused text field (case does not matter, whole words only, a leading `the`, `a`, `an` or `my` is optional) and selects, deletes, replaces or puts the caret next to them. The nearest match before the caret wins, else the nearest after it (with a selection, a match inside it does not count as after); no guess at near matches: a miss says `no "<words>" in the text`. `replace coffee with tea` splits at the first `with`; a replacement keeps a capital the old words started with. The words must be in a text field you have focused, so `select the second option` in a list still goes to the model |
+| `go to the end of the line`, `go to the start of the line` (`beginning`), `go to the end of the document`, `go to the start of the document` (`top`, `bottom`) | Moves the caret with the arrow keys, in any text field, with no read |
+| `capitalize that`, `uppercase that`, `lowercase that` | Changes the case of the selection, or of the word before the caret when nothing is selected (`capitalize` raises each word's first letter) |
 | `new tab`, `close tab`, `close window`, `quit app`, `switch app`, `spotlight` | App and window shortcuts; filler ignored (`close the current tab`, `close this window`) |
 | `minimize`, `full screen`, `hide app`, `reload` / `refresh` | Window and app shortcuts |
 | `left half`, `right half`, `snap left`, `top left`, `maximize`, `center window` | Moves and resizes the front window; richer phrasing such as `make the window half width and snap to the left side of the screen` goes to the model |
@@ -111,6 +115,14 @@ Installs Ollama with Homebrew if needed, starts it, pulls the model, smoke tests
 | `search for <words>` | The page's or app's search box, else a known results page (YouTube, Google, Amazon, Reddit, Wikipedia…), else the address bar. Refused: `javascript:`, `file:`, `chrome:`, any `scheme:text`: `can't search for that` |
 | `search for <words> on <site>`, `search <site> for <words>` | That site's search box if in front, else its results page |
 | `is it playing`, `is the video playing`, `is anything playing` | Row says `playing`, `paused` or `none` |
+| `play`, `resume`, `pause`, `play pause`, `toggle play` (also `play the music`, `pause the video`, `pause the music`; `play the video` goes to the model) | In a browser on a YouTube page, presses the player's `k`; anywhere else, the Mac's play key, which goes to the app macOS treats as Now Playing (Music, Spotify, a browser tab), not necessarily the window in front. `pause` does nothing (`nothing is playing`) unless the front window or the Mac shows playing (a window with no visible Pause or Play button is judged by sound from any app, so `pause` may say `nothing is playing` while a quiet player is open), and `play` does nothing (`already playing`) while it plays, so neither turns into its opposite; `play pause` always toggles. If a text box has focus on the YouTube page, the system play key is used so no letter is typed |
+| `next track`, `next song`, `next video`, `previous track`, `previous song`, `previous video` | On YouTube, shift-N and shift-P; anywhere else, the Mac's next and previous keys. With a text box focused on YouTube it fails with `a text box has focus: click the video first` |
+| `skip ahead`, `skip forward`, `skip back`, `skip backward`, each with an optional `<n> seconds` | YouTube only (`j` and `l`, 10 seconds a press; the default is 10 seconds, `<n>` is 1 to 600 and is rounded to the nearest 10, so 1 to 4 seconds still moves 10); elsewhere the row says `skip works on YouTube only`. Bare `skip` is not a command |
+| `full screen video`, `video full screen`, `make the video full screen` | On YouTube, the player's `f`; elsewhere, the window's full screen (command-control-F), unless the window is already full screen (`already full screen`). Bare `full screen` is still command-control-F |
+| `exit full screen`, `leave full screen` | Leaves full screen only when the front window is in it (YouTube: escape, then command-control-F if the window is still full screen; elsewhere command-control-F); otherwise it says `not in full screen` and presses nothing |
+| `volume up`, `volume down`, `turn it up`, `turn it down`, each with an optional `<n>` | Steps the Mac's output volume by 10 points, or `<n>` steps (1 to 10); `volume up 20 percent` moves by that many points (1 to 100). Any level above 0 also unmutes |
+| `volume 40`, `volume 40 percent`, `volume 40%`, `set volume to 40`, `set the volume to 40 percent` | Sets the output volume (0 to 100, a larger number becomes 100) and shows `volume 40%`. A device with no volume control (some displays and HDMI outputs) says `this speaker has no volume control` |
+| `mute`, `mute sound`, `unmute`, `unmute sound` | Mutes or unmutes the Mac's speakers (the output device), not a call's microphone; saying `mute` twice stays muted. An output with no mute switch says `this speaker can't be muted` |
 | `click`, `double click`, `right click`, `middle click` | Clicks at the pointer |
 | `click 42` | Clicks label or grid cell 42 |
 | `click save` | Clicks the element named "save" |
@@ -126,6 +138,7 @@ Installs Ollama with Homebrew if needed, starts it, pulls the model, smoke tests
 | `start dictating` / `stop dictating` | Switch between command and dictation mode |
 | `scratch that` (dictation) | Deletes what your last dictated phrase typed |
 | `delete word` (dictation) | Deletes the previous word |
+| `delete that` | Presses Delete (it removes what is selected) |
 | `go to sleep` / `wake up` | Pause and resume listening |
 | `menu <words>` | Presses the front app's menu item through Accessibility, e.g. `menu bookmark this tab`, `menu save as`; none: `no menu item called <words>`; greyed: `menu item <title> is disabled`; the Apple menu is never searched (no `menu shut down`) |
 
@@ -133,7 +146,9 @@ Details: `docs/superpowers/specs/2026-11-05-nh-10-spell-command-design.md`, `doc
 
 - With `attentionWord` set, start each command with it: `computer, new tab`.
 - In a browser `show numbers` and `click <name>` can take about half a second longer (a second on the first per launch in Chromium).
-- In dictation mode, say `period`, `comma`, `question mark`, `new line`, `new paragraph`, `open quote` and similar to insert punctuation.
+- In dictation mode, say `period`, `comma`, `question mark`, `new line`, `new paragraph`, `open quote` and similar to insert punctuation.. The text-editing commands work while you dictate too, and `scratch that` forgets what it can no longer undo after one. A phrase command (`delete the old files`, `replace meeting with call`) edits only when those words are in the field; otherwise the words you said are typed like any other dictation.
+
+**How text editing works.** The app reads the focused field through Accessibility (the field's text stays on the Mac and is never logged), works out the range, selects it and types the replacement or presses Delete, so the app's own undo (`undo`) takes the edit back. Reading the field takes at most half a second, and a field over 200,000 characters counts as unreadable, as do password fields. Where the field cannot be read or will not take a selection (some web editors, Google Docs), `select`/`delete` of a word, line or paragraph use keyboard shortcuts instead; sentences, `<words>` and case changes need a readable field and say `can't read the text here: select it by hand or say "select line"`. `go to the end of the line` and the other caret moves always use keyboard shortcuts.
 
 ### Per-app commands
 
@@ -141,6 +156,16 @@ An app can have phrases that work only while it is in front and win on a shared 
 
 | App | Say | Does |
 |---|---|---|
+| Terminal | `new window` | Opens a new Terminal window |
+| Terminal | `clear`, `clear all` | Clears the screen and the scrollback (command-K) |
+| Terminal | `clear screen` | Clears the screen only |
+| Terminal | `clear scrollback`, `clear history` | Clears the scrollback only |
+| Terminal | `scroll to top`, `scroll to bottom` | Jumps to the start or end of the scrollback |
+| Terminal | `split pane`, `close pane` | Splits the window, or closes the split pane |
+| Terminal | `bigger font`, `smaller font`, `default font size` | Changes the font size |
+| Terminal | `interrupt`, `cancel command` | Sends control-C to the running command |
+
+The global `new tab`, `close tab`, `close window`, `next tab`, `previous tab`, `find`, `page up` and `page down` also work in Terminal. Closing a tab or window with a running command shows Terminal's own confirm, which NoHands does not answer (say `enter` or `escape`). `stop` never interrupts a shell command; say `interrupt`.
 
 ## CLI tools
 
@@ -212,7 +237,7 @@ The agent-desktop keys are under [agent-desktop harness](#agent-desktop-harness)
 - **Echo cancellation.** `echoCancellation` removes what the Mac's speakers play (macOS voice processing); set `false` if an external audio interface clashes.
 - **Attention word.** `attentionWord` (empty = off): command mode acts only on utterances starting with it (`computer, new tab` works, `new tab` alone does nothing). More than three words, or a stop phrase, counts as off. `stop`, `wake up` and the dictation escapes (`stop dictating`, `command mode`) work with or without it. Details: `docs/superpowers/specs/2026-11-05-nh-12-attention-word-design.md`.
 - **Task loop keys.** `maxMediaTaskSteps` replaces `maxTaskSteps` for a request to play or watch. `llmDeadlineMs`: per model call. `settleMs`: the most wait for the screen to settle after an action. `maxObservedElements`: elements sent to the model. The local model uses `localLlmDeadlineMs` and `localMaxObservedElements` instead.
-- **Pausing mid-command.** `silenceMs` closes an utterance. A complete command and a stop phrase close after `earlySilenceMs` (one 256 ms chunk), so a pause of 350 ms or more inside acts on the first part ("click twenty … three" clicks 20); open-ended commands (`type …`, `open …`, `go to …`, `search for …`, `click <name>`), unparsed speech, dictation and sleep keep `silenceMs`. Speech the grammar does not understand is then held `mergeWindowMs` (`mergeWindowUnfinishedMs` if it starts with `spell` or ends on a word like "the"), row `listening…`, later speech appended. A stop phrase (see Stopping; also "um, stop") is never held or merged: it goes through at once, and in command mode it discards the unfinished words before it. Details: `docs/superpowers/specs/2026-11-08-nh-36-early-grammar-endpointing-design.md`.
+- **Pausing mid-command.** `silenceMs` closes an utterance. A complete command and a stop phrase close after `earlySilenceMs` (one 256 ms chunk), so a pause of 350 ms or more inside acts on the first part ("click twenty … three" clicks 20); open-ended commands (`type …`, `open …`, `go to …`, `search for …`, `click <name>`, `play`, `skip ahead …`, `volume …`), unparsed speech, dictation and sleep keep `silenceMs`. Speech the grammar does not understand is then held `mergeWindowMs` (`mergeWindowUnfinishedMs` if it starts with `spell` or ends on a word like "the"), row `listening…`, later speech appended. A stop phrase (see Stopping; also "um, stop") is never held or merged: it goes through at once, and in command mode it discards the unfinished words before it. Details: `docs/superpowers/specs/2026-11-08-nh-36-early-grammar-endpointing-design.md`.
 - **How the model reads a request.** A one-sentence `intent`, then the actions. `intentEffort` sets how hard Claude thinks; `low` is fastest. `claude-haiku-5-5` at `low` is chosen for cost; for more, set `"intentModel": "claude-opus-5-5"` and `"intentEffort": "medium"`. No server-side fallback on Haiku.
 
 ## Multi-step tasks

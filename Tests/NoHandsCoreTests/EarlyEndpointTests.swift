@@ -64,6 +64,10 @@ private let chunk = [Float](repeating: 0.1, count: 4096)
         ("click 12", false), ("click", false), ("move left 20", false), ("show grid", false),
         ("type hello world", true), ("open youtube", true), ("open safari", true), ("go to example.org", true),
         ("go to cats", true), ("find the raptors game", true), ("search for cats", true), ("search youtube for cats", true), ("click the back button", true),
+        // Media: leads that take more words stay open for the full silence; whole phrases close early.
+        ("play", true), ("resume", true), ("skip ahead", true), ("skip back thirty seconds", true), ("volume up", true),
+        ("turn it down", true), ("volume forty", true), ("pause", false), ("next track", false), ("mute", false),
+        ("unmute", false), ("play pause", false), ("exit full screen", false), ("full screen video", false),
     ]
     for (phrase, expected) in table {
         guard let actions = grammar.parse(phrase) else { Issue.record("\(phrase) should parse"); continue }

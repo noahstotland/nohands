@@ -19,14 +19,14 @@ public enum SettlePolicy: Int, Comparable, Sendable {
     /// No `default`: a new action kind must choose a level.
     private static func level(_ action: Action) -> SettlePolicy {
         switch action {
-        case .wait, .look, .checkMedia, .listTabs, .ignore, .readClipboard, .readValue, .readNotifications, .clipboardSet,
+        case .wait, .look, .checkMedia, .listTabs, .volume, .ignore, .readClipboard, .readValue, .readNotifications, .clipboardSet,
              .readPage:
             return .none
         case .typeText(let text), .typeInto(_, let text):
             // A newline in typed text is a real Return press (TextSegmenter), so it can submit and load a page.
             return text.contains(where: \.isNewline) ? .full : .oneLook
         case .setValue, .clearField, .scroll, .scrollIn, .scrollTo, .focusElement, .moveCursor,
-             .moveWindow, .setChecked, .waitFor, .findOnPage:
+             .moveWindow, .setChecked, .waitFor, .findOnPage, .media, .editText:
             return .oneLook
         case .pressKey(let chord):
             // Return submits; Command, Control and Option chords can switch tabs, reload or go back.

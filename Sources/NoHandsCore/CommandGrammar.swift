@@ -59,7 +59,19 @@ public struct CommandGrammar: Sendable {
             "switch app": chord(.tab, [.command]),
             "spotlight": chord(.space, [.command]),
             "delete word": chord(.delete, [.option]),
-            "delete line": chord(.delete, [.command]),
+
+            "play": [.media(.play)], "resume": [.media(.play)],
+            "play the music": [.media(.play)],
+            "pause": [.media(.pause)], "pause the video": [.media(.pause)], "pause the music": [.media(.pause)],
+            "play pause": [.media(.playPause)], "toggle play": [.media(.playPause)],
+            "next track": [.media(.next)], "next song": [.media(.next)], "next video": [.media(.next)],
+            "previous track": [.media(.previous)], "previous song": [.media(.previous)],
+            "previous video": [.media(.previous)],
+            "full screen video": [.media(.fullScreen)], "video full screen": [.media(.fullScreen)],
+            "make the video full screen": [.media(.fullScreen)],
+            "exit full screen": [.media(.exitFullScreen)], "leave full screen": [.media(.exitFullScreen)],
+            "mute": [.volume(.mute(true))], "mute sound": [.volume(.mute(true))],
+            "unmute": [.volume(.mute(false))], "unmute sound": [.volume(.mute(false))],
 
             "is it playing": [.checkMedia], "is the video playing": [.checkMedia],
             "is anything playing": [.checkMedia],
@@ -138,8 +150,10 @@ public struct CommandGrammar: Sendable {
     /// nil when no rule matches (caller falls back to the LLM). `bundleID` is the frontmost app: its pack, if any,
     /// is checked before the global table. In order: a pack phrase that is also a global phrase, the global table on
     /// the whole phrase, the pack on the phrase without its lead ("open", "go to", an article), "menu <words>", the
-    /// global table after an "open" lead, the patterns, the filler-stripped table. A stop phrase never reaches a pack.
-    public func parse(_ transcript: String, frontmost bundleID: String? = nil) -> [Action]? {
+    /// global table after an "open" lead, the text edits, the patterns, the filler-stripped table. A stop phrase never
+    /// reaches a pack. `textFocused` is whether the front app has a text field focused: only then do edits that name
+    /// words in the field ("delete the old files") belong to the grammar; without it they go to the model as before.
+    public func parse(_ transcript: String, frontmost bundleID: String? = nil, textFocused: Bool = false) -> [Action]? {
         let tokens = Self.normalize(transcript)
         guard !tokens.isEmpty else { return nil }
         let whole = tokens.joined(separator: " ")
@@ -157,6 +171,8 @@ public struct CommandGrammar: Sendable {
             return [.menuItem(words.dropFirst().joined(separator: " "))]
         }
         if let hit = Self.parseTab(tokens, transcript: transcript) { return hit }
+        if let edit = Self.parseEdit(transcript, textFocused: textFocused) { return [.editText(edit, otherwise: nil)] }
+        if let hit = Self.parseMedia(tokens) { return hit }
         if let hit = parsePattern(tokens, transcript: transcript) { return hit }
         return Self.strippedExactMatch(tokens)
     }
@@ -199,6 +215,131 @@ public struct CommandGrammar: Sendable {
         // `rest` is a suffix of `tokens`; the raw words line up with it.
         let words = raw[(tokens.count - rest.count)...].dropLast().joined(separator: " ")
         return [.goToTab(.named(words))]
+    }
+
+    private static let editUnits: [String: TextUnit] = ["word": .word, "line": .line, "sentence": .sentence, "paragraph": .paragraph]
+    /// Words that alone are not something to look up in the field ("select all", "delete that").
+    private static let notAPhrase: Set<String> = ["all", "that", "this", "it"]
+    private static let maxPhraseWords = 12
+    private static let caseWords: [String: CaseChange] = ["capitalize": .capitalize, "uppercase": .upper, "lowercase": .lower]
+
+    /// Text editing in the focused field: "select the last sentence", "delete line", "replace meeting with call",
+    /// "go before the budget", "go to the end of the line", "capitalize that". "the" is optional wherever it can appear.
+    /// Phrases (`<phrase>`, `<a>`, `<b>`) keep the speaker's raw words and need `textFocused`; the unit, caret and case
+    /// commands parse regardless and fail at run time with "no text field". nil for anything else, so "select all",
+    /// "delete that", "go to the end" and "replace x" keep their rules. Public so dictation mode can ask too.
+    public static func parseEdit(_ transcript: String, textFocused: Bool) -> TextEdit? {
+        let tokens = normalize(transcript)
+        guard tokens.count >= 2 else { return nil }
+        func the(_ words: ArraySlice<String>) -> ArraySlice<String> { words.first == "the" ? words.dropFirst() : words }
+        /// Before a unit word, "this", "that" and "current" stand for "the" ("delete this line", "select the current word").
+        func unitBody(_ words: ArraySlice<String>) -> [String] {
+            var body = Array(the(words))
+            if body.count == 2, ["this", "that", "current"].contains(body[0]), editUnits[body[1]] != nil { body.removeFirst() }
+            return body
+        }
+        /// The speaker's own words from `from` up to `to`, or nil when they are not a phrase to look up.
+        func phrase(_ from: Int, _ to: Int) -> String? {
+            let spoken = the(tokens[from..<to])
+            guard !spoken.isEmpty, spoken.count <= maxPhraseWords, textFocused,
+                  spoken.count > 1 || !(notAPhrase.contains(spoken[spoken.startIndex]) || editUnits[spoken[spoken.startIndex]] != nil),
+                  let raw = rawWords(transcript, matching: tokens) else { return nil }
+            var words = Array(raw[from..<to])
+            while let last = words.last?.last, ".,!?".contains(last) { words[words.count - 1].removeLast() }
+            return words.joined(separator: " ")
+        }
+        switch tokens[0] {
+        case "select", "delete":
+            let remove = tokens[0] == "delete"
+            let body = unitBody(tokens.dropFirst())
+            if body.count == 1, let unit = editUnits[body[0]] { return remove ? .delete(unit, last: false) : .select(unit, last: false) }
+            if body.count == 2, body[0] == "last", let unit = editUnits[body[1]], unit == .word || unit == .sentence {
+                return remove ? .delete(unit, last: true) : .select(unit, last: true)
+            }
+            guard let words = phrase(1, tokens.count) else { return nil }
+            return remove ? .deletePhrase(words) : .selectPhrase(words)
+        case "replace":
+            // The first "with" splits the two: "replace coffee with tea with milk" types "tea with milk".
+            guard let at = tokens.firstIndex(of: "with"), at > 1, at < tokens.count - 1,
+                  let old = phrase(1, at), let raw = rawWords(transcript, matching: tokens) else { return nil }
+            return .replace(old, with: raw[(at + 1)...].joined(separator: " "))
+        case "go":
+            if tokens[1] == "before" || tokens[1] == "after" {
+                guard let words = phrase(2, tokens.count) else { return nil }
+                return tokens[1] == "before" ? .caretBefore(words) : .caretAfter(words)
+            }
+            guard tokens[1] == "to" else { return nil }
+            let place = Array(the(tokens.dropFirst(2)))
+            guard place.count >= 3, place[1] == "of" else { return nil }
+            let target = Array(the(place.dropFirst(2)))
+            guard target.count == 1 else { return nil }
+            switch (target[0], place[0]) {
+            case ("line", "start"), ("line", "beginning"): return .caret(.lineStart)
+            case ("line", "end"): return .caret(.lineEnd)
+            case ("document", "start"), ("document", "beginning"), ("document", "top"): return .caret(.documentStart)
+            case ("document", "end"), ("document", "bottom"): return .caret(.documentEnd)
+            default: return nil
+            }
+        default:
+            guard tokens.count == 2, tokens[1] == "that", let change = caseWords[tokens[0]] else { return nil }
+            return .changeCase(change)
+        }
+    }
+
+    /// Numbered media phrases: "volume up [n] [percent]", "volume <n> [percent]", "set (the) volume to <n> [percent]",
+    /// "turn it up/down [n]" and "skip ahead/forward/back/backward [n [seconds]]". Out-of-range counts are nil (the
+    /// model gets them); a set level clamps. A volume step is 10 points.
+    private static func parseMedia(_ tokens: [String]) -> [Action]? {
+        var rest = tokens[...]
+        switch rest.first {
+        case "set":
+            rest = rest.dropFirst()
+            if rest.first == "the" { rest = rest.dropFirst() }
+            guard rest.first == "volume", rest.dropFirst().first == "to" else { return nil }
+            return volumeLevel(Array(rest.dropFirst(2)))
+        case "volume":
+            rest = rest.dropFirst()
+            if let sign = rest.first.flatMap({ volumeSigns[$0] }) { return volumeStep(Array(rest.dropFirst()), sign: sign) }
+            return volumeLevel(Array(rest))
+        case "turn":
+            guard rest.dropFirst().first == "it", let sign = rest.dropFirst(2).first.flatMap({ volumeSigns[$0] }) else { return nil }
+            return volumeStep(Array(rest.dropFirst(3)), sign: sign)
+        case "skip":
+            guard let sign = rest.dropFirst().first.flatMap({ skipSigns[$0] }) else { return nil }
+            var count = Array(rest.dropFirst(2))
+            let hasUnit = count.last == "seconds" || count.last == "second"
+            if hasUnit { count.removeLast() }
+            if count.isEmpty { return hasUnit ? nil : [.media(.skip(seconds: sign * 10))] }
+            guard let n = NumberWords.parse(count), (1...600).contains(n) else { return nil }
+            return [.media(.skip(seconds: sign * n))]
+        default: return nil
+        }
+    }
+
+    private static let volumeSigns = ["up": 1, "down": -1]
+    private static let skipSigns = ["ahead": 1, "forward": 1, "back": -1, "backward": -1]
+
+    /// "[n] [percent]" after "volume up/down": n steps of 10 points (1 to 10), or n points with "percent" (1 to 100).
+    private static func volumeStep(_ words: [String], sign: Int) -> [Action]? {
+        let (count, percent) = splitPercent(words)
+        if count.isEmpty { return percent ? nil : [.volume(.by(sign * 10))] }
+        guard let n = NumberWords.parse(count), (1...(percent ? 100 : 10)).contains(n) else { return nil }
+        return [.volume(.by(sign * (percent ? n : n * 10)))]
+    }
+
+    /// "<n> [percent]": an absolute level, clamped to 0 to 100.
+    private static func volumeLevel(_ words: [String]) -> [Action]? {
+        guard let n = NumberWords.parse(splitPercent(words).count) else { return nil }
+        return [.volume(.set(min(n, 100)))]
+    }
+
+    /// The words without a closing "percent", "%" or "30%" sign, and whether there was one.
+    private static func splitPercent(_ words: [String]) -> (count: [String], percent: Bool) {
+        var count = words
+        guard let last = count.last else { return (count, false) }
+        if last == "percent" || last == "%" { count.removeLast(); return (count, true) }
+        if last.hasSuffix("%") { count[count.count - 1] = String(last.dropLast()); return (count, true) }
+        return (count, false)
     }
 
     private func pack(for bundleID: String) -> AppPack? { packs.first { $0.bundleIDs.contains(bundleID) } }
