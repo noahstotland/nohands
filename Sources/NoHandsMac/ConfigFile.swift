@@ -80,7 +80,7 @@ public enum ConfigFile {
         try readRegularFile(url.path)?.data
     }
 
-    private static func errnoCode() -> POSIXErrorCode { POSIXErrorCode(rawValue: errno) ?? .EIO }
+    static func errnoCode() -> POSIXErrorCode { POSIXErrorCode(rawValue: errno) ?? .EIO }
 
     private static func posixCode(_ error: Error) -> POSIXErrorCode {
         let ns = error as NSError
@@ -89,7 +89,7 @@ public enum ConfigFile {
     }
 
     /// Creates the folder at 700, or tightens an existing real folder to 700. A symlink is refused.
-    private static func makePrivateFolder(_ path: String) throws {
+    static func makePrivateFolder(_ path: String) throws {
         var st = stat()
         if lstat(path, &st) != 0 {
             guard errno == ENOENT else { throw SaveError.writeFailed(errnoCode()) }
@@ -105,7 +105,7 @@ public enum ConfigFile {
     }
 
     /// The file's bytes and permission bits, or nil when it is missing. A symlink or anything but a regular file is refused.
-    private static func readRegularFile(_ path: String) throws -> (data: Data, mode: mode_t)? {
+    static func readRegularFile(_ path: String) throws -> (data: Data, mode: mode_t)? {
         // O_NONBLOCK so a FIFO at the path cannot hang the open.
         let fd = open(path, O_RDONLY | O_NOFOLLOW | O_NONBLOCK)
         guard fd >= 0 else {
@@ -131,7 +131,7 @@ public enum ConfigFile {
 
     /// Writes `data` to a private temp file next to `path`, gives it `mode`, syncs it and renames it over `path`.
     /// The temp file may hold the key, so any failure removes it.
-    private static func replaceFile(_ path: String, in dir: String, with data: Data, mode: mode_t) throws {
+    static func replaceFile(_ path: String, in dir: String, with data: Data, mode: mode_t) throws {
         var template = Array((dir + "/.config.json.XXXXXX").utf8CString)
         let fd = mkstemp(&template)
         guard fd >= 0 else { throw SaveError.writeFailed(errnoCode()) }
