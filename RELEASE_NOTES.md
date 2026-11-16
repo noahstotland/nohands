@@ -1,5 +1,11 @@
 # Release notes
 
+## 2026-11-16 text editing by voice (NH-54) (#136)
+
+Merged 2026-11-16 12:23 am UTC.
+
+You can now edit text by voice: say "select the last sentence", "delete meeting", "replace meeting with call", "go to the end of the line" or "uppercase that" in any text field, in command or dictation mode. "delete line" now deletes the whole line.
+
 ## 2026-11-15 media controls by voice (NH-51) (#137)
 
 Merged 2026-11-15 8:47 pm UTC.
