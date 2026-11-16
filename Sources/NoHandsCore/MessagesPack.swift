@@ -14,7 +14,7 @@ extension AppPack {
             (["show details", "details", "conversation details", "show info", "info"], chord(.i)),
             (["mark as unread", "mark unread", "mark conversation as unread"], [.menuItem("Mark as Unread")]),
             (["mark as read", "mark read", "mark conversation as read"], [.menuItem("Mark as Read")]),
-            (["emoji", "add emoji", "emoji picker", "show emoji"], chord(.space, [.command, .control])),
+            (["emoji", "add emoji", "emoji picker", "show emoji"], [.menuItem("Emoji & Symbols")]),
             (["tapback", "add tapback", "react", "tapback message"], chord(.t)),
             (["close window", "close conversation window"], chord(.w)),
             (["delete conversation", "delete this conversation", "delete the conversation"],

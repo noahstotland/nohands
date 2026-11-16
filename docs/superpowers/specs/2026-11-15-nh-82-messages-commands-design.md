@@ -87,7 +87,7 @@ and `AppPacks.all = [.terminal, .messages]`. Phrases (normalized keys):
 | `show details`, `details`, `conversation details`, `show info`, `info` | ⌘I |
 | `mark as unread`, `mark unread`, `mark conversation as unread` | `.menuItem("Mark as Unread")` |
 | `mark as read`, `mark read`, `mark conversation as read` | `.menuItem("Mark as Read")` |
-| `emoji`, `add emoji`, `emoji picker`, `show emoji` | ⌃⌘Space |
+| `emoji`, `add emoji`, `emoji picker`, `show emoji` | `.menuItem("Emoji & Symbols")` |
 | `tapback`, `add tapback`, `react`, `tapback message` | ⌘T |
 | `close window`, `close conversation window` | ⌘W |
 | `delete conversation`, `delete this conversation`, `delete the conversation` | `.menuItem("Delete Conversation…")` |
@@ -135,8 +135,8 @@ on an unread conversation, and "delete conversation" showing Messages' confirm w
   A spoken "send" confirm for grammar phrases would be its own ticket.
 - **Read and unread are menu items, not ⇧⌘U**, so "mark as unread" can never mark a conversation read. If "Mark as Read"
   turns out not to exist, the PR says so and the phrase is dropped.
-- **Emoji is ⌃⌘Space, not the globe key.** NoHands can't synthesize the globe key reliably, and ⌃⌘Space opens the
-  same picker. The fallback is `.menuItem("Emoji & Symbols")`.
+- **Emoji is the "Emoji & Symbols" menu item, not a chord.** NoHands can't synthesize the globe key reliably, and a
+  ⌃⌘Space chord is refused by the pack format's blocked-chord rule (NH-80), which built-in packs must pass too.
 - **"close window" in Messages is ⌘W**, overriding the global ⇧⌘W, which does nothing there. Other apps are unchanged.
 - **Bare "search" is ⌘F (the conversation search field).** "search for <name>" keeps the global behavior, which types
   the name into that field. No new name matching.

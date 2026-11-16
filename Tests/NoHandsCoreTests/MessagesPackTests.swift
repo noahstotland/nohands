@@ -8,7 +8,7 @@ private let packOnly: [(String, [Action])] = [
     ("go to the next conversation", chord(.tab, [.control])), ("last conversation", chord(.tab, [.control, .shift])),
     ("search", chord(.f)), ("the details", chord(.i)), ("info", chord(.i)),
     ("mark as unread", [.menuItem("Mark as Unread")]), ("mark read", [.menuItem("Mark as Read")]),
-    ("add emoji", chord(.space, [.command, .control])), ("tapback", chord(.t)), ("react", chord(.t)),
+    ("add emoji", [.menuItem("Emoji & Symbols")]), ("tapback", chord(.t)), ("react", chord(.t)),
     ("delete the conversation", [.menuItem("Delete Conversation…")]),
 ]
 
