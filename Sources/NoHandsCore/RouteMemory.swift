@@ -32,6 +32,7 @@ public enum RouteMemory {
     public static let version = 1
     public static let maxRoutes = 50
     public static let maxSteps = 15
+    public static let minSteps = 2
     public static let goalLimit = 300
     public static let intentLimit = 80
     static let nameLimit = 60
@@ -54,6 +55,14 @@ public enum RouteMemory {
                                   actions: record.actions.map { describe($0, names: titles) }, asked: asked))
         }
         return Array(kept.prefix(maxSteps))
+    }
+
+    /// The route to save for a task that ended `done`, or nil when fewer than `minSteps` clean steps ran (a one-step
+    /// route costs nothing to rediscover). `url` is the last page the task saw.
+    public static func route(goal: String, url: String?, history: [StepRecord], names: [[Int: String]], savedAt: Date) -> Route? {
+        let kept = steps(from: history, names: names)
+        guard kept.filter({ !$0.asked }).count >= minSteps else { return nil }
+        return Route(goal: ClaudeRequestBuilder.sanitize(goal, limit: goalLimit), host: host(of: url), steps: kept, savedAt: savedAt)
     }
 
     /// One action as its kind and, where it has one, a target by name. Typed, searched and set text is never kept (not its
