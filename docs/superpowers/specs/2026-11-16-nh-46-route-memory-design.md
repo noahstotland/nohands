@@ -1,8 +1,9 @@
 # NH-46: Remember routes that worked
 
 **Date:** 2026-11-16
-**Status:** Draft
+**Status:** Shipped
 **Ticket:** [NH-46](https://github.com/noahstotland/nohands/issues/46)
+**Shipped:** in PR #PRNUM, with differences: [as-built](../as-built/2026-11-16-nh-46-route-memory.md)
 
 ## Goal
 
