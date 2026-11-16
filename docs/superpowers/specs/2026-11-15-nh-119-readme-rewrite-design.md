@@ -1,7 +1,8 @@
 # NH-119: Rewrite the README to be short and readable, and refresh the contributing guide
 
 **Date:** 2026-11-15
-**Status:** Draft
+**Status:** Shipped
+**Shipped:** in PR #139, as specified
 **Ticket:** [NH-119](https://github.com/noahstotland/nohands/issues/119)
 
 ## Goal
