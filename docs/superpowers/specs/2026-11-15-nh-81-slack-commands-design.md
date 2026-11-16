@@ -1,7 +1,8 @@
 # NH-81: Slack voice commands: Design
 
 **Date:** 2026-11-15  **Ticket:** [NH-81](https://github.com/noahstotland/nohands/issues/81)
-**Status:** Draft
+**Status:** Shipped
+**Shipped:** in PR #141, as specified
 
 ## Intent
 
