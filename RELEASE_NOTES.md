@@ -1,5 +1,11 @@
 # Release notes
 
+## 2026-11-16 pack new drafts an app pack from the menu bar (NH-98) (#166)
+
+Merged 2026-11-16 6:38 pm UTC.
+
+`nohands-cli pack new` writes a starter pack file from the menus of the app in front, for you to edit and install with `pack add`. Items NoHands already handles, irreversible items and anything the pack checker rejects are left out and listed.
+
 ## 2026-11-16 pointer and page grammar: drag, page edges, zoom, centre (NH-59) (#164)
 
 Merged 2026-11-16 6:18 pm UTC.
