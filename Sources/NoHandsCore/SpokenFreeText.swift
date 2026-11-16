@@ -16,6 +16,10 @@ extension Action {
         case .moveCursor(let target):
             if case .element = target { return true }
             return false
+        // A name may still be coming; a standard folder or "my last <kind>" is whole.
+        case .openFile(let request):
+            if case .named = request { return true }
+            return false
         case .windowAction(_, let app, let title): return app != nil || title != nil
         case .goToTab(let target):
             if case .named = target { return true }

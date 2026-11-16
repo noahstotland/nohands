@@ -125,6 +125,7 @@ public enum IntentDecoder {
             return (o["mode"] as? String).flatMap(Mode.init(rawValue:)).map(Action.setMode)
         case "open_app":
             return nonBlank(o["app_name"]).map(Action.openApp)
+        case "open_file": return fileRequest(o).map(Action.openFile)
         case "open_url":
             guard let url = nonBlank(o["url"]).flatMap(WebAddress.url(for:)) else { return nil }
             return .openURL(url, app: nonBlank(o["app_name"]))
@@ -187,6 +188,35 @@ public enum IntentDecoder {
         case "close_window": return number(o["target_number"]).map(Action.closeWindow)
         case "select_tab": return number(o["target_number"]).map(Action.selectTab)
         case "dismiss_notifications": return .dismissNotifications(app: nonBlank(o["app_name"]))
+        default: return nil
+        }
+    }
+
+    /// `open_file`: the words in `text`, a file kind in `option`, or a standard folder in `value` (the Claude schema shares
+    /// those fields across kinds, which keeps it inside its size limits). The model never passes a path: one in a `path` or
+    /// `url` field, a path character in the words, an unknown kind or folder, or a mix other than words with a kind, a folder
+    /// alone, or a kind alone, is rejected. A blank field is an omitted one.
+    private static func fileRequest(_ o: [String: Any]) -> FileRequest? {
+        func field(_ k: String) -> Opt<String> {
+            guard let v = o[k] else { return .absent }
+            guard let s = v as? String else { return .invalid }
+            let t = s.trimmingCharacters(in: .whitespacesAndNewlines)
+            return t.isEmpty ? .absent : .value(t)
+        }
+        guard o["path"] == nil else { return nil }
+        if case .absent = field("url") {} else { return nil }
+        switch (field("text"), field("option"), field("value")) {
+        case (.absent, .absent, .value(let key)):
+            return StandardFolder(rawValue: key.lowercased()).map(FileRequest.folder)
+        case (.value(let words), let kind, .absent):
+            guard FileRequest.isValidName(words) else { return nil }
+            switch kind {
+            case .absent: return .named(words, kind: .file)
+            case .value(let k): return FileKind(rawValue: k.lowercased()).map { .named(words, kind: $0) }
+            case .invalid: return nil
+            }
+        case (.absent, .value(let k), .absent):
+            return FileKind(rawValue: k.lowercased()).flatMap { $0 == .folder ? nil : .recent($0) }
         default: return nil
         }
     }

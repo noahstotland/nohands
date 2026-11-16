@@ -14,6 +14,7 @@ public enum PipelineText {
     public static let dropped = "dropped"
     public static let cancelled = "cancelled"
     public static let stopping = "stopping the task"
+    public static let noPick = "no pick: say it again"
     public static let rewriting = "rewriting…"
 
     /// The finish HUD for a task.
@@ -56,7 +57,11 @@ public enum PipelineText {
     }
 
     public static func describe(_ actions: [Action]) -> String {
-        let text = actions.map { String(describing: $0) }.joined(separator: ", ")
+        // A file request is logged by its kind, never by the words or a hit's name.
+        let text = actions.map { action -> String in
+            if case .openFile(let request) = action { return request.logName }
+            return String(describing: action)
+        }.joined(separator: ", ")
         return "[\(text.count > 160 ? String(text.prefix(160)) + "…" : text)]"
     }
 

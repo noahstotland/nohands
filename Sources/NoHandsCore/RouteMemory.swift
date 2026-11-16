@@ -123,6 +123,12 @@ public enum RouteMemory {
         case .hideOverlay: return "hide_overlay"
         case .setMode: return "set_mode"
         case .openApp(let app): return named("open_app", app)
+        case .openFile(let request):
+            // The words the speaker said for a name are dropped, like typed text.
+            switch request {
+            case .folder(let f): return "open_file folder \(f.rawValue)"
+            case .named(_, let kind), .recent(let kind): return "open_file kind \(kind.rawValue)"
+            }
         case .openURL(let url, _): return urlText(url).map { "open_url \($0)" } ?? "open_url"
         case .moveWindow: return "move_window"
         case .search: return "search"

@@ -66,6 +66,8 @@ public enum Action: Equatable, Codable, Sendable {
     case hideOverlay
     case setMode(Mode)
     case openApp(String)
+    /// Open a standard folder, a file or folder found by name, or the newest file of a kind (see `FileRequest`).
+    case openFile(FileRequest)
     /// Open a web address in the default browser (`app` nil) or in the named browser.
     case openURL(URL, app: String?)
     /// Move and resize the frontmost app's focused window on its screen.

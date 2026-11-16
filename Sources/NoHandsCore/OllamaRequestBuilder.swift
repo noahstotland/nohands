@@ -114,6 +114,8 @@ public enum IntentExamples {
                            ObservedElement(number: 3, role: "AXLink", title: "Shorts"),
                            ObservedElement(number: 4, role: "AXLink", title: channelVideo)])), playbooks: false),
          #"{"intent":"The Videos tab is showing; open the first (newest) video.","status":"done","actions":[{"kind":"click","target_kind":"element","target_name":"Maple Ridge Workshop: Building a Cedar Workbench"}]}"#),
+        (Self.msg("Finder", request: "open the quarterly report document"),
+         #"{"intent":"Open the document whose name has quarterly and report.","status":"done","actions":[{"kind":"open_file","text":"quarterly report","option":"document"}]}"#),
         // A site request from a non-browser app with a distracting element list: small models otherwise answer ignore.
         // Kept last (closest to the live request): qwen2.5:7b ignores such requests when this sits earlier.
         (Self.msg("Xcode", elements: [(1, "Run"), (2, "Stop"), (3, "Navigator"), (4, "Inspectors")], request: "go to netflix"),
