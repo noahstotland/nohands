@@ -23,20 +23,21 @@ private func job(_ kind: VoicePipeline.ASRJob.Kind, chunks: Int, voiced: Int, id
 
 /// Runs `jobs` through the ASR loop into a command-mode MergeBuffer built like the pipeline's; returns what it emitted
 /// and the sample counts the transcriber was given.
-private func drive(_ jobs: [VoicePipeline.ASRJob], replies: [Result<String, Error>]) async throws -> (emitted: [String], counts: [Int]) {
+private func drive(_ jobs: [VoicePipeline.ASRJob], replies: [Result<String, Error>], vocabulary: Vocabulary = Vocabulary(),
+                   attention: AttentionGate = .off, settleMs: Int = 150) async throws -> (emitted: [String], counts: [Int]) {
     let grammar = CommandGrammar()
     let (out, outCont) = AsyncStream<String>.makeStream(bufferingPolicy: .unbounded)
     let merge = MergeBuffer(
-        merger: UtteranceMerger(windowMs: 20, unfinishedWindowMs: 20), gate: .off,
-        isComplete: { VoicePipeline.isComplete($0, mode: $1, grammar: grammar) },
-        carriesSpokenText: { VoicePipeline.carriesSpokenText($0, grammar: grammar) },
+        merger: UtteranceMerger(windowMs: 20, unfinishedWindowMs: 20), gate: attention,
+        isComplete: { VoicePipeline.isComplete($0, mode: $1, grammar: grammar, attention: attention) },
+        carriesSpokenText: { VoicePipeline.carriesSpokenText($0, grammar: grammar, attention: attention) },
         onHold: { _ in }, emit: { text, _ in outCont.yield(text) })
     let (stream, cont) = AsyncStream<VoicePipeline.ASRJob>.makeStream(bufferingPolicy: .unbounded)
     for j in jobs { cont.yield(j) }
     cont.finish()
     let t = ScriptedTranscriber(replies)
-    await VoicePipeline.runASR(stream, transcriber: t, merge: merge)
-    try await Task.sleep(for: .milliseconds(150))      // past the merge window, for text that is not released at once
+    await VoicePipeline.runASR(stream, transcriber: t, merge: merge, vocabulary: vocabulary, attention: attention)
+    try await Task.sleep(for: .milliseconds(settleMs))      // past the merge window, for text that is not released at once
     outCont.finish()
     var emitted: [String] = []
     for await text in out { emitted.append(text) }
@@ -77,4 +78,19 @@ private func drive(_ jobs: [VoicePipeline.ASRJob], replies: [Result<String, Erro
                              job(.full, chunks: 3, voiced: 3)], replies: [.success("go back")])
     #expect(r.counts == [3 * chunk])      // only the full pass ran
     #expect(r.emitted == ["go back"])
+}
+
+@Test func vocabularyRewritesTranscriptsButNeverAStop() async throws {
+    let vocabulary = try JSONDecoder().decode(Vocabulary.self, from: Data(#"[{"hear":"raptures","say":"Raptors"},{"hear":"computer","say":"Hal"}]"#.utf8))
+    let table: [(name: String, heard: String, emitted: String)] = [
+        ("a command", "search for raptures", "search for Raptors"),
+        ("a stop", "stop", "stop"),
+        ("an addressed stop keeps the attention word as heard", "computer, stop", "computer, stop"),
+        ("an addressed command is rewritten", "computer, search for raptures", "Hal, search for Raptors"),
+    ]
+    for row in table {
+        let r = try await drive([job(.full, chunks: 2, voiced: 2)], replies: [.success(row.heard)], vocabulary: vocabulary,
+                                attention: AttentionGate(configured: "computer"), settleMs: 800)
+        #expect(r.emitted == [row.emitted], "\(row.name)")
+    }
 }
