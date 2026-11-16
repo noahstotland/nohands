@@ -157,3 +157,31 @@ import Foundation
         #expect(c.anthropicKeySource == source, "\(json ?? "nil") \(env)")
     }
 }
+
+@Test func followUpWindowDefaultsAndClamps() throws {
+    let table: [(String?, Int)] = [(nil, 30000), ("{}", 30000), (#"{"followUpWindowMs":0}"#, 0), (#"{"followUpWindowMs":-5}"#, 0),
+                                   (#"{"followUpWindowMs":5000}"#, 5000), (#"{"followUpWindowMs":999999}"#, 120000)]
+    for (json, expected) in table {
+        #expect(try AppConfig.load(from: json.map { Data($0.utf8) }, environment: [:]).followUpWindowMs == expected, "\(json ?? "nil")")
+    }
+}
+
+@Test func vocabularyEntriesAreCleanedAndCounted() throws {
+    let many = (0..<203).map { #"{"hear":"w\#($0)","say":"W"}"# }.joined(separator: ",")
+    let table: [(json: String, kept: [Vocabulary.Entry], skipped: Int)] = [
+        (#"{}"#, [], 0),
+        (#"{"vocabulary":"raptures"}"#, [], 1),
+        (#"{"vocabulary":[{"hear":"raptures","say":"Raptors"}]}"#, [.init(hear: ["raptures"], say: "Raptors")], 0),
+        (#"{"vocabulary":[{"hear":["a b","c"],"say":"X"}]}"#, [.init(hear: ["a b", "c"], say: "X")], 0),
+        (#"{"vocabulary":[{"hear":"x"},{"say":"X"},{"hear":"x","say":""},{"hear":5,"say":"X"},7]}"#, [], 5),
+        (#"{"vocabulary":[{"hear":"stop it","say":"X"},{"hear":"x","say":"never mind"},{"hear":"x","say":"Cancel"}]}"#, [], 3),
+        (#"{"vocabulary":[{"hear":["halt","one","a b c d e f"],"say":"X"}]}"#, [.init(hear: ["one"], say: "X")], 0),
+        (#"{"vocabulary":[{"hear":"x","say":"\#(String(repeating: "y", count: 101))"}]}"#, [], 1),
+        (#"{"vocabulary":[\#(many)]}"#, (0..<200).map { .init(hear: ["w\($0)"], say: "W") }, 3),
+    ]
+    for row in table {
+        let v = try AppConfig.load(from: Data(row.json.utf8), environment: [:]).vocabulary
+        #expect(v.entries == row.kept, "\(row.json.prefix(80))")
+        #expect(v.skipped == row.skipped, "\(row.json.prefix(80))")
+    }
+}

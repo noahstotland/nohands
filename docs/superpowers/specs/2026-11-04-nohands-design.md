@@ -10,11 +10,11 @@ A menu-bar macOS app that operates the whole computer by voice alone (dictation,
 ## 2. Non-goals
 
 - Wake word. The app always listens; "go to sleep" / "wake up" gate it (optional attention word, NH-12).
-- Vision fallback (shipped later, NH-41), LLM polish of dictation, custom vocabulary, Intel, notarization.
+- Vision fallback (shipped later, NH-41), LLM polish of dictation, custom vocabulary (shipped later, NH-56), Intel, notarization.
 
 ## 3. Architecture
 
-Mic (16 kHz mono, echo cancellation unless `echoCancellation` is false) → Silero VAD → Parakeet TDT v2 → mode machine → dictation formatter, or command grammar (unmatched text goes to the Claude resolver) → action executor.
+Mic (16 kHz mono, echo cancellation unless `echoCancellation` is false) → Silero VAD → Parakeet TDT v2 → vocabulary rewrite (`vocabulary` config key) → mode machine → dictation formatter, or command grammar (unmatched text goes to the Claude resolver) → action executor.
 
 - **One vocabulary.** `Action` is the enum every stage produces or consumes. A new capability adds a case in grammar, LLM decoder and executor.
 - **Grammar first, LLM second.** The common path is local (< 1 ms) and works offline. An untypeable `spell` phrase is rejected, not sent to the LLM.

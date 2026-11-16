@@ -286,8 +286,10 @@ final class FakeHarness: DesktopHarness, @unchecked Sendable {
     func startSession(name: String) async -> String? {
         lock.withLock { calls.append("session:start"); return sessionID }
     }
+    /// Whether the task that ended the session was already cancelled (a real `session end` would be killed).
+    var sessionEndedCancelled: Bool?
     func endSession(_ id: String) async {
-        lock.withLock { calls.append("session:end:\(id)") }
+        lock.withLock { calls.append("session:end:\(id)"); sessionEndedCancelled = Task.isCancelled }
     }
 }
 

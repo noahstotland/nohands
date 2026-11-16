@@ -14,6 +14,7 @@ Everything NoHands understands without a model. Anything else goes to Claude or 
 | `go to the end of the line`, `go to the start of the line` (`beginning`), `go to the end of the document`, `go to the start of the document` (`top`, `bottom`) | Moves the caret with the arrow keys, in any text field, with no read |
 | `capitalize that`, `uppercase that`, `lowercase that` | Changes the case of the selection, or of the word before the caret when nothing is selected (`capitalize` raises each word's first letter) |
 | `new tab`, `close tab`, `close window`, `quit app`, `switch app`, `spotlight` | App and window shortcuts; filler ignored (`close the current tab`, `close this window`) |
+| `no, the other one`, `the next one`, `also …`, `instead …` (within 30 s of a task) | A follow-up that refers to the task that just ended: the model sees its goal and steps. Goes to the model as a task, not the grammar; see [Tasks](tasks.md#multi-step-tasks) |
 | `minimize`, `full screen`, `hide app`, `reload` / `refresh` | Window and app shortcuts |
 | `left half`, `right half`, `snap left`, `top left`, `maximize`, `center window` | Moves and resizes the front window; richer phrasing such as `make the window half width and snap to the left side of the screen` goes to the model |
 | `go back`, `go forward`, `next tab`, `previous tab` | Browser and tab navigation |
@@ -74,6 +75,21 @@ An app can have phrases that work only while it is in front and win on a shared 
 | Terminal | `split pane`, `close pane` | Splits the window, or closes the split pane |
 | Terminal | `bigger font`, `smaller font`, `default font size` | Changes the font size |
 | Terminal | `interrupt`, `cancel command` | Sends control-C to the running command |
+| Mail | `new message`, `compose` | Opens a new message |
+| Mail | `reply`, `reply all`, `forward` | Replies to, replies to all on, or forwards the selected message |
+| Mail | `send message`, `send email` | Sends the open draft (two words on purpose: a bare `send` does nothing) |
+| Mail | `undo send` | Takes the send back while Mail's undo delay runs |
+| Mail | `next message`, `previous message` | Moves the selection in the message list |
+| Mail | `get mail`, `check mail` | Checks for new mail |
+| Mail | `mark as read`, `mark as unread` | Toggles read and unread |
+| Mail | `flag`, `unflag` | Toggles the flag |
+| Mail | `archive`, `junk` | Archives the message, or moves it to Junk |
+| Mail | `delete message`, `trash message` | Moves the message to Trash (`undo` brings it back) |
+| Mail | `show mailboxes`, `hide mailboxes` | Toggles the mailbox list |
+| Mail | `go to inbox`, `go to sent` | Opens the Inbox, or Sent |
+| Mail | `search mail` | Focuses the search field (then say or type what to find) |
+| Mail | `attach a file` | Opens the Attach Files sheet |
+| Mail | `close message` | Closes the front Mail window (a draft shows Mail's own save sheet) |
 | VS Code | `command palette`, `quick open`, `go to line` | Opens the palette, the file picker, or the line box (then say `type 42`, `enter`) |
 | VS Code | `go to definition`, `find references` | Jumps to the definition, or peeks the references |
 | VS Code | `next editor`, `previous editor`, `close editor`, `split editor` | Moves along, closes or splits editors |
@@ -97,6 +113,8 @@ An app can have phrases that work only while it is in front and win on a shared 
 The global `new tab`, `close tab`, `close window`, `next tab`, `previous tab`, `find`, `page up` and `page down` also work in Terminal. Closing a tab or window with a running command shows Terminal's own confirm, which NoHands does not answer (say `enter` or `escape`). `stop` never interrupts a shell command; say `interrupt`.
 
 The global `find`, `next tab`, `previous tab` and `search for <name>` also work in Messages. `delete conversation` asks first, and NoHands does not answer that question for you (say `enter` or `escape`). Sending stays `enter` (or `press return`), so there is no `send` phrase. Pin and unpin are not phrases yet: say them as a request and the model handles them.
+
+In Mail, read, flag, junk and the mailbox list are toggles. `go to inbox` and `go to sent` open the first Favorites mailbox and the Sent favorite, so they need Inbox and Sent in the Favorites bar. `next message` and `previous message` move the selection while the message list has focus. The global `delete`, `undo`, `find`, `up` and `down` keep their meaning while writing a message.
 
 In VS Code the global `save`, `find`, `close tab`, `close window`, `full screen`, `undo`, `redo`, `copy`, `paste` and `select all` work as elsewhere, and `new tab`, `next tab`, `previous tab`, `go back` and `go forward` do the VS Code thing (new file, next or previous editor, navigate back or forward). VS Code phrases that start with `find`, `go to` or `open` (`find references`, `go to line`, `open extensions`) win over the page search, the address bar and app opening while it is in front. `open settings` opens VS Code's settings while it is in front (`open system settings` still opens System Settings). Show, hide and toggle `sidebar` and `terminal` are all one toggle, so `hide sidebar` on a hidden side bar shows it. There is no spoken "stop debugging" (`stop` always halts NoHands): use the debug toolbar or `menu stop debugging`.
 

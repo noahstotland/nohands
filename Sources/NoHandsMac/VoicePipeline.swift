@@ -43,6 +43,12 @@ import NoHandsCore
     private var runner: TaskRunner?
     /// The runner a switch asked for while a task was running; it takes over when the task loop is between runs.
     private var pendingRunner: TaskRunner?
+    /// The last task a follow-up ("no, the other one") may refer to, and when it ended. Grammar commands leave it
+    /// alone; a task that is not a follow-up, a mode change and a backend switch replace or clear it.
+    private var lastTask: EarlierTask?
+    private var lastTaskEnded = ContinuousClock.now
+    /// Bumped by `replaceRunner`; a task that started under another value must not keep its result as memory.
+    private var runnerGeneration = 0
     private let harness: (any DesktopHarness)?
     private let executor: ActionExecutor
     private let overlay: any OverlayPresenting
@@ -157,6 +163,8 @@ import NoHandsCore
 
     /// Takes `new` at once when no task is running; otherwise holds it (the newest wins) until the task loop is between runs.
     func replaceRunner(_ new: TaskRunner) {
+        lastTask = nil
+        runnerGeneration += 1
         if activeTask == nil { runner = new; pendingRunner = nil } else { pendingRunner = new }
     }
 
@@ -222,8 +230,11 @@ import NoHandsCore
     }
 
     /// The ASR loop: transcribes jobs one at a time, so an early pass always finishes before the full pass of its
-    /// segment. Internal so tests can drive it with a fake transcriber.
-    nonisolated static func runASR(_ jobs: AsyncStream<ASRJob>, transcriber: any Transcribing, merge: MergeBuffer) async {
+    /// segment. Internal so tests can drive it with a fake transcriber. Every transcript goes through `vocabulary`
+    /// before anything else sees it, except a stop or a mode phrase, which is passed on as heard (`Vocabulary.rewrite`).
+    nonisolated static func runASR(_ jobs: AsyncStream<ASRJob>, transcriber: any Transcribing, merge: MergeBuffer,
+                                   vocabulary: Vocabulary = Vocabulary(), attention: AttentionGate = .off) async {
+        func corrected(_ heard: String) -> String { vocabulary.rewrite(heard, attention: attention) }
         var ledger = EarlyCloseLedger()
         for await job in jobs {
             var trace = LatencyTrace()
@@ -234,7 +245,7 @@ import NoHandsCore
                 // The utterance is still open: a pass that is skipped, fails or hears nothing changes nothing.
                 guard let audio = ledger.audio(forEarly: job.segment) else { continue }
                 do {
-                    let text = try await transcriber.transcribe(audio)
+                    let text = corrected(try await transcriber.transcribe(audio))
                     trace.asrDone = .now
                     // Record only an accepted early close; a rejected one leaves the whole segment to the full pass.
                     if !text.isEmpty, await merge.earlyTranscript(text, trace: trace) {
@@ -249,7 +260,7 @@ import NoHandsCore
                     continue
                 }
                 do {
-                    let text = try await transcriber.transcribe(audio)
+                    let text = corrected(try await transcriber.transcribe(audio))
                     trace.asrDone = .now
                     if text.isEmpty {
                         await merge.speechAbandoned()
@@ -293,6 +304,7 @@ import NoHandsCore
 
         let mergeGrammar = self.mergeGrammar
         let attention = self.attention
+        let vocabulary = config.vocabulary
         let front = FrontmostApp.shared   // a pack phrase closes the merge window early, like a global one
         let ax = self.ax   // asked only for a text edit that names words in the field
         let merge = MergeBuffer(
@@ -363,7 +375,7 @@ import NoHandsCore
             uttCont.finish()
         }
         let asrTask = Task.detached {
-            await Self.runASR(utterances, transcriber: transcriber, merge: merge)
+            await Self.runASR(utterances, transcriber: transcriber, merge: merge, vocabulary: vocabulary, attention: attention)
             jobCont.finish()
         }
         // The single serial consumer: each job is fully handled (including awaiting the executor) before the next.
@@ -392,6 +404,7 @@ import NoHandsCore
     /// Stops the microphone and drops any queued audio. Safe to call repeatedly.
     public func stop() {
         stopGeneration += 1
+        lastTask = nil
         stopped = true
         mic?.stop()
         mic = nil
@@ -545,6 +558,7 @@ import NoHandsCore
         if modeBefore == .dictation, case .execute(let actions) = routing, case .typeText = actions.first { isCommand = false }
         // A stop phrase with no task running must not start one (held jobs never get here: busy() intercepts them).
         if case .resolveWithLLM(let phrase) = routing, StopWords.isStop(phrase) { routing = .ignore(reason: "stop") }
+        if modeMachine.mode != modeBefore { lastTask = nil }   // a mode switch or sleep ends the conversation
         var outcome = PipelineText.summary(routing)                    // public: kinds only
         var detail = PipelineText.summary(routing, detailed: true)     // private: with payloads
 
@@ -641,7 +655,16 @@ import NoHandsCore
         let kind = resolverKind
         _ = await runner.takeUsage()   // a cancelled earlier task's calls must not count here
         let began = Date(), clock = ContinuousClock.now
-        let outcome = await runner.run(goal: pending.goal, mode: modeMachine.mode)
+        let earlier = FollowUp.memory(lastTask, endedAt: lastTaskEnded, now: .now, windowMs: config.followUpWindowMs, goal: pending.goal)
+        let generation = runnerGeneration, stops = stopGeneration
+        let outcome = await runner.run(goal: pending.goal, mode: modeMachine.mode, earlier: earlier)
+        if generation != runnerGeneration || stops != stopGeneration {
+            lastTask = nil   // a backend switch or a pause during the run ends the conversation
+        } else if let kept = runner.lastTask {
+            lastTask = kept; lastTaskEnded = .now
+        } else if earlier == nil {
+            lastTask = nil   // a new request that was ignored or failed replaces the old memory; a follow-up leaves it (and its end time)
+        }
         recordTask(pending, runner: runner, outcome: outcome, kind: kind, began: began,
                    durationMs: CommandLogEntry.milliseconds(clock.duration(to: .now)), usage: await runner.takeUsage())
         runner.onStatus = nil

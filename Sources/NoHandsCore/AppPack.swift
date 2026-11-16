@@ -28,7 +28,7 @@ public struct AppPack: Sendable, Equatable {
 
 public enum AppPacks {
     /// The shipped packs; each app ticket adds an entry here and a row in docs/voice-commands.md.
-    public static let all: [AppPack] = [.terminal, .vscode, .messages]
+    public static let all: [AppPack] = [.terminal, .vscode, .mail, .messages]
 }
 
 /// The lead words the grammar drops before a phrase lookup, so "open a new tab" and "go to the downloads" reach
