@@ -91,7 +91,7 @@ extension ActionExecutor {
 
     /// Finder's own `Empty Trash…` menu item, which asks "Are you sure…?" for the speaker to answer (`enter` or
     /// `escape`). Never the option-held item or the chord, which skip the question, and nothing when Finder's own
-    /// warning is off: no spoken confirm covers a fixed phrase yet.
+    /// warning is off. The phrase itself asks for a spoken yes before it gets here (`CommandGrammar.confirmed`).
     private func emptyTrash() async -> String? {
         if let refusal = EmptyTrash.refusal(warnOnEmptyTrash: system.finderWarnsOnEmptyTrash()) { return refusal }
         guard ax.activate(appNamed: "Finder") else { return "can't open Finder" }
