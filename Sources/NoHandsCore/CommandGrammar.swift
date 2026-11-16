@@ -149,7 +149,7 @@ public struct CommandGrammar: Sendable {
 
     /// nil when no rule matches (caller falls back to the LLM). `bundleID` is the frontmost app: its pack, if any,
     /// is checked before the global table. In order: a pack phrase that is also a global phrase, the global table on
-    /// the whole phrase, the pack on the phrase without its lead ("open", "go to", an article), "menu <words>", the
+    /// the whole phrase, the pack on the phrase without its lead ("open", "go to", an article), the pack's typing lead ("jump to <name>"), "menu <words>", the
     /// global table after an "open" lead, the text edits, the patterns, the filler-stripped table. A stop phrase never
     /// reaches a pack. `textFocused` is whether the front app has a text field focused: only then do edits that name
     /// words in the field ("delete the old files") belong to the grammar; without it they go to the model as before.

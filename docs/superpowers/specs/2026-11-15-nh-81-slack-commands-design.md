@@ -127,9 +127,9 @@ Return outside the composer does nothing that can't be undone.
 
 ### Docs
 
-`docs/voice-commands.md` § Per-app commands: one row per group above (App `Slack`), plus a sentence. The sentence
+`docs/voice-commands.md` § Per-app commands: one row per group of related phrases (App `Slack`; not every synonym is listed), plus a sentence. The sentence
 says the global `go back`, `go forward`, `find`, `escape`, `full screen` and `enter` also work in Slack, bare
-`mute` stays the Mac's speakers, and `jump to <name>` leaves the switcher open for `enter`. The NH-76 sentence
+`mute` stays the Mac's speakers, `jump to <name>` leaves the switcher open for `enter`, and any `open <phrase>` that is a Slack phrase (`open settings`, `open people`) means Slack's own view. The NH-76 sentence
 gains "or start with a lead some apps define (Slack's `jump to <name>`)".
 
 ## Tests
