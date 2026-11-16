@@ -1,5 +1,11 @@
 # Release notes
 
+## 2026-11-16 pack marketplace, browse, install and update packs from a registry (NH-85) (#168)
+
+Merged 2026-11-16 7:54 pm UTC.
+
+You can now browse and install app packs from a registry, and update them, from the Packs menu or with `nohands-cli pack search|install|update`. Nothing is fetched unless you ask, installed packs work with the network off, and no registry is set up by default yet (set `packRegistryURL` and `packRegistryKey` in `config.json`).
+
 ## 2026-11-16 spoken feedback (NH-60) (#167)
 
 Merged 2026-11-16 6:55 pm UTC.
