@@ -1,5 +1,11 @@
 # Release notes
 
+## 2026-11-16 reject control characters in a vocabulary say and cap spellings per entry (NH-152) (#177)
+
+Merged 2026-11-16 11:36 pm UTC.
+
+A vocabulary entry whose `say` contains a newline, tab or other control character is now skipped (and counted in the launch log) rather than typed as a key press. Each `hear` list keeps at most its first 10 spellings. Nothing to do unless your config relies on either.
+
 ## 2026-11-16 list every built-in pack id in the pack and CLI docs (NH-151) (#176)
 
 Merged 2026-11-16 11:36 pm UTC.
