@@ -114,7 +114,7 @@ Phrases (all normalized; the lead-word strip adds the "open …", "go to the …
 | `bookmarks bar`, `show bookmarks bar`, `hide bookmarks bar`, `toggle bookmarks bar` | ⇧⌘B |
 | `bookmark manager`, `bookmarks`, `manage bookmarks` | ⌥⌘B |
 | `history`, `show history`, `browsing history` | ⌘Y |
-| `downloads`, `show downloads` | ⌥⌘L |
+| `downloads`, `show downloads` | ⇧⌘J |
 | `delete browsing data` | menu `Delete Browsing Data…` |
 | `extensions`, `show extensions`, `manage extensions` | menu `Extensions` |
 | `settings`, `chrome settings`, `preferences` | ⌘, |
@@ -177,7 +177,8 @@ there, and `delete browsing data` opening the dialog only.
 - **Pin and unpin are two phrases with two titles** (Chrome flips the menu title), not one toggle.
 - **Chrome only (`com.google.Chrome`)**, not Beta, Canary or other Chromium browsers, per the ticket.
 - **Chords where Chrome has one, menu items for Duplicate, Pin, Unpin, Move to New Window, Delete Browsing Data and
-  Extensions**, which have no default chord. Downloads is ⌥⌘L on macOS (⇧⌘J is Windows); the build confirms.
+  Extensions**, which have no default chord. Every chord and title was read from the running Chrome 157's menu bar
+  through Accessibility (Downloads is ⇧⌘J there).
 - **No grammar change.** The "open a new tab" fix already shipped in NH-76; this ticket only adds the pack, which keeps
   the diff to Chrome files plus one line in `AppPacks.all` and the docs rows, so NH-77 and NH-78 merge with little
   conflict.
