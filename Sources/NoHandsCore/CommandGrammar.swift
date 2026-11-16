@@ -9,12 +9,15 @@ public struct GrammarConfig: Sendable {
 
 public struct CommandGrammar: Sendable {
     private let config: GrammarConfig
-    private let packs: [AppPack]
+    private let packs: PackSet
 
-    public init(config: GrammarConfig = GrammarConfig(), packs: [AppPack] = AppPacks.all) {
+    public init(config: GrammarConfig = GrammarConfig(), packs: PackSet = .builtIns) {
         self.config = config
         self.packs = packs
     }
+
+    /// The same grammar looking pack phrases up in `packs`.
+    public func with(packs: PackSet) -> CommandGrammar { CommandGrammar(config: config, packs: packs) }
 
     /// Lowercases, strips ASR punctuation (.,!?), collapses whitespace, splits on spaces.
     public static func normalize(_ transcript: String) -> [String] {
@@ -157,12 +160,12 @@ public struct CommandGrammar: Sendable {
         let tokens = Self.normalize(transcript)
         guard !tokens.isEmpty else { return nil }
         let whole = tokens.joined(separator: " ")
-        let pack = StopWords.isStop(transcript) ? nil : bundleID.flatMap(pack(for:))
-        if let hit = pack?.phrases[whole] ?? Self.exact[whole] { return hit }
+        let pack = StopWords.isStop(transcript) ? nil : bundleID.flatMap(packs.phrases(for:))
+        if let hit = pack?[whole] ?? Self.exact[whole] { return hit }
         let (stripped, dropped) = PhraseLead.strip(tokens)
         if !stripped.isEmpty {
             let phrase = stripped.joined(separator: " ")
-            if let hit = pack?.phrases[phrase] { return hit }
+            if let hit = pack?[phrase] { return hit }
             // Multi-word only: "open home" stays the Home app, not the Home key.
             if dropped == .open, stripped.count > 1, let hit = Self.exact[phrase] { return hit }
         }
@@ -342,7 +345,22 @@ public struct CommandGrammar: Sendable {
         return (count, false)
     }
 
-    private func pack(for bundleID: String) -> AppPack? { packs.first { $0.bundleIDs.contains(bundleID) } }
+    /// What the global table does with a phrase: an exact entry, or the entry left once filler words are dropped
+    /// ("release the click", "please dictation mode").
+    private static func globalActions(_ phrase: String) -> [Action]? {
+        exact[phrase] ?? strippedExactMatch(phrase.split(separator: " ").map(String.init))
+    }
+
+    /// Whether the global table binds this phrase to a mode change, a mouse release or hiding the overlay: a pack
+    /// may never claim it.
+    static func isReservedGlobal(_ phrase: String) -> Bool {
+        (globalActions(phrase) ?? []).contains { action in
+            switch action {
+            case .setMode, .releaseMouse, .hideOverlay: return true
+            default: return false
+            }
+        }
+    }
 
     /// The HUD line for a `spell` phrase that can't be typed; nil for anything else. Such a phrase is
     /// the grammar's own, so it must never fall through to the model, which could guess at what to type.

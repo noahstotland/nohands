@@ -23,6 +23,6 @@ extension AppPack {
         ]
         var phrases: [String: [Action]] = [:]
         for (names, actions) in groups { for name in names { phrases[name] = actions } }
-        return AppPack(name: "Terminal", bundleIDs: ["com.apple.Terminal"], phrases: phrases)
+        return AppPack(id: "terminal", name: "Terminal", author: "NoHands", bundleIDs: ["com.apple.Terminal"], phrases: phrases)
     }()
 }
