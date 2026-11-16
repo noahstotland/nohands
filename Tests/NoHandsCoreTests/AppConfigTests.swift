@@ -157,3 +157,11 @@ import Foundation
         #expect(c.anthropicKeySource == source, "\(json ?? "nil") \(env)")
     }
 }
+
+@Test func followUpWindowDefaultsAndClamps() throws {
+    let table: [(String?, Int)] = [(nil, 30000), ("{}", 30000), (#"{"followUpWindowMs":0}"#, 0), (#"{"followUpWindowMs":-5}"#, 0),
+                                   (#"{"followUpWindowMs":5000}"#, 5000), (#"{"followUpWindowMs":999999}"#, 120000)]
+    for (json, expected) in table {
+        #expect(try AppConfig.load(from: json.map { Data($0.utf8) }, environment: [:]).followUpWindowMs == expected, "\(json ?? "nil")")
+    }
+}

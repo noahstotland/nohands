@@ -78,6 +78,25 @@ public struct StepRecord: Equatable, Sendable {
     }
 }
 
+/// The last task as a follow-up request sees it (NH-48): its goal, its last steps, how it ended and the screen it ended on.
+/// The element list is not kept; the follow-up reads the screen again.
+public struct EarlierTask: Equatable, Sendable {
+    public static let historyLimit = 8
+    public static let resultLimit = 120
+    public static let goalLimit = 300
+    public var goal: String
+    public var history: [StepRecord]
+    /// How it ended: `done: <text>`, `stuck: <text>` or `stopped` (the text cut to `resultLimit`).
+    public var result: String
+    public var endedApp: String
+    public var endedWindow: String
+    public var endedURL: String?
+    public init(goal: String, history: [StepRecord], result: String, endedApp: String = "", endedWindow: String = "", endedURL: String? = nil) {
+        self.goal = goal; self.history = Array(history.suffix(Self.historyLimit))
+        self.result = result; self.endedApp = endedApp; self.endedWindow = endedWindow; self.endedURL = endedURL
+    }
+}
+
 /// What the step carries about the screen picture: the picture itself, or why there is none (sent to the model so
 /// it stops asking).
 public enum VisionInput: Sendable, Equatable {
@@ -93,10 +112,12 @@ public struct StepRequest: Sendable {
     public var observation: ScreenObservation
     /// Set by the task loop on a step that gets a picture (or a reason for none); nil everywhere else.
     public var vision: VisionInput? = nil
+    /// The task this one follows up on; nil for a normal request. Sent on every step, before the goal.
+    public var earlier: EarlierTask? = nil
     public init(goal: String, step: Int, maxSteps: Int, history: [StepRecord], observation: ScreenObservation,
-                vision: VisionInput? = nil) {
+                vision: VisionInput? = nil, earlier: EarlierTask? = nil) {
         self.goal = goal; self.step = step; self.maxSteps = maxSteps
-        self.history = history; self.observation = observation; self.vision = vision
+        self.history = history; self.observation = observation; self.vision = vision; self.earlier = earlier
     }
 
     /// Step 1 of a one-shot request (eval, CLI, legacy callers).

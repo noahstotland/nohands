@@ -68,6 +68,8 @@ public struct AppConfig: Codable, Equatable, Sendable {
     /// Task loop, Claude backend only: send a picture of the focused window on steps where the accessibility tree
     /// failed (see `visionEnabled`). Off by default; needs the Screen Recording permission.
     public var visionFallback: Bool = false
+    /// How long (ms) after a task ends that "no, the other one" and similar requests refer back to it. 0 turns it off.
+    public var followUpWindowMs: Int = 30000
 
     public static let defaultOllamaURL = "http://127.0.0.1:11434"
     public static let efforts = ["low", "medium", "high", "xhigh", "max"]
@@ -81,7 +83,7 @@ public struct AppConfig: Codable, Equatable, Sendable {
         case maxTaskSteps, maxMediaTaskSteps, llmDeadlineMs, settleMs, maxObservedElements
         case localLlmDeadlineMs, localMaxObservedElements
         case desktopHarness, agentDesktopPath, agentDesktopTimeoutMs, agentDesktopSnapshotMs, agentDesktopHeadedFallback, agentDesktopTrace
-        case echoCancellation, attentionWord, visionFallback
+        case echoCancellation, attentionWord, visionFallback, followUpWindowMs
     }
 
     public init(from decoder: Decoder) throws {
@@ -119,6 +121,7 @@ public struct AppConfig: Codable, Equatable, Sendable {
         d.echoCancellation = try c.decodeIfPresent(Bool.self, forKey: .echoCancellation) ?? d.echoCancellation
         d.attentionWord = try c.decodeIfPresent(String.self, forKey: .attentionWord) ?? d.attentionWord
         d.visionFallback = try c.decodeIfPresent(Bool.self, forKey: .visionFallback) ?? d.visionFallback
+        d.followUpWindowMs = try c.decodeIfPresent(Int.self, forKey: .followUpWindowMs) ?? d.followUpWindowMs
         self = d
     }
 
@@ -144,6 +147,7 @@ public struct AppConfig: Codable, Equatable, Sendable {
         config.maxObservedElements = min(max(config.maxObservedElements, 10), 300)
         config.localLlmDeadlineMs = min(max(config.localLlmDeadlineMs, 2000), 120000)
         config.localMaxObservedElements = min(max(config.localMaxObservedElements, 10), 300)
+        config.followUpWindowMs = min(max(config.followUpWindowMs, 0), 120000)
         config.agentDesktopTimeoutMs = min(max(config.agentDesktopTimeoutMs, 1000), 60000)
         config.agentDesktopSnapshotMs = min(max(config.agentDesktopSnapshotMs, 500), 10000)
         config.anthropicKeySource = (config.anthropicAPIKey ?? "").isEmpty ? nil : .file
