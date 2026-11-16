@@ -25,21 +25,31 @@ public enum MenuShortcutReader {
 
     /// The menu items of the app with `pid`, one level in (`File > Save`, not `File > Open Recent > x`).
     public static func entries(pid: pid_t) throws(ReadError) -> [MenuEntry] {
+        try read(pid: pid).entries
+    }
+
+    /// Like `entries(pid:)`, and says when the time or item budget cut the read short.
+    public static func read(pid: pid_t) throws(ReadError) -> (entries: [MenuEntry], stoppedEarly: Bool) {
         let appEl = AXUIElementCreateApplication(pid)
         AXUIElementSetMessagingTimeout(appEl, 0.25)
         guard let bar = AXQuery.element(appEl, kAXMenuBarAttribute) else { throw .noMenuBar }
-        return try entries(menuBar: AXMenuNode(bar))
+        return try read(menuBar: AXMenuNode(bar))
     }
 
     /// The items in menu bar order, the Apple menu (the first bar item) left out; `noMenuBar` when there are none.
     static func entries(menuBar: some MenuNode, now: () -> ContinuousClock.Instant = { .now }) throws(ReadError) -> [MenuEntry] {
+        try read(menuBar: menuBar, now: now).entries
+    }
+
+    static func read(menuBar: some MenuNode, now: () -> ContinuousClock.Instant = { .now }) throws(ReadError)
+        -> (entries: [MenuEntry], stoppedEarly: Bool) {
         let deadline = now().advanced(by: budget)
         var out: [MenuEntry] = []
         for top in menuBar.children.dropFirst() {
             guard let menuTitle = top.title else { continue }
             for menu in top.children {
                 for item in menu.children {
-                    guard out.count < maxItems, now() < deadline else { return out }
+                    guard out.count < maxItems, now() < deadline else { return (out, true) }
                     guard let title = item.title else { continue }   // a separator
                     let shortcut = MenuShortcut.chord(char: item.commandCharacter, virtualKey: item.virtualKey, modifiers: item.modifierMask)
                     out.append(MenuEntry(title: title, path: [menuTitle], enabled: item.enabled, hasSubmenu: !item.children.isEmpty,
@@ -48,7 +58,7 @@ public enum MenuShortcutReader {
             }
         }
         guard !out.isEmpty else { throw .noMenuBar }
-        return out
+        return (out, false)
     }
 }
 

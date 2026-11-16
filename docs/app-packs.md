@@ -32,7 +32,7 @@ The quickest start is to let NoHands read the app's menus. Bring the app forward
 - `opens a submenu`, `no title`, `title has >`, `no words to say` or `too long to say`: nothing a phrase can press or say.
 - `same phrase as ...`: two items with one title; the first stays.
 - `already a NoHands phrase`: NoHands already understands it, such as `copy` or `new tab`.
-- `irreversible`: Send, Delete, Empty Trash and the like. Add one by hand if you want it.
+- `irreversible`: Send, Delete and the like (Empty Trash shows as `already a NoHands phrase`). Add one by hand if you want it.
 - `rejected: ...`: the pack check refuses it, such as a reserved phrase or a blocked shortcut.
 - `over the 200 command limit`.
 

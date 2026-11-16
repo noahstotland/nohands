@@ -40,7 +40,8 @@ func newPack(_ args: [String]) {
     let name = target.localizedName ?? target.bundleIdentifier ?? "the app"
     guard let bundleID = target.bundleIdentifier else { fail("\(show(name)) has no usable bundle ID; write its pack by hand") }
     let entries: [MenuEntry]
-    do { entries = try MenuShortcutReader.entries(pid: target.processIdentifier) } catch {
+    var stoppedEarly = false
+    do { (entries, stoppedEarly) = try MenuShortcutReader.read(pid: target.processIdentifier) } catch {
         fail("\(show(name)) has no menu bar to read; open a window of it and try again")
     }
     let draft = PackDraft.make(appName: name, bundleID: bundleID, entries: entries)
@@ -62,6 +63,7 @@ func newPack(_ args: [String]) {
     if draft.leftOut.contains(where: { $0.reason == "disabled" }) {
         print("Disabled items depend on what is open; open a window with content and run again to catch more.")
     }
+    if stoppedEarly { print("The read stopped at its time or item limit, so later menus may be missing. Run again, or add them by hand.") }
     print("Edit it, then install with: swift run nohands-cli pack add \(show(path))")
 }
 
