@@ -16,6 +16,10 @@ public enum PipelineText {
     public static let stopping = "stopping the task"
     public static let noPick = "no pick: say it again"
     public static let rewriting = "rewriting…"
+    public static let notConfirmed = "not confirmed"
+    public static let noYes = "no yes in 30 s"
+    /// The row while a fixed phrase waits for its spoken yes.
+    public static func sayYes(to phrase: String) -> String { "say yes to \(phrase)" }
 
     /// The finish HUD for a task.
     public static func hud(for outcome: TaskOutcome) -> String {
@@ -53,6 +57,7 @@ public enum PipelineText {
         case .reject(let message): detailed ? "reject(\(message))" : "reject"
         case .macro(let macro): detailed ? "macro(\(macro.name), \(macro.steps.count) steps)" : "macro"
         case .forgetRoutes(let all): all ? "forget all routes" : "forget that route"
+        case .confirm(let held): detailed ? "confirm(\(held.phrase))" : "confirm"
         }
     }
 

@@ -37,7 +37,7 @@ public enum TaskOutcome: Equatable, Sendable {
     static let questionLimit = 80
     static let answerLimit = 200
     /// How long a step held for a spoken yes, or a question the model asked, waits for the answer.
-    nonisolated static let answerTimeout: Duration = .seconds(30)
+    nonisolated static let answerTimeout: Duration = ConfirmAnswer.timeout
 
     private let config: AppConfig
     private let resolver: any IntentResolving

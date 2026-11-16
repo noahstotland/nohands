@@ -14,7 +14,7 @@ swift run nohands-cli pack list
 swift run nohands-cli pack remove notes-extras
 ```
 
-`pack add` checks the file, then shows what the pack does before it asks `Install? [y/N]`: name, version, author, the apps it works in, every phrase with its actions spelled out on one line (`"new note" -> command-N`, `menu item "Archive Note"`, `open https://host/path`, `open app Foo`), the sites it opens, the apps it opens, any NoHands phrases it replaces inside its apps, and phrases that an earlier pack already holds. It installs only on `y` or `yes`. There is no flag to skip the question. Anything printed from the pack has control, invisible and bidi characters shown as `\u{...}`, so a pack cannot inject terminal escapes. Add the same id again to replace the pack; it keeps its place and its on/off setting.
+`pack add` checks the file, then shows what the pack does before it asks `Install? [y/N]`: name, version, author, the apps it works in, every phrase with its actions spelled out on one line (`"new note" -> command-N`, `menu item "Archive Note"`, `open https://host/path`, `open app Foo`; a phrase that waits for a spoken yes ends with `(asks first)`), the sites it opens, the apps it opens, any NoHands phrases it replaces inside its apps, and phrases that an earlier pack already holds. It installs only on `y` or `yes`. There is no flag to skip the question. Anything printed from the pack has control, invisible and bidi characters shown as `\u{...}`, so a pack cannot inject terminal escapes. Add the same id again to replace the pack; it keeps its place and its on/off setting.
 
 The menu bar's **Packs** submenu lists each pack with an **On** toggle and **Remove…**. To install from a file, use the CLI; to install from a registry, see the next section. A running NoHands picks up a change from the CLI by itself. Packs live in `~/.config/nohands/packs/<id>/pack.json`.
 
@@ -90,7 +90,7 @@ The quickest start is to let NoHands read the app's menus. Bring the app forward
 - `opens a submenu`, `no title`, `title has >`, `no words to say` or `too long to say`: nothing a phrase can press or say.
 - `same phrase as ...`: two items with one title; the first stays.
 - `already a NoHands phrase`: NoHands already understands it, such as `copy` or `new tab`.
-- `irreversible`: Send, Delete and the like (Empty Trash shows as `already a NoHands phrase`). Add one by hand if you want it.
+- `irreversible`: Send, Delete and the like (Empty Trash shows as `already a NoHands phrase`). Add one by hand if you want it; it will ask first.
 - `rejected: ...`: the pack check refuses it, such as a reserved phrase or a blocked shortcut.
 - `over the 200 command limit`.
 
@@ -127,7 +127,7 @@ Every key is required unless marked optional, and an unknown key anywhere reject
 | `id` | Names the folder: lowercase letters, digits and `-`, 2 to 40 characters, starting with a letter or digit. Not a built-in pack's id: `terminal`, `vs-code`, `mail`, `messages`, `safari`, `finder` or `chrome` |
 | `name`, `version`, `author` | Shown at install and in the menu. Up to 60, 20 and 60 characters; `author` may be empty |
 | `bundleIDs` | The apps the pack works in, 1 to 16, letters, digits, `.` and `-`. Find one with `osascript -e 'id of app "Notes"'` |
-| `commands` | Each has `phrases` (what you say) and `actions` (what happens, in order) |
+| `commands` | Each has `phrases` (what you say) and `actions` (what happens, in order), and optionally `confirm` (below) |
 
 Actions:
 
@@ -139,6 +139,23 @@ Actions:
 | `open_url` | `url` | Opens the page in your default browser. `https` only, with a public host name (see below), no user or password, up to 2048 characters. Must be the last action in its command |
 
 Anything else is rejected: typing text, clicks, mode changes, running commands.
+
+### Asking first
+
+A command may carry `"confirm": true` or `"confirm": false` (any other value is rejected: `bad confirm (true or false)`). A command that asks first does not run when heard: NoHands shows `say yes to <phrase>` and runs it only on `yes`, `confirm` or `do it` within 30 s, and only while the pack's app is still in front. Anything else, silence or `stop` drops it.
+
+```json
+{ "phrases": ["send note"], "confirm": true,
+  "actions": [{ "kind": "press_key", "key": "d", "modifiers": ["command", "shift"] }] }
+```
+
+Some commands are **forced** to ask, whatever the file says:
+
+- a phrase has a word NoHands guards (send, delete, remove, discard, pay, buy, purchase, checkout, confirm, submit, publish, post, unsubscribe, transfer, place order, empty trash, and the word trash), for a single-word verb in its base or `-ing` form (`send`, `sending`; not `sent`, `deleted` or the plural `posts`, so `go to sent` and `show posts` are fine; for `place order` and `empty trash` the words must come in a row), with punctuation splitting words (`send-it`). `undo` does not free it: `undo send` in a pack asks too, while Mail's built-in `undo send` does not;
+- its actions contain the actions of a built-in command that asks first, in an app both cover, with or without other steps, and whether or not the function key is held (so `zap` bound to command-shift-D in Mail asks, like `send message`);
+- its actions contain the actions of another forced command in the same pack.
+
+`"confirm": false` on a forced command rejects the pack: `confirm false on an irreversible command (it names send, delete or another guarded verb, or holds the actions of one that does)`. A forced command with no `confirm` key is stored as asking, so a pack you installed earlier keeps loading and gains the yes. You can set `true` on any other command. A key chord that sends or deletes behind a phrase with none of these words, in an app with no built-in pack, cannot be told apart from any other chord, so it does not ask unless you mark it. The `pack add`, `pack install` and `pack update` summaries and the Browse alert show `(asks first)` on each such phrase, and an update's changes list `phrase "x" now asks first` or `no longer asks first`.
 
 ### Limits and rejections
 

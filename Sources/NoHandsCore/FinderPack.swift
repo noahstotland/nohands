@@ -9,6 +9,9 @@ extension AppPack {
     /// Sidebar, path bar, hidden files and Quick Look are toggles.
     static let finder: AppPack = {
         func chord(_ key: Key, _ modifiers: Set<Modifier> = [.command]) -> [Action] { [.pressKey(KeyChord(key, modifiers))] }
+        var confirms = Set<String>()
+        // Phrases that wait for a spoken yes before they run.
+        func asking(_ names: [String]) -> [String] { confirms.formUnion(names); return names }
         let groups: [([String], [Action])] = [
             (["new window", "new finder window"], chord(.n)),
             (["new folder", "make a new folder", "make new folder", "create a folder", "create folder", "create a new folder"],
@@ -31,8 +34,8 @@ extension AppPack {
             (["rename", "rename this", "rename it", "rename file", "rename this file"], chord(.return, [])),
             (["move here", "move it here", "move items here", "move them here", "paste as move", "paste here as a move"],
              chord(.v, [.command, .option])),
-            (["move to trash", "move to the trash", "move it to the trash", "move it to trash", "move this to the trash",
-              "trash this", "trash it", "trash this file", "delete this file"], chord(.delete)),
+            (asking(["move to trash", "move to the trash", "move it to the trash", "move it to trash", "move this to the trash",
+                     "trash this", "trash it", "trash this file", "delete this file"]), chord(.delete)),
             (["put back", "put it back"], [.menuItem("File > Put Back")]),
             (["show hidden files", "hide hidden files", "toggle hidden files"], chord(.period, [.command, .shift])),
             (["search", "search finder", "search files"], chord(.f)),
@@ -52,6 +55,6 @@ extension AppPack {
             }
         }
         phrases["go home"] = chord(.h, [.command, .shift])
-        return AppPack(name: "Finder", bundleIDs: ["com.apple.finder"], phrases: phrases)
+        return AppPack(name: "Finder", bundleIDs: ["com.apple.finder"], phrases: phrases, confirms: confirms)
     }()
 }

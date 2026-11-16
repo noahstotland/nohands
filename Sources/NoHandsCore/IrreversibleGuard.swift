@@ -37,6 +37,22 @@ public enum IrreversibleGuard {
              allowedBy: [["empty", "empties", "emptying", "emptied"], ["trash", "bin"]]),
     ]
 
+    /// Whether the words of a spoken phrase name a guarded verb ("send", "sending", "place order") or the word
+    /// "trash", as whole words once punctuation splits them ("send-it" is "send it"). Used to force the spoken yes on
+    /// a pack phrase.
+    static func namesVerb(_ phraseWords: [String]) -> Bool {
+        let tokens = words(phraseWords.joined(separator: " "))
+        if tokens.contains("trash") { return true }
+        return verbs.contains { verb in
+            let name = mergeCheckOut(verb.name.split(separator: " ").map(String.init))
+            // Past forms ("sent", "deleted") name something already done, and "posts" is a noun: neither is a command.
+            return name.count == 1 ? tokens.contains { verb.allowedBy[0].contains($0) && !isPast($0) } : contains(tokens, name)
+        }
+    }
+
+    /// Forms that are not a command: past ("sent"), and third person or plural ("posts", "purchases" are nouns too).
+    private static func isPast(_ word: String) -> Bool { word.hasSuffix("ed") || word.hasSuffix("s") || ["sent", "paid", "bought"].contains(word) }
+
     /// Letters and digits only, so "Send…" and "File > Send" split into words; "check out" is one word, "checkout".
     private static func words(_ text: String) -> [String] {
         let cleaned = String(text.map { $0.isLetter || $0.isNumber ? $0 : " " })
@@ -167,6 +183,9 @@ public enum IrreversibleGuard {
 /// Whether a spoken reply to "say yes to <verb>" is a yes. Only "yes", "confirm" and "do it" count, with "please"
 /// before or after; "yeah", "sure" or a yes with more words after it do not, so a stray word cannot confirm a payment.
 public enum ConfirmAnswer {
+    /// How long a step held for a spoken yes waits for the answer.
+    public static let timeout: Duration = .seconds(30)
+
     /// `attention` is the configured attention word: when one is set, the reply must start with it.
     public static func isYes(_ transcript: String, attention: AttentionGate = .off) -> Bool {
         var text = transcript

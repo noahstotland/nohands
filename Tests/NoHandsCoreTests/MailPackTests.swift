@@ -24,13 +24,12 @@ private let packOnly: [(String, [Action])] = [
     }
 }
 
-@Test func mailKeepsGlobalsAndNeverSendsOnOneWordOrStops() {
+@Test func mailKeepsGlobalsAndNeverStops() {
     let grammar = CommandGrammar()
-    for phrase in ["delete", "up", "down", "undo", "find", "close window", "stop", "cancel", "cancel that", "send"] {
+    for phrase in ["delete", "up", "down", "undo", "find", "close window", "stop", "cancel", "cancel that"] {
         #expect(grammar.parse(phrase, frontmost: mail) == grammar.parse(phrase, frontmost: nil), Comment(rawValue: phrase))
     }
     for phrase in AppPack.mail.phrases.keys {
         #expect(!StopWords.isStop(phrase) && !phrase.split(separator: " ").contains("stop"), Comment(rawValue: phrase))
-        #expect(!phrase.contains("send") || phrase.contains(" "), Comment(rawValue: phrase))
     }
 }

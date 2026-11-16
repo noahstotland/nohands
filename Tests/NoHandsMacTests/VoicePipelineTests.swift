@@ -704,3 +704,67 @@ private let nightGame = #"{"night game":["click","play the newest video","scroll
         #expect(r.pipeline.speakLevel == level && heard == [level] && fake.said == said, "\(phrase)")
     }
 }
+
+// MARK: - Spoken yes before a fixed phrase (NH-149)
+
+/// Mail in front with the built-in packs: "send message" asks first. "press" counts the key chords that ran.
+@MainActor private func mailRig(attentionWord: String = "", macros: String = "{}") -> Rig {
+    let r = rig(attentionWord: attentionWord, macros: macros)
+    r.pipeline.setPacks(.builtIns)
+    r.pipeline.frontmostBundleID = { "com.apple.mail" }
+    r.pipeline.confirmTimeout = .milliseconds(60)
+    return r
+}
+@MainActor private final class FrontApp { var id = "com.apple.mail" }
+private func presses(_ r: Rig) -> Int { r.input.calls.filter { $0 == "press" }.count }
+@MainActor private func lastStatus(_ r: Rig, row: Int = 1) -> String? { r.overlay.reports.last { $0.id == row }?.status.text }
+
+@MainActor @Test func aHeldPhraseRunsOnlyOnAYes() async {
+    // (attention word, phrase, reply or nil for silence, key presses, the row's last words)
+    let table: [(String, String, String?, Int, String)] = [
+        ("", "send message", "yes", 1, "done"), ("", "send message", "confirm", 1, "done"),
+        ("", "send message", "do it", 1, "done"), ("", "send message", "please yes", 1, "done"),
+        ("jarvis", "jarvis send message", "jarvis yes", 1, "done"),
+        ("", "send message", "yeah", 0, PipelineText.notConfirmed),
+        ("", "send message", "yes send it", 0, PipelineText.notConfirmed),
+        ("", "send message", "next message", 0, PipelineText.notConfirmed),   // the reply is never run as a command
+        ("jarvis", "jarvis send message", "yes", 0, PipelineText.notConfirmed),   // unaddressed: no yes
+        ("", "send message", nil, 0, PipelineText.noYes),
+        ("", "send message", "stop", 0, PipelineText.stopped),
+    ]
+    for (word, phrase, reply, count, ending) in table {
+        let r = mailRig(attentionWord: word)
+        await r.pipeline.handle(transcript: phrase, trace: trace())
+        if let reply { await r.pipeline.handle(transcript: reply, trace: trace()) }
+        await r.pipeline.waitForTask()
+        #expect(presses(r) == count, "\(phrase) / \(reply ?? "silence")")
+        #expect(r.overlay.statuses.contains(PipelineText.sayYes(to: "send message")))
+        #expect(lastStatus(r)?.hasSuffix(ending) == true, "\(reply ?? "silence"): \(lastStatus(r) ?? "")")
+        #expect(!r.pipeline.isTaskActive)
+    }
+}
+
+@MainActor @Test func aHeldPhraseDoesNotRunWhenTheAppInFrontChanged() async {
+    let r = mailRig()
+    let front = FrontApp()
+    r.pipeline.frontmostBundleID = { front.id }
+    await r.pipeline.handle(transcript: "send message", trace: trace())
+    front.id = "com.apple.finder"
+    await r.pipeline.handle(transcript: "yes", trace: trace())
+    await r.pipeline.waitForTask()
+    #expect(presses(r) == 0)
+    #expect(lastStatus(r)?.hasSuffix("is no longer in front: say it again") == true)
+}
+
+@MainActor @Test func aMacroStepThatAsksWaitsAndANoEndsTheMacro() async {
+    let macros = #"{"mail run":["send message","next message"]}"#
+    for (reply, count, ending) in [("yes", 2, "done · 2 steps"), ("no", 0, "step 1 of 2 · not confirmed"), ("stop", 0, "stopped at step 1 of 2")] {
+        let r = mailRig(macros: macros)
+        await r.pipeline.handle(transcript: "mail run", trace: trace())
+        for _ in 0..<500 where !r.overlay.statuses.contains("step 1 of 2 · say yes to send message") { await Task.yield() }
+        await r.pipeline.handle(transcript: reply, trace: trace())
+        await r.pipeline.waitForTask()
+        #expect(r.overlay.statuses.contains("step 1 of 2 · say yes to send message"))
+        #expect(presses(r) == count && lastStatus(r) == ending, "\(reply): \(lastStatus(r) ?? "")")
+    }
+}

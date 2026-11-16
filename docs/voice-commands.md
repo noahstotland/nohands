@@ -45,7 +45,7 @@ Everything NoHands understands without a model. Anything else goes to Claude or 
 | `next space`, `previous space` | Switches to the Space on the right or left (control-right and control-left); with one Space nothing happens |
 | `notification center`, `notification centre`, `show notifications` | Presses the clock in the menu bar; none: `can't find the menu bar clock: show it in System Settings > Control Center` |
 | `open settings for <pane>`, `open <pane> settings`, `<pane> settings` | Opens that System Settings pane. Panes: `wifi` (`wi-fi`, `wi fi`), `bluetooth`, `sound` (`audio`), `displays` (`display`), `accessibility`, `privacy` (`privacy and security`, `security`), `login items` (`startup items`), `notifications`, `battery`, `general`, `automation`. An unknown name after `open settings for` says `no settings pane called <name>: say open system settings` and opens nothing; `open <name> settings` with another name still opens an app of that name, and `open system settings` is unchanged. `open settings for <pane>` drops filler words such as `the`, `a` and `please`; a name with `and`, `then` and the like, or a name of more than four words after fillers are dropped, goes to the model |
-| `empty trash`, `empty the trash` | Presses Finder's `Empty Trash…` item, so Finder asks `Are you sure you want to permanently erase the items in the Trash?`: answer `enter` or `escape` yourself, NoHands does not. If Finder's `Show warning before emptying the Trash` is off the row says `Finder's Trash warning is off: turn it on in Finder Settings > Advanced, or empty the Trash by hand` and nothing is pressed; an empty Trash says `the Trash is already empty` |
+| `empty trash`, `empty the trash` | Asks first, then presses Finder's `Empty Trash…` item, so Finder asks `Are you sure you want to permanently erase the items in the Trash?`: answer `enter` or `escape` yourself, NoHands does not. If Finder's `Show warning before emptying the Trash` is off the row says `Finder's Trash warning is off: turn it on in Finder Settings > Advanced, or empty the Trash by hand` and nothing is pressed; an empty Trash says `the Trash is already empty` |
 | `dark mode`, `dark mode on`, `turn on dark mode`, `turn dark mode on`, `switch to dark mode` | Sets the appearance to Dark through System Events. The first time, macOS asks to let NoHands control System Events: the row says `allow NoHands in the prompt, then say dark mode again`, and nothing changes yet (`press enter` accepts, or `show numbers` and click Allow). Say it again after allowing; the row says `dark mode`. Denied: `allow NoHands to control System Events: say open automation settings`; System Events slow: `System Events didn't answer: say it again`; other: `couldn't change dark mode (error <n>)`. Setting Dark or Light turns Auto off, as System Settings does |
 | `light mode`, `dark mode off`, `turn off dark mode`, `turn dark mode off`, `switch to light mode`, `light mode on` | Sets the appearance to Light the same way; the row says `light mode` |
 | `toggle dark mode` | Switches between Dark and Light; the row says which one it is now |
@@ -86,6 +86,8 @@ Everything NoHands understands without a model. Anything else goes to Claude or 
 | `menu <words>` | Presses the front app's menu item through Accessibility, e.g. `menu bookmark this tab`, `menu save as`; none: `no menu item called <words>`; greyed: `menu item <title> is disabled`; the Apple menu is never searched (no `menu shut down`) |
 | `<macro name>` (from `macros` in config) | Runs its steps in order on one row (`step 2 of 4 · go to …`); a failure or a stop ends it at that step |
 
+**Asks first.** A phrase marked `Asks first` does not run when NoHands hears it. The row shows `say yes to send message` (read aloud at spoken feedback `all`) and waits up to 30 s. Say `yes`, `confirm` or `do it`, with `please` before or after if you like (`please yes`); with an attention word set, start with it (`computer, yes`). Anything else drops the phrase (`not confirmed`) and is not run as a command: `yeah`, `yes send it`, `next message`. Silence for 30 s drops it too (`no yes in 30 s`), and `stop` always does. A phrase for another app waits for its own app: if you switch away before saying yes, it does not run (`Mail is no longer in front: say it again`). In a macro, a step that asks waits the same way and a no ends the macro. Packs you install can add the same ask to their own phrases ([App packs](app-packs.md#asking-first)). `nohands-cli run` will not run a phrase that asks first.
+
 Files open only from inside your home folder (not `~/Library`, dot folders or anything a link points out of home) and never programs: apps, scripts, installers and files with an execute bit are refused (`won't open <name>: it can run as a program`). Words are matched against the name as you said them; a compound phrase (`open the budget and print it`) goes to the model.
 
 Details: `docs/superpowers/specs/2026-11-16-nh-58-open-files-design.md`, `docs/superpowers/specs/2026-11-05-nh-10-spell-command-design.md`, `docs/superpowers/specs/2026-11-15-nh-53-browser-tabs-design.md`, `docs/superpowers/specs/2026-11-05-nh-15-search-on-site-design.md`, `docs/superpowers/specs/2026-11-15-nh-93-ordinal-click-target-design.md`, `docs/superpowers/specs/2026-11-15-nh-44-find-on-page-design.md`.
@@ -118,14 +120,14 @@ An app can have phrases that work only while it is in front and win on a shared 
 | Terminal | `interrupt`, `cancel command` | Sends control-C to the running command |
 | Mail | `new message`, `compose` | Opens a new message |
 | Mail | `reply`, `reply all`, `forward` | Replies to, replies to all on, or forwards the selected message |
-| Mail | `send message`, `send email` | Sends the open draft (two words on purpose: a bare `send` does nothing) |
+| Mail | `send`, `send message`, `send email` | Sends the open draft. Asks first |
 | Mail | `undo send` | Takes the send back while Mail's undo delay runs |
 | Mail | `next message`, `previous message` | Moves the selection in the message list |
 | Mail | `get mail`, `check mail` | Checks for new mail |
 | Mail | `mark as read`, `mark as unread` | Toggles read and unread |
 | Mail | `flag`, `unflag` | Toggles the flag |
 | Mail | `archive`, `junk` | Archives the message, or moves it to Junk |
-| Mail | `delete message`, `trash message` | Moves the message to Trash (`undo` brings it back) |
+| Mail | `delete message`, `trash message` | Moves the message to Trash (`undo` brings it back). Asks first |
 | Mail | `show mailboxes`, `hide mailboxes` | Toggles the mailbox list |
 | Mail | `go to inbox`, `go to sent` | Opens the Inbox, or Sent |
 | Mail | `search mail` | Focuses the search field (then say or type what to find) |
@@ -149,7 +151,7 @@ An app can have phrases that work only while it is in front and win on a shared 
 | Messages | `emoji`, `add emoji` | Opens the emoji picker |
 | Messages | `tapback`, `react` | Opens the tapback picker |
 | Messages | `close window` | Closes the Messages window (command-W) |
-| Messages | `delete conversation` | Opens Messages' own delete confirm |
+| Messages | `delete conversation` | Opens Messages' own delete confirm. Asks first |
 | Safari | `new window`, `new private window` | Opens a new window, or a new private window |
 | Safari | `reopen closed tab`, `reopen closed window` | Reopens whatever closed last, tab or window |
 | Safari | `address bar`, `focus address bar` | Focuses the address bar |
@@ -179,7 +181,8 @@ An app can have phrases that work only while it is in front and win on a shared 
 | Finder | `get info`, `open`, `quick look` | Gets info on, opens, or previews the selection |
 | Finder | `duplicate`, `make alias`, `rename` | Duplicates, makes an alias of, or starts renaming the selection |
 | Finder | `move here` | Moves the copied files into this folder |
-| Finder | `move to trash`, `put back` | Trashes the selection (`undo` brings it back), or puts it back from the Trash |
+| Finder | `move to trash`, `delete this file` | Trashes the selection (`undo` brings it back). Asks first |
+| Finder | `put back` | Puts the selection back from the Trash |
 | Finder | `show hidden files` | Toggles hidden files |
 | Finder | `search` | Focuses the search field |
 | Finder | `close window` | Closes the front Finder window |
@@ -198,14 +201,14 @@ An app can have phrases that work only while it is in front and win on a shared 
 | Chrome | `bookmark manager`, `bookmarks`, `manage bookmarks` | Opens the bookmark manager |
 | Chrome | `history`, `show history`, `browsing history`, `downloads`, `show downloads` | Opens history or downloads |
 | Chrome | `extensions`, `show extensions`, `manage extensions`, `settings`, `chrome settings`, `preferences` | Opens extensions or Chrome's settings |
-| Chrome | `delete browsing data` | Opens Chrome's Delete Browsing Data dialog |
+| Chrome | `delete browsing data` | Opens Chrome's Delete Browsing Data dialog. Asks first |
 | Chrome | `address bar`, `focus address bar`, `location bar`, `url bar` | Focuses the address bar (command-L) |
 
 The global `new tab`, `close tab`, `close window`, `next tab`, `previous tab`, `find`, `page up` and `page down` also work in Terminal. Closing a tab or window with a running command shows Terminal's own confirm, which NoHands does not answer (say `enter` or `escape`). `stop` never interrupts a shell command; say `interrupt`. `top of page` and `bottom of page` press command-up and command-down in Terminal too; its own `scroll to top` and `scroll to bottom` still win there.
 
-The global `find`, `next tab`, `previous tab` and `search for <name>` also work in Messages. `delete conversation` asks first, and NoHands does not answer that question for you (say `enter` or `escape`). Sending stays `enter` (or `press return`), so there is no `send` phrase. Pin and unpin are not phrases yet: say them as a request and the model handles them.
+The global `find`, `next tab`, `previous tab` and `search for <name>` also work in Messages. `delete conversation` asks you first, and then Messages asks its own question, which NoHands does not answer for you (say `enter` or `escape`). Sending stays `enter` (or `press return`), so there is no `send` phrase. Pin and unpin are not phrases yet: say them as a request and the model handles them.
 
-In Finder the global `new tab`, `close tab`, `go back`, `go forward`, `copy`, `paste`, `select all`, `undo` and `find` work as elsewhere. `go to <place>` changes the front window, while `open the downloads folder` still opens that folder as before. The sidebar, path bar, hidden files and Quick Look phrases toggle. `move to trash` is undone by `undo` or `put back`, `rename` only starts editing (say `enter` to finish), and `empty trash` still asks Finder's own question.
+In Finder the global `new tab`, `close tab`, `go back`, `go forward`, `copy`, `paste`, `select all`, `undo` and `find` work as elsewhere. `go to <place>` changes the front window, while `open the downloads folder` still opens that folder as before. The sidebar, path bar, hidden files and Quick Look phrases toggle. `move to trash` is undone by `undo` or `put back`, `rename` only starts editing (say `enter` to finish), and `empty trash` asks you first and then still asks Finder's own question.
 
 In Chrome the global `new tab`, `close tab`, `close window`, `next tab`, `previous tab`, `reload`, `go back`, `go forward`, `find`, `zoom in`, `zoom out` and `full screen` work as elsewhere, and every phrase above also works with a leading `open` and `a` or `the` (`open a new window`). In Chrome `find next` and `find previous` step through the find matches (command-G, shift-command-G) instead of moving the pointer to the word on the page. `go to downloads`, `go to history` and `go to settings` open Chrome's own pages instead of typing the words into the address bar. Say `escape` to stop a page load (there is no spoken stop). `open settings` opens Chrome's settings while it is in front (`open system settings` still opens System Settings). `delete browsing data` only opens the dialog; NoHands does not press anything in it. There is no translate or reading mode phrase because Chrome has no menu-bar item for either.
 

@@ -347,8 +347,8 @@ var exitStatus: Int32 = 0
             guard rest.count == 1 || (rest.count == 3 && rest[1] == "--app") else { usage() }
             let bundleID: String? = rest.count == 3 ? rest[2] : nil
             let grammar = CommandGrammar(packs: PackSet(installed: (try? PackStore().loadEnabled()) ?? []))
-            if let actions = grammar.parse(rest[0], frontmost: bundleID) {
-                print("\(actions)")
+            if let match = grammar.match(rest[0], frontmost: bundleID) {
+                print("\(match.actions)\(match.confirm == nil ? "" : " (asks first)")")
             } else if let message = grammar.rejection(rest[0]) {
                 print("rejected: \(message)")
             } else {
@@ -384,9 +384,10 @@ var exitStatus: Int32 = 0
             }
             var parsed: [[Action]] = []
             for phrase in rest {
-                guard let actions = CommandGrammar().parse(phrase) else { fail("not a command: \(phrase)") }
-                print("actions: \(actions)")
-                parsed.append(actions)
+                guard let match = CommandGrammar().match(phrase) else { fail("not a command: \(phrase)") }
+                guard match.confirm == nil else { fail("asks first: not run from the CLI") }
+                print("actions: \(match.actions)")
+                parsed.append(match.actions)
             }
             let config = try loadConfig()
             let harness = await loadHarness(config)
