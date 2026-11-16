@@ -1,7 +1,8 @@
 # NH-150: Press only the exact title for pack menu steps, and close two guard gaps: Design
 
 **Date:** 2026-11-16  **Ticket:** [NH-150](https://github.com/noahstotland/nohands/issues/150)
-**Status:** Draft
+**Status:** Shipped
+**Shipped:** in PR #173, as specified
 
 ## Intent
 
