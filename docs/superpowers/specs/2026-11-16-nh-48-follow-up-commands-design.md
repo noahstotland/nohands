@@ -1,8 +1,9 @@
 # NH-48: Follow-up commands that refer to the last task
 
 **Date:** 2026-11-16
-**Status:** Draft
+**Status:** Shipped
 **Ticket:** [NH-48](https://github.com/noahstotland/nohands/issues/48)
+**Shipped:** in PR #146, with differences: [as-built](../as-built/2026-11-16-nh-48-follow-up-commands.md)
 
 ## Goal
 
