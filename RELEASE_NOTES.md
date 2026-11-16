@@ -1,5 +1,13 @@
 # Release notes
 
+## 2026-11-16 Mail voice commands (NH-79) (#140)
+
+Merged 2026-11-16 2:24 pm UTC.
+
+In Mail you can now say "new message", "reply", "reply all", "forward", "send message", "archive", "delete message", "next message" and more. "Send" needs two words so a stray word cannot send a draft; "undo send" takes it back during Mail's undo delay.
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
 ## 2026-11-16 installable app packs (NH-80) (#142)
 
 Merged 2026-11-16 1:38 pm UTC.
