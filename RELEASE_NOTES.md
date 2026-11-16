@@ -1,5 +1,11 @@
 # Release notes
 
+## 2026-11-16 voice macros (NH-57) (#159)
+
+Merged 2026-11-16 3:39 pm UTC.
+
+You can now name a sequence in `~/.config/nohands/config.json` under `macros` (for example `"night game": ["open chrome", "go to streameast.app", "find raptors", "click"]`) and say the name to run it. A failed step or a stop ends it, and the row says which step.
+
 ## 2026-11-16 Messages voice commands (NH-82) (#143)
 
 Merged 2026-11-16 2:53 pm UTC.
