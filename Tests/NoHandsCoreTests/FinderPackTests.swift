@@ -12,7 +12,7 @@ private let leadForms: [(String, [Action])] = [
     let grammar = CommandGrammar(), bare = CommandGrammar(packs: PackSet([]))
     for (phrase, expected) in AppPack.finder.phrases.map({ ($0.key, $0.value) }) + leadForms {
         #expect(grammar.parse(phrase, frontmost: finder) == expected, Comment(rawValue: phrase))
-        for app in ["com.apple.Safari", nil] {
+        for app in ["com.apple.TextEdit", nil] {
             #expect(grammar.parse(phrase, frontmost: app) == bare.parse(phrase, frontmost: app), Comment(rawValue: phrase))
         }
     }
