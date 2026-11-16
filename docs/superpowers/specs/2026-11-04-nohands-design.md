@@ -26,7 +26,7 @@ Mic (16 kHz mono, echo cancellation unless `echoCancellation` is false) → Sile
 - `dictation`: everything is typed except "stop dictating", "command mode", "scratch that", "delete word", "delete that" and the text edits (`select the last sentence`, `delete <words>`, `replace x with y`, `go to the end of the line`, `uppercase that`; a phrase edit whose words are not in the field is typed as dictation).
 - `sleep`: everything ignored except "wake up".
 
-The menu bar shows `CMD` / `DICT` / `ZZZ`. The menu has Start at Login, Status Bar, Packs (turn an installed pack on or off, remove it; installing is `nohands-cli pack add`, see `docs/app-packs.md`), Model (`Claude|Local|Off`, no restart, saves `intentBackend`), Open config.json…, Recent commands (last 50) and View Logs…. The log is `~/.config/nohands/command-log.json`, local only, mode 600.
+The menu bar shows `CMD` / `DICT` / `ZZZ`. The menu has Start at Login, Status Bar, Packs (turn an installed pack on or off, remove it, Browse… and Check for pack updates for the registry; install from a file with `nohands-cli pack add`, see `docs/app-packs.md`), Model (`Claude|Local|Off`, no restart, saves `intentBackend`), Open config.json…, Recent commands (last 50) and View Logs…. The log is `~/.config/nohands/command-log.json`, local only, mode 600.
 
 ## 5. Command grammar and dictation
 
