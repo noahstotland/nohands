@@ -6,7 +6,7 @@ import Foundation
     let table: [(String, Bool)] = [
         ("no, the second one", true), ("No!", false), ("no thanks", true), ("actually", false), ("also", false), ("nope", false), ("nope not that", true), ("not that one", true), ("the other one", true),
         ("the next one", true), ("next one please", true), ("instead open mail", true), ("also mute it", true),
-        ("and then scroll down", true), ("Go back to the results", true), ("actually the first one", true), ("wrong one", false), ("wrong one please", true),
+        ("and then scroll down", true), ("Go back to the results", true), ("actually the first one", true), ("wrong one", true), ("the other", true), ("wrong one please", true),
         ("notes", false), ("nothing", false), ("now open mail", false), ("another tab", false), ("open the other window", false),
         ("go back", false), ("", false),
     ]

@@ -11,10 +11,10 @@ public enum FollowUp {
 
     /// Whether `goal` starts like a follow-up. Grammar commands never get here (the pipeline asks only about words
     /// the grammar did not take), so "go back" alone is still the browser command. An opener must be followed by at
-    /// least one more word: a lone "no" or "actually" is not a request.
+    /// least one more word when it is a single word: a lone "no" or "actually" is not a request.
     public static func refers(_ goal: String) -> Bool {
         let words = CommandGrammar.normalize(goal.filter { !$0.isPunctuation })
-        return openers.contains { words.count > $0.count && words.starts(with: $0) }
+        return openers.contains { (words.count > $0.count || $0.count > 1) && words.starts(with: $0) }
     }
 
     /// The goal words the done-only-when-playing check reads: the earlier goal joined to `goal`, unless `goal` asks to
