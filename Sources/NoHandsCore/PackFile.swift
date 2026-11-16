@@ -82,13 +82,20 @@ public enum PackFile {
         let confirm: Bool?
     }
 
-    /// Whether a phrase must ask for a spoken yes: its words name a guarded verb (or "trash") and it does not start
-    /// with "undo", or its actions equal a marked built-in command's for an app both packs cover.
+    /// Whether a phrase must ask for a spoken yes: its words name a guarded verb (or "trash"), unless it starts with
+    /// "undo" and its actions hold nothing irreversible, or its actions contain a marked built-in command's actions
+    /// (in a row) for an app both packs cover.
     static func forcesConfirm(phrase: String, actions: [Action], bundleIDs: Set<String>) -> Bool {
         let words = CommandGrammar.normalize(phrase)
-        if words.first != "undo", IrreversibleGuard.namesVerb(words) { return true }
+        let undoes = words.first == "undo" && IrreversibleGuard.held(actions, labels: [:], goal: "") == nil
+            && !actions.contains { if case .menuItem(let title, _) = $0 { IrreversibleGuard.namesLoosely(title: title, goal: "") != nil } else { false } }
+        if !undoes, IrreversibleGuard.namesVerb(words) { return true }
+        func contains(_ marked: [Action]) -> Bool {
+            guard !marked.isEmpty, actions.count >= marked.count else { return false }
+            return (0...(actions.count - marked.count)).contains { Array(actions[$0..<($0 + marked.count)]) == marked }
+        }
         return AppPacks.all.contains { pack in
-            !pack.bundleIDs.isDisjoint(with: bundleIDs) && pack.confirms.contains { pack.phrases[$0] == actions }
+            !pack.bundleIDs.isDisjoint(with: bundleIDs) && pack.confirms.contains { pack.phrases[$0].map(contains) ?? false }
         }
     }
 

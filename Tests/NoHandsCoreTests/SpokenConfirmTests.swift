@@ -50,12 +50,19 @@ private func cmd(_ phrases: [String], _ chord: String = "n", _ mods: [String] = 
     return c
 }
 
+private func steps(_ phrases: [String], _ actions: [[String: Any]]) -> [String: Any] { ["phrases": phrases, "actions": actions] }
+
 @Test func packFileForcesAndReadsTheConfirmField() throws {
+    let send: [String: Any] = ["kind": "press_key", "key": "d", "modifiers": ["command", "shift"]]
+    let escape: [String: Any] = ["kind": "press_key", "key": "escape"]
+    let deleteItem: [String: Any] = ["kind": "menu_item", "title": "Delete"]
     // commands, bundle, the phrases that ask first
     let table: [([[String: Any]], String, Set<String>)] = [
         ([cmd(["send it", "tidy"])], "com.example.app", ["send it", "tidy"]),                 // a guarded verb
         ([cmd(["move to trash"]), cmd(["undo send"], "z")], "com.example.app", ["move to trash"]),   // "trash"; undo is exempt
         ([cmd(["zap"], "d", ["command", "shift"])], mail, ["zap"]),                             // a marked built-in's actions
+        ([steps(["ship it"], [send, escape])], mail, ["ship it"]),                              // a marked built-in's actions, plus more
+        ([steps(["undo and delete"], [deleteItem])], "com.example.app", ["undo and delete"]),   // "undo" never frees an irreversible step
         ([cmd(["zap"], "d", ["command", "shift"])], "com.example.app", []),                     // other app: no match
         ([cmd(["delete it"]), cmd(["tidy up"])], "com.example.app", ["delete it", "tidy up"]),  // same actions as a forced one
         ([cmd(["tidy up"], confirm: true), cmd(["fine"], "m", confirm: false)], "com.example.app", ["tidy up"]),
