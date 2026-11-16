@@ -69,7 +69,7 @@ public enum PackFile {
         for (index, cmd) in parsed.enumerated() {
             let forced = forcedActions.contains { holdsRun(cmd.actions, $0) }
             if forced, cmd.confirm == false {
-                throw PackError("command \(index + 1): confirm false on an irreversible command (it names send, delete or another guarded verb)")
+                throw PackError("command \(index + 1): confirm false on an irreversible command (it names send, delete or another guarded verb, or holds the actions of one that does)")
             }
             if forced || cmd.confirm == true { confirms.formUnion(cmd.keys) }
         }

@@ -64,7 +64,7 @@ private func steps(_ phrases: [String], _ actions: [[String: Any]]) -> [String: 
         ([steps(["ship it"], [send, escape])], mail, ["ship it"]),                              // a marked built-in's actions, plus more
         ([steps(["undo and delete"], [deleteItem])], "com.example.app", ["undo and delete"]),   // "undo" never frees an irreversible step
         ([cmd(["zap"], "d", ["command", "shift", "function"])], mail, ["zap"]),                // the function modifier changes nothing
-        ([steps(["sending now", "send-it"], [escape])], "com.example.app", ["sending now", "send-it"]),   // other forms of a guarded verb
+        ([steps(["sending now", "send-it"], [escape]), steps(["go to sent", "show posts"], [send])], "com.example.app", ["sending now", "send-it"]),   // other forms of a guarded verb
         ([cmd(["send reply"], "return", ["control"]), steps(["go"], [escape, ["kind": "press_key", "key": "return", "modifiers": ["control"]]])],
          "com.example.app", ["send reply", "go"]),                                              // a longer command that holds a forced one
         ([cmd(["zap"], "d", ["command", "shift"])], "com.example.app", []),                     // other app: no match
@@ -75,13 +75,13 @@ private func steps(_ phrases: [String], _ actions: [[String: Any]]) -> [String: 
         #expect(try parsed(bundle: bundle, commands).confirms == asks, "\(commands)")
     }
     let reasons: [(Any, String)] = [
-        (false, "confirm false on an irreversible command (it names send, delete or another guarded verb)"),
+        (false, "confirm false on an irreversible command (it names send, delete or another guarded verb, or holds the actions of one that does)"),
         ("true", "bad confirm (true or false)"), (1, "bad confirm (true or false)"),
     ]
     for (value, reason) in reasons {
         #expect(throws: PackError("command 1: " + reason)) { try parsed([cmd(["send it"], confirm: value)]) }
     }
-    #expect(throws: PackError("command 2: confirm false on an irreversible command (it names send, delete or another guarded verb)")) {
+    #expect(throws: PackError("command 2: confirm false on an irreversible command (it names send, delete or another guarded verb, or holds the actions of one that does)")) {
         try parsed([cmd(["delete it"]), cmd(["tidy up"], confirm: false)])
     }
 }

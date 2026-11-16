@@ -45,12 +45,13 @@ public enum IrreversibleGuard {
         if tokens.contains("trash") { return true }
         return verbs.contains { verb in
             let name = mergeCheckOut(verb.name.split(separator: " ").map(String.init))
-            // Past forms ("sent", "deleted") name something already done: "go to sent" is not a send.
+            // Past forms ("sent", "deleted") name something already done, and "posts" is a noun: neither is a command.
             return name.count == 1 ? tokens.contains { verb.allowedBy[0].contains($0) && !isPast($0) } : contains(tokens, name)
         }
     }
 
-    private static func isPast(_ word: String) -> Bool { word.hasSuffix("ed") || ["sent", "paid", "bought"].contains(word) }
+    /// Forms that are not a command: past ("sent"), and third person or plural ("posts", "purchases" are nouns too).
+    private static func isPast(_ word: String) -> Bool { word.hasSuffix("ed") || word.hasSuffix("s") || ["sent", "paid", "bought"].contains(word) }
 
     /// Letters and digits only, so "Send…" and "File > Send" split into words; "check out" is one word, "checkout".
     private static func words(_ text: String) -> [String] {

@@ -14,4 +14,4 @@
 - The spoken "say yes to <phrase>" is not tied to the row, so the held phrase's finish line is still spoken at `outcomes` and `all`.
 - A reply that arrives before the pipeline starts waiting is kept, so the first words after a marked phrase are always its answer and never a held job.
 - One forced phrase makes every phrase of its command ask, because a command shares one set of actions.
-- The guarded-verb rule matches every non-past form (`sending`, `sends`) and splits words on punctuation (`send-it`); past forms (`sent`, `deleted`) are not guarded. A command that holds another forced command's actions in a row is forced too (the spec said "equal").
+- The guarded-verb rule matches the base and `-ing` forms of a single-word verb (`sending`; not `sent`, `sends` or `posts`) and splits words on punctuation (`send-it`); past forms (`sent`, `deleted`) are not guarded. A command that holds another forced command's actions in a row is forced too (the spec said "equal").
