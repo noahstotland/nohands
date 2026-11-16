@@ -18,7 +18,7 @@ Back to the [README](../README.md).
 | `click "<name>"` | Clicks the named element |
 | `grid` | Shows the 10×8 grid, zooms into cell 35 |
 | `labels` | Shows numbered badges |
-| `parse "<text>" [--app <bundle id>]` | Dry run: the grammar's actions, "no match -> LLM", or "rejected: ...". `--app` puts that app in front, so its built-in or installed pack applies |
+| `parse "<text>" [--app <bundle id>]` | Dry run: the grammar's actions (with ` (asks first)` after them when the phrase waits for a spoken yes), "no match -> LLM", or "rejected: ...". `--app` puts that app in front, so its built-in or installed pack applies |
 | `pack add <file>` | Checks a pack file, shows its summary (apps, every phrase with what it does, sites and apps it opens, phrases it replaces or loses to an earlier pack), and installs only if you answer `y` or `yes` at `Install? [y/N]`. No `--yes`. Exits 1 if declined or invalid. See [App packs](app-packs.md) |
 | `pack list` | Installed packs: id, version, on or off, phrase count, shadowed or invalid note |
 | `pack remove <id>` | Removes an installed pack, no prompt |
@@ -30,7 +30,7 @@ Back to the [README](../README.md).
 | `registry keygen <path>` | For registry publishers: writes a new signing key to `<path>` (mode 600, refuses an existing file) and prints the public key and its key id. No network. See [Publish a registry](app-packs.md#publish-a-registry) |
 | `registry sign <index.json> --key <path> [--packs <dir>]` | For registry publishers: checks the index, and with `--packs` each pack file in `<dir>` against its hash and the pack rules, then prints the signed file. Refuses to sign if a file is wrong. No network |
 | `menu "<words>"` / `menu --list` | After 2 s (3 s for `--list`) presses the frontmost app's named menu item, or lists them |
-| `run "<phrase>"...` | Executes grammar phrases in order |
+| `run "<phrase>"...` | Executes grammar phrases in order; a phrase that asks first (`empty trash`) is refused with `asks first: not run from the CLI` |
 | `observe` | Prints what the task loop sends the model: title, URL, `Media:` line, numbered elements |
 | `resolve "<text>"` | Dry run: sends text and labels to the backend, prints the step (`intent`, `status`, actions); spends API credit |
 | `task "<goal>"` | Waits 3 s, runs the goal as a task for real, printing each step. Ctrl-C stops it, a second quits (130); exits 2 when stuck, failed or stopped |
