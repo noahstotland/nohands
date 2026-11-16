@@ -41,8 +41,9 @@ public struct PackStore: Sendable {
         let pack = try PackFile.parse(data)
         let fm = FileManager.default
         do {
-            try fm.createDirectory(at: root.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try fm.createDirectory(at: root.deletingLastPathComponent().deletingLastPathComponent(), withIntermediateDirectories: true)
         } catch { throw ConfigFile.SaveError.writeFailed(.EIO) }
+        try ConfigFile.makePrivateFolder(root.deletingLastPathComponent().path)
         try ConfigFile.makePrivateFolder(root.path)
         let folder = folderPath(pack.id)
         let isNew = kind(folder) == nil
@@ -121,7 +122,7 @@ public struct PackStore: Sendable {
     private func entry(_ id: String, _ folder: String) -> Entry {
         let enabled = kind(folder + "/disabled") == nil
         func bad(_ reason: String) -> Entry { Entry(id: id, enabled: enabled, pack: nil, invalidReason: reason) }
-        guard kind(folder) == S_IFDIR else { return bad("folder is a symlink") }
+        guard kind(folder) == S_IFDIR else { return bad("not a regular folder") }
         do {
             guard let data = try ConfigFile.readRegularFile(folder + "/pack.json")?.data else { return bad("pack.json is missing") }
             let pack = try PackFile.parse(data)

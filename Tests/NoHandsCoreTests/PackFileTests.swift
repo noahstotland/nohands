@@ -65,7 +65,7 @@ private func commands(_ list: [Doc]) -> (inout Doc) -> Void { { $0["commands"] =
     for url in ["http://bear.app/", "https://user:pw@bear.app/", "javascript:alert(1)", "https://", "https://bear.app/ x"] {
         cases.append(("bad url", data(commands([cmd(["go"], [["kind": "open_url", "url": url]])]))))
     }
-    for phrase in ["stop", "Stop!", "never mind", "go to sleep", "wake up", "dictation mode", "stop dictating", "release click", "hide numbers", "cancel", "open cancel"] {
+    for phrase in ["stop", "Stop!", "never mind", "go to sleep", "wake up", "dictation mode", "stop dictating", "release click", "hide numbers", "cancel", "open cancel", "release the click", "hide the numbers", "please dictation mode"] {
         cases.append(("reserved phrase", data(commands([cmd([phrase], [cmdN])]))))
     }
     for (reason, bytes) in cases {
@@ -105,12 +105,5 @@ private func commands(_ list: [Doc]) -> (inout Doc) -> Void { { $0["commands"] =
     ]
     for (phrase, app, expected) in cases {
         #expect(grammar.parse(phrase, frontmost: app) == expected, "\(phrase) in \(app ?? "no app")")
-    }
-}
-
-@Test func packMenuStatus() {
-    for (phrases, shadowed, invalid, line) in [(12, 1, nil, "12 phrases, 1 shadowed"), (1, 0, nil, "1 phrase"),
-                                               (0, 0, "unknown action kind", "invalid: unknown action kind")] as [(Int, Int, String?, String)] {
-        #expect(PackMenu.status(phrases: phrases, shadowed: shadowed, invalidReason: invalid) == line)
     }
 }

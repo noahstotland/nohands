@@ -346,12 +346,18 @@ public struct CommandGrammar: Sendable {
     }
 
     /// Whether the global table has this phrase (a pack that has it overrides it in its apps).
-    static func isGlobalPhrase(_ phrase: String) -> Bool { exact[phrase] != nil }
+    static func isGlobalPhrase(_ phrase: String) -> Bool { globalActions(phrase) != nil }
+
+    /// What the global table does with a phrase: an exact entry, or the entry left once filler words are dropped
+    /// ("release the click", "please dictation mode").
+    private static func globalActions(_ phrase: String) -> [Action]? {
+        exact[phrase] ?? strippedExactMatch(phrase.split(separator: " ").map(String.init))
+    }
 
     /// Whether the global table binds this phrase to a mode change, a mouse release or hiding the overlay: a pack
     /// may never claim it.
     static func isReservedGlobal(_ phrase: String) -> Bool {
-        (exact[phrase] ?? []).contains { action in
+        (globalActions(phrase) ?? []).contains { action in
             switch action {
             case .setMode, .releaseMouse, .hideOverlay: return true
             default: return false
