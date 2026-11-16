@@ -65,11 +65,15 @@ Everything NoHands understands without a model. Anything else goes to Claude or 
 | `open the budget document`, `… spreadsheet`, `… presentation`, `… pdf` (`the` or `my` needed) | The same, of that kind |
 | `open my last keynote`, `open the last pdf`, `open my latest spreadsheet`, `open my most recent word document` | Opens the file of that kind you used last, with no list; kinds: `file`, `document`, `spreadsheet`, `presentation`, `pdf`, `keynote`, `pages`, `numbers`, `word`, `excel`, `powerpoint`; none: `no recent <kind>` |
 | `1` to `6`, `number 2`, `open 2`, `first` to `sixth` (while a list shows) | Opens that file. Several matches show up to six rows (name and folder) under the prompt, ranked by exact name, then last used; the row says `say 1 to 6, or cancel` (and `more: say more words` when there were more). A number out of range asks again; `cancel` or `stop` closes the list; any other command closes it and runs; 30 s of silence closes it (`no pick: say it again`). Zero matches: `no file called <words>` |
+| `stop` | Halts the running task, and also cuts NoHands' own voice if it is speaking. It is checked before anything else, so it works even over the speech |
 | `start dictating` / `stop dictating` | Switch between command and dictation mode |
 | `scratch that` (dictation) | Deletes what your last dictated phrase typed |
 | `delete word` (dictation) | Deletes the previous word |
 | `delete that` | Presses Delete (it removes what is selected) |
 | `go to sleep` / `wake up` | Pause and resume listening |
+| `spoken feedback on`, `turn on spoken feedback` | NoHands says how a task ended (level `outcomes`) and confirms with `Spoken feedback on.` |
+| `spoken feedback all`, `speak everything` | Also says the model's questions, `Say yes to …` and what a task read (level `all`), and confirms with `Spoken feedback all.` |
+| `spoken feedback off`, `turn off spoken feedback` | Stops all speech. Each of these changes the `speakFeedback` setting at once and saves it ([Configuration](configuration.md)) |
 | `menu <words>` | Presses the front app's menu item through Accessibility, e.g. `menu bookmark this tab`, `menu save as`; none: `no menu item called <words>`; greyed: `menu item <title> is disabled`; the Apple menu is never searched (no `menu shut down`) |
 | `<macro name>` (from `macros` in config) | Runs its steps in order on one row (`step 2 of 4 · go to …`); a failure or a stop ends it at that step |
 
