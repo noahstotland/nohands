@@ -29,7 +29,9 @@ public struct PackSummary: Equatable, Sendable {
         openedApps = Set(actions.compactMap { action -> String? in
             if case .openApp(let app) = action { return app } else { return nil }
         }).sorted()
-        overriddenPhrases = pack.phrases.keys.filter(CommandGrammar.isGlobalPhrase).sorted()
+        // Anything the global grammar parses by itself, patterns included ("press return", "open safari").
+        let global = CommandGrammar(packs: PackSet([]))
+        overriddenPhrases = pack.phrases.keys.filter { global.parse($0, frontmost: nil) != nil }.sorted()
     }
 }
 

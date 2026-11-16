@@ -345,9 +345,6 @@ public struct CommandGrammar: Sendable {
         return (count, false)
     }
 
-    /// Whether the global table has this phrase (a pack that has it overrides it in its apps).
-    static func isGlobalPhrase(_ phrase: String) -> Bool { globalActions(phrase) != nil }
-
     /// What the global table does with a phrase: an exact entry, or the entry left once filler words are dropped
     /// ("release the click", "please dictation mode").
     private static func globalActions(_ phrase: String) -> [Action]? {

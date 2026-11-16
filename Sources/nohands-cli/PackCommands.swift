@@ -38,14 +38,26 @@ private func addPack(path: String, store: PackStore) {
     print("installed \(pack.id) \(pack.version)")
 }
 
-/// The file's bytes, read no further than one byte past the size limit so a huge file is never loaded.
+/// The file's bytes, read no further than one byte past the size limit so a huge file is never loaded. Opened once
+/// without following a symlink or blocking on a FIFO, then checked with fstat on that same descriptor.
 private func readPackFile(_ path: String) -> Data {
+    let fd = open(path, O_RDONLY | O_NONBLOCK | O_NOFOLLOW)
     var info = stat()
-    guard stat(path, &info) == 0, info.st_mode & S_IFMT == S_IFREG, let handle = FileHandle(forReadingAtPath: path) else {
+    guard fd >= 0, fstat(fd, &info) == 0, info.st_mode & S_IFMT == S_IFREG else {
+        if fd >= 0 { close(fd) }
         fail("can't read \(path): not a regular file")
     }
-    defer { try? handle.close() }
-    return ((try? handle.read(upToCount: PackFile.maxBytes + 1)) ?? nil) ?? Data()
+    defer { close(fd) }
+    let limit = PackFile.maxBytes + 1
+    var data = Data()
+    var buffer = [UInt8](repeating: 0, count: 16 * 1024)
+    while data.count < limit {
+        let n = read(fd, &buffer, min(buffer.count, limit - data.count))
+        if n < 0 { fail("can't read \(path)") }
+        if n == 0 { break }
+        data.append(contentsOf: buffer[0..<n])
+    }
+    return data
 }
 
 private func summaryText(_ s: PackSummary, id: String, shadowed: [PackSet.Shadowed], replaces: PackStore.Entry?) -> String {
@@ -94,6 +106,7 @@ private func describe(_ error: any Error) -> String {
     case let e as PackError: "not a valid pack: \(e.reason)"
     case PackStore.StoreError.badID: "bad pack id (lowercase letters, digits and -)"
     case PackStore.StoreError.notInstalled: "no such installed pack"
+    case PackStore.StoreError.tooManyPacks: "too many packs installed (\(PackStore.maxPacks)); remove one first"
     case ConfigFile.SaveError.symlink: "a pack folder is a symlink: replace it with a folder"
     case ConfigFile.SaveError.writeFailed(let code): "write failed (\(code)); check ~/.config/nohands/packs"
     default: "\(error)"

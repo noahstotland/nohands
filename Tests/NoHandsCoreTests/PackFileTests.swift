@@ -7,12 +7,16 @@ private func cmd(_ phrases: [String], _ actions: [Doc]) -> Doc { ["phrases": phr
 private var cmdQ: Doc { ["kind": "press_key", "key": "q", "modifiers": ["command"]] }
 private var cmdN: Doc { ["kind": "press_key", "key": "n", "modifiers": ["command"]] }
 
+private func key(_ name: String, _ modifiers: [String] = []) -> Doc { ["kind": "press_key", "key": name, "modifiers": modifiers] }
+
 private func good() -> Doc {
     ["format": 1, "id": "bear-notes", "name": "Bear", "version": "1.0.0", "author": "Jane Doe", "bundleIDs": ["net.shinyfrog.bear"],
      "commands": [cmd(["new note", "make a note"], [cmdN]),
                   cmd(["archive note"], [["kind": "menu_item", "title": "Archive Note"]]),
                   cmd(["bear help"], [["kind": "open_url", "url": "https://bear.app/faq/"]]),
-                  cmd(["quit bear"], [cmdQ])]]
+                  cmd(["quit bear"], [cmdQ]),
+                  cmd(["empty the trash"], [["kind": "press_key", "key": "delete", "modifiers": ["command", "shift"]]]),
+                  cmd(["bear site"], [cmdN, ["kind": "open_url", "url": "https://bear.app/"]])]]
 }
 private func data(_ edit: (inout Doc) -> Void = { _ in }) -> Data {
     var doc = good()
@@ -28,7 +32,10 @@ private func commands(_ list: [Doc]) -> (inout Doc) -> Void { { $0["commands"] =
     #expect(pack.phrases["bear help"] == [.openURL(URL(string: "https://bear.app/faq/")!, app: nil)])
     #expect(pack.phrases["quit bear"] == [.pressKey(KeyChord(.q, [.command]))])   // a quit phrase that says quit
     let summary = PackSummary(pack)
-    #expect(summary.urlHosts == ["bear.app"] && summary.phraseCount == 5 && summary.overriddenPhrases.isEmpty)
+    #expect(summary.urlHosts == ["bear.app"] && summary.phraseCount == 7 && summary.overriddenPhrases.isEmpty)
+    // Patterns count as overrides too, not only table entries.
+    let overrides = AppPack(id: "x", name: "x", bundleIDs: ["y"], phrases: ["press return": [], "open safari": [], "new note": []])
+    #expect(PackSummary(overrides).overriddenPhrases == ["open safari", "press return"])
 }
 
 @Test func badPacksAreRejectedForTheRightReason() {
@@ -57,12 +64,27 @@ private func commands(_ list: [Doc]) -> (inout Doc) -> Void { { $0["commands"] =
         ("unknown key", data(commands([cmd(["go"], [["kind": "menu_item", "title": "X", "extra": 1]])]))),
         ("blocked", data(commands([cmd(["zap"], [cmdQ])]))),
         ("held", data(commands([cmd(["tidy up"], [["kind": "menu_item", "title": "Empty Trash"]])]))),
+        ("loosely", data(commands([cmd(["tidy up"], [["kind": "menu_item", "title": "Empty"]])]))),
+        ("loosely", data(commands([cmd(["go"], [["kind": "menu_item", "title": "Place…"]])]))),
+        ("too many key presses", data(commands([cmd(["go"], Array(repeating: key("a"), count: 3))]))),
+        ("too many key presses", data(commands([cmd(["go"], [key("a"), key("b", ["shift"]), key("c")])]))),
+        ("after a menu_item", data(commands([cmd(["go"], [["kind": "menu_item", "title": "Print"], key("return")])]))),
+        ("after a menu_item", data(commands([cmd(["go"], [["kind": "menu_item", "title": "Print"], key("space", ["shift"])])]))),
+        ("blocked chord", data(commands([cmd(["go"], [key("space", ["command"])])]))),
+        ("blocked chord", data(commands([cmd(["go"], [key("tab", ["command"])])]))),
+        ("blocked chord", data(commands([cmd(["go"], [key("escape", ["command", "option"])])]))),
+        ("blocked chord", data(commands([cmd(["tidy up"], [key("delete", ["command", "shift"])])]))),
+        ("blocked chord", data(commands([cmd(["empty"], [key("delete", ["command", "option", "shift"])])]))),
+        ("last action", data(commands([cmd(["go"], [["kind": "open_app", "app": "Notes"], cmdN])]))),
+        ("last action", data(commands([cmd(["go"], [["kind": "open_url", "url": "https://bear.app/"], cmdN])]))),
     ]
     // Kinds the format never allows, URLs it never opens, phrases NoHands keeps for itself.
     for kind in ["type_text", "click", "set_mode", "run_shell", "close_app", "ask_model"] {
         cases.append(("unknown action kind", data(commands([cmd(["go"], [["kind": kind, "text": "x", "target_name": "x"]])]))))
     }
-    for url in ["http://bear.app/", "https://user:pw@bear.app/", "javascript:alert(1)", "https://", "https://bear.app/ x"] {
+    for url in ["http://bear.app/", "https://user:pw@bear.app/", "javascript:alert(1)", "https://", "https://bear.app/ x",
+                "https://127.0.0.1/", "https://[::1]/", "https://2130706433/", "https://0x7f.1/", "https://localhost/", "https://a.localhost/",
+                "https://printer.local/", "https://intranet/", "https://bear/x"] {
         cases.append(("bad url", data(commands([cmd(["go"], [["kind": "open_url", "url": url]])]))))
     }
     for phrase in ["stop", "Stop!", "never mind", "go to sleep", "wake up", "dictation mode", "stop dictating", "release click", "hide numbers", "cancel", "open cancel", "release the click", "hide the numbers", "please dictation mode"] {

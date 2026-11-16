@@ -70,6 +70,7 @@ public enum PackFile {
         guard list.count <= maxActions else { throw PackError("too many actions (over \(maxActions))") }
         var actions: [Action] = []
         for item in list { actions.append(try parseAction(item)) }
+        try checkSequence(actions)
         guard let spoken = command["phrases"] as? [Any], !spoken.isEmpty else { throw PackError("no phrases") }
         for item in spoken {
             count += 1
@@ -85,11 +86,67 @@ public enum PackFile {
                 throw PackError("reserved phrase (stop, mode and release phrases belong to NoHands)")
             }
             if let why = ShortcutGuard.blocked(actions, goal: phrase) { throw PackError("blocked phrase: \(why)") }
+            if blockedChord(actions, words: Set(words)) { throw PackError("blocked chord (app switching, launcher, force quit or empty Trash needs a phrase that says so)") }
             if IrreversibleGuard.held(actions, labels: [:], goal: phrase) != nil {
                 throw PackError("held phrase (an irreversible menu item the phrase does not name)")
             }
+            // Menu titles match by words at run time, so a short title can press a longer irreversible one.
+            for case .menuItem(let title) in actions where IrreversibleGuard.namesLoosely(title: title, goal: phrase) != nil {
+                throw PackError("held phrase (a menu_item title matches an irreversible item loosely; name the full title)")
+            }
             phrases[key] = actions
         }
+    }
+
+    /// A key press with no command, control or option: it types a character or presses the focused button.
+    private static func isPlain(_ chord: KeyChord) -> Bool {
+        chord.modifiers.isDisjoint(with: [.command, .control, .option])
+    }
+
+    /// Rules on a command's actions as a whole, so single presses cannot add up to typed text or to a press on a button
+    /// the pack never named.
+    private static func checkSequence(_ actions: [Action]) throws(PackError) {
+        var plain = 0
+        var sawMenu = false
+        for (index, action) in actions.enumerated() {
+            switch action {
+            case .pressKey(let chord) where isPlain(chord):
+                plain += 1
+                if plain > 2 { throw PackError("too many key presses (over 2 without command, control or option: that would type text)") }
+                if sawMenu, chord.key == .return || chord.key == .space {
+                    throw PackError("return or space key after a menu_item (it could press the button that opens)")
+                }
+            case .menuItem: sawMenu = true
+            case .openApp, .openURL:
+                if index != actions.count - 1 { throw PackError("open_app and open_url must be the last action (focus leaves the app)") }
+            default: break
+            }
+        }
+    }
+
+    /// Chords that switch apps, open the launcher, force quit or empty the Trash, held unless the phrase says "empty" and "trash".
+    private static func blockedChord(_ actions: [Action], words: Set<String>) -> Bool {
+        guard !(words.contains("empty") && words.contains("trash")) else { return false }
+        return actions.contains { action in
+            guard case .pressKey(let chord) = action, chord.modifiers.contains(.command) else { return false }
+            switch chord.key {
+            case .space, .tab: return true
+            case .escape: return chord.modifiers.contains(.option)
+            case .delete: return chord.modifiers.contains(.shift)
+            default: return false
+            }
+        }
+    }
+
+    /// Whether an `open_url` host reaches this machine or a local network: an IP address, `localhost`, `.local`,
+    /// `.localhost` or a name with no dot.
+    private static func isLocalHost(_ host: String) -> Bool {
+        var h = host.lowercased()
+        if h.hasSuffix(".") { h.removeLast() }
+        guard h.contains("."), !h.contains(":"), !h.hasSuffix(".local"), !h.hasSuffix(".localhost") else { return true }
+        // A last label that is all digits or hex ("127.0.0.1", "0x7f.1") is an address; no real top level domain is.
+        let last = h.split(separator: ".").last.map(String.init) ?? ""
+        return last.isEmpty || last.allSatisfy(\.isNumber) || last.hasPrefix("0x")
     }
 
     private static func parseAction(_ raw: Any) throws(PackError) -> Action {
@@ -119,6 +176,9 @@ public enum PackFile {
             guard !spoken.contains(where: \.isWhitespace), let parts = URLComponents(string: spoken), parts.scheme?.lowercased() == "https",
                   parts.host?.isEmpty == false, parts.user == nil, parts.password == nil, let url = URL(string: spoken) else {
                 throw PackError("bad url (https with a host, no user or password)")
+            }
+            guard !isLocalHost(parts.host ?? ""), !isLocalHost(url.host ?? "") else {
+                throw PackError("bad url (host must be a public name: no IP address, localhost, .local or name without a dot)")
             }
             return .openURL(url, app: nil)
         default:

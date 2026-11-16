@@ -79,7 +79,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // The CLI installs packs; it tells the app through this local notification (no payload), and the menu re-reads on open.
         packsObserver = DistributedNotificationCenter.default().addObserver(
             forName: PackStore.changedNotification, object: nil, queue: .main) { [weak self] _ in
-            MainActor.assumeIsolated { self?.reloadPacks() }
+            MainActor.assumeIsolated { self?.packsChanged() }
         }
         Task { await bootstrap() }
     }
@@ -438,6 +438,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     /// Built-in packs plus the enabled installed ones, as of the last reload.
     private var packSet = PackSet.builtIns
+
+    private var packsReloadPending = false
+
+    /// The CLI's notification: one reload per 500 ms however many arrive, so a flood of them cannot keep the app reading disk.
+    private func packsChanged() {
+        guard !packsReloadPending else { return }
+        packsReloadPending = true
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(500))
+            self?.packsReloadPending = false
+            self?.reloadPacks()
+        }
+    }
 
     /// Re-reads the installed packs (on the CLI's notification, on menu open and after a toggle or remove), hands the
     /// pipeline the new set and rebuilds the Packs submenu. A pack that fails to load is shown as invalid and skipped.

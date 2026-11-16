@@ -13,9 +13,13 @@ public struct PackStore: Sendable {
         FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".config/nohands/packs")
     }
 
+    /// The most packs listed or loaded; the ones installed after that are reported invalid, and the rest ignored.
+    public static let maxPacks = 100
+
     public enum StoreError: Error, Equatable, Sendable {
         case badID
         case notInstalled
+        case tooManyPacks
     }
 
     public struct Entry: Equatable, Sendable {
@@ -47,10 +51,11 @@ public struct PackStore: Sendable {
         try ConfigFile.makePrivateFolder(root.path)
         let folder = folderPath(pack.id)
         let isNew = kind(folder) == nil
+        if isNew, (try? list().count) ?? 0 >= Self.maxPacks { throw StoreError.tooManyPacks }
         do {
             try ConfigFile.makePrivateFolder(folder)
             let file = folder + "/pack.json"
-            _ = try ConfigFile.readRegularFile(file)  // refuses a symlink or odd file already there
+            _ = try ConfigFile.readRegularFile(file, limit: 1)  // refuses a symlink or odd file already there
             try ConfigFile.replaceFile(file, in: folder, with: data, mode: 0o600)
         } catch {
             if isNew { try? fm.removeItem(atPath: folder) }
@@ -60,17 +65,21 @@ public struct PackStore: Sendable {
         return pack
     }
 
-    /// Every pack folder in install order (creation time, ties by id). A bad pack is listed with its reason.
+    /// Every pack folder in install order (creation time, ties by id), at most `maxPacks`. A bad pack is listed with its
+    /// reason. The first pack past the limit is listed as invalid so the user sees why it is off; the rest are ignored.
     public func list() throws -> [Entry] {
         guard let rootKind = kind(root.path) else { return [] }
         guard rootKind == S_IFDIR else { throw ConfigFile.SaveError.symlink }
         let names = (try? FileManager.default.contentsOfDirectory(atPath: root.path)) ?? []
-        let found = names.filter(PackFile.isValidID).compactMap { id -> (Date, Entry)? in
-            let folder = folderPath(id)
-            guard kind(folder) != nil else { return nil }
-            return (created(folder), entry(id, folder))
+        let folders = names.filter(PackFile.isValidID).compactMap { id -> (Date, String)? in
+            kind(folderPath(id)) == nil ? nil : (created(folderPath(id)), id)
+        }.sorted { ($0.0, $0.1) < ($1.0, $1.1) }
+        var entries = folders.prefix(Self.maxPacks).map { entry($0.1, folderPath($0.1)) }
+        if folders.count > Self.maxPacks {
+            let extra = folders[Self.maxPacks].1
+            entries.append(Entry(id: extra, enabled: false, pack: nil, invalidReason: "too many packs (over \(Self.maxPacks)); remove some"))
         }
-        return found.sorted { ($0.0, $0.1.id) < ($1.0, $1.1.id) }.map(\.1)
+        return entries
     }
 
     public func setEnabled(_ id: String, _ enabled: Bool) throws {
@@ -124,7 +133,7 @@ public struct PackStore: Sendable {
         func bad(_ reason: String) -> Entry { Entry(id: id, enabled: enabled, pack: nil, invalidReason: reason) }
         guard kind(folder) == S_IFDIR else { return bad("not a regular folder") }
         do {
-            guard let data = try ConfigFile.readRegularFile(folder + "/pack.json")?.data else { return bad("pack.json is missing") }
+            guard let data = try ConfigFile.readRegularFile(folder + "/pack.json", limit: PackFile.maxBytes + 1)?.data else { return bad("pack.json is missing") }
             let pack = try PackFile.parse(data)
             return pack.id == id ? Entry(id: id, enabled: enabled, pack: pack, invalidReason: nil) : bad("id does not match its folder")
         } catch let error as PackError {

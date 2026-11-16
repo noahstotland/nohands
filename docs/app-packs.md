@@ -64,9 +64,9 @@ Actions:
 | `kind` | Keys | Does |
 |---|---|---|
 | `press_key` | `key`, optional `modifiers` | Presses the chord. Keys: `a` to `z`, `zero` to `nine`, `return`, `tab`, `space`, `delete`, `forwardDelete`, `escape`, `up`, `down`, `left`, `right`, `home`, `end`, `pageUp`, `pageDown`, `f1` to `f12`, `minus`, `equal`, `leftBracket`, `rightBracket`, `semicolon`, `quote`, `comma`, `period`, `slash`, `backslash`, `grave`. Modifiers: `command`, `shift`, `option`, `control`, `function` |
-| `menu_item` | `title` | Presses the menu item with that title in the front app, up to 100 characters. List an app's titles with `nohands-cli menu --list` |
-| `open_app` | `app` | Opens or focuses the app by name, up to 60 characters |
-| `open_url` | `url` | Opens the page in your default browser. `https` only, with a host, no user or password, up to 2048 characters |
+| `menu_item` | `title` | Presses the menu item with that title in the front app, up to 100 characters. Titles match by words at run time: "Archive" can press "Archive Note", so name the full title. List an app's titles with `nohands-cli menu --list` |
+| `open_app` | `app` | Opens or focuses the app by name, up to 60 characters. Must be the last action in its command |
+| `open_url` | `url` | Opens the page in your default browser. `https` only, with a public host name, no user or password, up to 2048 characters. Must be the last action in its command |
 
 Anything else is rejected: typing text, clicks, mode changes, running commands.
 
@@ -79,6 +79,12 @@ A pack with any problem is rejected whole, and the error names the first rule br
 - A phrase over 60 characters or 8 words, empty once punctuation is stripped, or repeated (after lowercasing and dropping `. , ! ?`).
 - A control character in any text.
 - A **reserved phrase**: "stop" and the other stop phrases, and every phrase that changes mode or lets go of the mouse ("go to sleep", "wake up", "dictation mode", "stop dictating", "release click", "hide numbers", "cancel" and similar). Those belong to NoHands.
+- A command with more than 2 key presses that have no command, control or option, because single keys add up to typed text.
+- A `return` or `space` press (alone or with shift) after a `menu_item` in the same command: it could press the button the item opened.
+- An `open_app` or `open_url` that is not the last action, since focus leaves the pack's app.
+- An `open_url` host that is an IP address, `localhost`, ends in `.local` or `.localhost`, or has no dot.
+- A chord that switches apps or reaches the system: command-space, command-tab, command-option-escape, and the Empty Trash chords (command-shift-delete, command-option-shift-delete). The Empty Trash chords are allowed when the phrase says "empty" and "trash".
+- A `menu_item` title that is a short form of an irreversible item ("Empty" for "Empty Trash", "Place" for "Place order") unless the phrase asks for it, for the loose matching above.
 - A command that closes or quits without saying so. Command-W, command-Q, and menu items such as "Close Window", "Quit Notes" or "Empty Trash" are allowed only when the phrase asks for it: "quit notes" can press command-Q, "zap" cannot.
 
 Other packs and built-ins: where two packs claim the same phrase in the same app, the built-in pack wins, then the pack installed first; the other is listed as not working in the install summary and in `pack list`. A pack may still replace an ordinary NoHands phrase inside its own apps (the summary lists each one), but never a reserved one. A leading `open`, `go to`, `a` or `the` is ignored when a phrase is looked up, as for built-in packs.

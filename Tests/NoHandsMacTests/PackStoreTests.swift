@@ -63,3 +63,17 @@ private func packJSON(_ id: String, version: String = "1.0.0", phrase: String = 
     #expect(!fm.fileExists(atPath: root.path + "/bravo") && fm.fileExists(atPath: root.path + "/alpha/pack.json"))
     #expect(try store.loadEnabled().map(\.id) == ["alpha"])
 }
+
+@Test func packStoreCapsPacksAndReadsABoundedFile() throws {
+    let fm = FileManager.default
+    let root = fm.temporaryDirectory.appendingPathComponent("nohands-packs-\(UUID().uuidString)/nohands/packs")
+    defer { try? fm.removeItem(at: root.deletingLastPathComponent().deletingLastPathComponent()) }
+    let store = PackStore(root: root, postsChanges: false)
+    try store.install(packJSON("big"))
+    try Data(repeating: 0x20, count: 1 << 20).write(to: root.appendingPathComponent("big/pack.json"))   // a 1 MiB file
+    #expect(try store.list().first?.invalidReason?.contains("too large") == true)
+    for i in 0..<(PackStore.maxPacks + 5) where i > 0 { try fm.createDirectory(at: root.appendingPathComponent("p\(i)"), withIntermediateDirectories: false) }
+    let listed = try store.list()
+    #expect(listed.count == PackStore.maxPacks + 1 && listed.last?.invalidReason?.contains("too many packs") == true)
+    #expect(throws: PackStore.StoreError.tooManyPacks) { try store.install(packJSON("another")) }
+}

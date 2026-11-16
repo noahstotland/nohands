@@ -105,7 +105,8 @@ public enum ConfigFile {
     }
 
     /// The file's bytes and permission bits, or nil when it is missing. A symlink or anything but a regular file is refused.
-    static func readRegularFile(_ path: String) throws -> (data: Data, mode: mode_t)? {
+    /// With a `limit`, no more than that many bytes are read (the caller sees a file longer than it allows by getting `limit`).
+    static func readRegularFile(_ path: String, limit: Int? = nil) throws -> (data: Data, mode: mode_t)? {
         // O_NONBLOCK so a FIFO at the path cannot hang the open.
         let fd = open(path, O_RDONLY | O_NOFOLLOW | O_NONBLOCK)
         guard fd >= 0 else {
@@ -126,6 +127,7 @@ public enum ConfigFile {
             if n < 0 { throw SaveError.writeFailed(errnoCode()) }
             if n == 0 { return (data, st.st_mode & 0o777) }
             data.append(contentsOf: buffer[0..<n])
+            if let limit, data.count >= limit { return (data.prefix(limit), st.st_mode & 0o777) }
         }
     }
 

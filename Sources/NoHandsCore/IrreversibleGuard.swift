@@ -84,11 +84,26 @@ public enum IrreversibleGuard {
             }
             for nameWords in candidates {
                 for verb in verbs where contains(nameWords, words(verb.name)) && !asked.contains(verb.name) {
-                    if !verb.allowedBy.allSatisfy({ !$0.isDisjoint(with: goalWords) }) { asked.append(verb.name) }
+                    if !allows(verb, goalWords) { asked.append(verb.name) }
                 }
             }
         }
         return asked.isEmpty ? nil : asked.joined(separator: " and ")
+    }
+
+    private static func allows(_ verb: Verb, _ goalWords: Set<String>) -> Bool {
+        verb.allowedBy.allSatisfy { !$0.isDisjoint(with: goalWords) }
+    }
+
+    /// The verb a short menu title could press at run time, nil when none. Menu items are found by words (a prefix of
+    /// the title's words, then any title holding every spoken word), so "Empty" can press "Empty Trash…". A title is
+    /// held when its words, as `MenuMatch.fold` splits them, are a non-empty part of a guarded verb's name ("empty",
+    /// "trash", "place") and the goal does not allow that verb.
+    public static func namesLoosely(title: String, goal: String) -> String? {
+        let titleWords = Set(MenuMatch.fold(title))
+        guard !titleWords.isEmpty else { return nil }
+        let goalWords = goalVerbs(goal)
+        return verbs.first { titleWords.isSubset(of: MenuMatch.fold($0.name)) && !allows($0, goalWords) }?.name
     }
 
     /// The elements a name may press: those with exactly that title, else every one whose title contains it. Both

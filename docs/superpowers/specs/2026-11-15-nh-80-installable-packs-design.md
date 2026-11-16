@@ -48,12 +48,15 @@ Returns the pack or one `PackError` (a reason with no file content, safe to log)
 - An unknown action kind (including `type_text`, `click`, `set_mode`, `run_*` and every other schema kind), a bad key or modifier, a `menu_item` title over 100 characters, an `open_app` name over 60, a URL that isn't `https` or is over 2048 characters.
 - A **reserved phrase**: a stop phrase (`StopWords.isStop`), or a phrase whose global table entry contains `.setMode`, `.releaseMouse` or `.hideOverlay` ("go to sleep", "wake up", "dictation mode", "stop dictating", "release click", "hide numbers", "cancel"…).
 - A command blocked by `ShortcutGuard.blocked(actions, goal: phrase)` or held by `IrreversibleGuard.held(actions, labels: [:], goal: phrase)` for any of its phrases: "zap" cannot be command-Q, "tidy up" cannot be the "Empty Trash" menu item. "quit bear" can be command-Q.
+- **Key and focus rules** (a pack cannot type, or act outside its app): over 2 `press_key` actions in a command with no command, control or option modifier; a `return` or `space` press with no command, control or option after a `menu_item`; an `open_app` or `open_url` that is not the command's last action; a chord of command-space, command-tab, command-option-escape, command-shift-delete or command-option-shift-delete unless the phrase has the words "empty" and "trash".
+- **Loose menu titles**: menu items match by words at run time (`MenuMatch` prefix and contains tiers), so `IrreversibleGuard.namesLoosely(title:goal:)` also holds a `menu_item` title whose folded words are a part of a guarded verb's name ("empty" for "empty trash", "place" for "place order") when the phrase does not allow that verb.
+- **`open_url` hosts**: an IP literal, `localhost`, a `.local` or `.localhost` name, or a host with no dot.
 
 Any rejection skips the whole pack; the grammar and the other packs load as before.
 
 ### Summary (`PackSummary`)
 
-What the user sees before saying yes: name, version, author, apps (bundle IDs), phrase count, `open_url` hosts, `open_app` names, global phrases it overrides in its apps, and phrases shadowed by packs already installed. When the id is already installed: "replaces version X".
+What the user sees before saying yes: name, version, author, apps (bundle IDs), phrase count, `open_url` hosts, `open_app` names, global phrases it overrides in its apps (any phrase the global grammar parses without a pack, patterns like "press return" included), and phrases shadowed by packs already installed. When the id is already installed: "replaces version X".
 
 ## Lookup (`PackSet` in Core)
 
@@ -66,6 +69,7 @@ What the user sees before saying yes: name, version, author, apps (bundle IDs), 
 - **Off** is an empty `disabled` file in the pack's folder. No config.json writes.
 - **Load** reads each `<id>/pack.json` (no network), validates it, and skips a bad one with a logged reason. `pack list` and the menu show it as invalid.
 - **Remove** deletes only `packs/<id>/`, after checking `id` against the id pattern and refusing a symlinked folder.
+- **Limits on load**: at most 100 packs are listed or loaded (the first one past it is shown invalid, the rest ignored; install refuses a new id at 100), and `pack.json` is read up to 64 KiB + 1 byte. The app coalesces change notifications to one reload per 500 ms.
 - **Reload**: after a change, `PackStore` posts the local distributed notification `com.nohands.packs-changed` (no payload). The app reloads on it and when the menu opens, and swaps the grammar's `PackSet` on the main actor; an utterance already being routed uses the old one.
 
 ## Entry points
