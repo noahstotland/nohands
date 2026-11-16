@@ -59,10 +59,11 @@ private func steps(_ phrases: [String], _ actions: [[String: Any]]) -> [String: 
     // commands, bundle, the phrases that ask first
     let table: [([[String: Any]], String, Set<String>)] = [
         ([cmd(["send it", "tidy"])], "com.example.app", ["send it", "tidy"]),                 // a guarded verb
-        ([cmd(["move to trash"]), cmd(["undo send"], "z")], "com.example.app", ["move to trash"]),   // "trash"; undo is exempt
+        ([cmd(["move to trash"]), cmd(["undo send"], "z")], "com.example.app", ["move to trash", "undo send"]),   // "trash"; undo frees nothing
         ([cmd(["zap"], "d", ["command", "shift"])], mail, ["zap"]),                             // a marked built-in's actions
         ([steps(["ship it"], [send, escape])], mail, ["ship it"]),                              // a marked built-in's actions, plus more
         ([steps(["undo and delete"], [deleteItem])], "com.example.app", ["undo and delete"]),   // "undo" never frees an irreversible step
+        ([cmd(["zap"], "d", ["command", "shift", "function"])], mail, ["zap"]),                // the function modifier changes nothing
         ([cmd(["zap"], "d", ["command", "shift"])], "com.example.app", []),                     // other app: no match
         ([cmd(["delete it"]), cmd(["tidy up"])], "com.example.app", ["delete it", "tidy up"]),  // same actions as a forced one
         ([cmd(["tidy up"], confirm: true), cmd(["fine"], "m", confirm: false)], "com.example.app", ["tidy up"]),

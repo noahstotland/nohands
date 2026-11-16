@@ -82,17 +82,22 @@ public enum PackFile {
         let confirm: Bool?
     }
 
-    /// Whether a phrase must ask for a spoken yes: its words name a guarded verb (or "trash"), unless it starts with
-    /// "undo" and its actions hold nothing irreversible, or its actions contain a marked built-in command's actions
-    /// (in a row) for an app both packs cover.
+    /// Whether a phrase must ask for a spoken yes: its words name a guarded verb (or "trash"; "undo" frees nothing,
+    /// since a chord or URL cannot be checked for what it undoes), or its actions contain a marked built-in command's
+    /// actions (in a row, ignoring the function modifier) for an app both packs cover.
     static func forcesConfirm(phrase: String, actions: [Action], bundleIDs: Set<String>) -> Bool {
-        let words = CommandGrammar.normalize(phrase)
-        let undoes = words.first == "undo" && IrreversibleGuard.held(actions, labels: [:], goal: "") == nil
-            && !actions.contains { if case .menuItem(let title, _) = $0 { IrreversibleGuard.namesLoosely(title: title, goal: "") != nil } else { false } }
-        if !undoes, IrreversibleGuard.namesVerb(words) { return true }
+        if IrreversibleGuard.namesVerb(CommandGrammar.normalize(phrase)) { return true }
+        func plain(_ list: [Action]) -> [Action] {
+            list.map { action in
+                guard case .pressKey(let chord) = action else { return action }
+                return .pressKey(KeyChord(chord.key, chord.modifiers.subtracting([.function])))
+            }
+        }
+        let have = plain(actions)
         func contains(_ marked: [Action]) -> Bool {
-            guard !marked.isEmpty, actions.count >= marked.count else { return false }
-            return (0...(actions.count - marked.count)).contains { Array(actions[$0..<($0 + marked.count)]) == marked }
+            let marked = plain(marked)
+            guard !marked.isEmpty, have.count >= marked.count else { return false }
+            return (0...(have.count - marked.count)).contains { Array(have[$0..<($0 + marked.count)]) == marked }
         }
         return AppPacks.all.contains { pack in
             !pack.bundleIDs.isDisjoint(with: bundleIDs) && pack.confirms.contains { pack.phrases[$0].map(contains) ?? false }
