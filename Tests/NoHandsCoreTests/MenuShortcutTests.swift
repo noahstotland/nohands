@@ -11,6 +11,7 @@ final class MenuShortcutTests: XCTestCase {
             ("t", 0, 3, KeyChord(.t, [.command, .shift, .option])),
             ("1", 0, 4, KeyChord(.one, [.command, .control])),
             (",", 0, 0, KeyChord(.comma, cmd)),
+            (" ", 0, 2, KeyChord(.space, [.command, .option])),
             ("w", 0, 8, KeyChord(.w)),                                       // no-command bit
             ("", 36, 0, KeyChord(.return, cmd)),                             // no character: the virtual key
             (nil, 117, 1, KeyChord(.forwardDelete, [.command, .shift])),

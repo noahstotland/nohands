@@ -4,7 +4,7 @@ import Foundation
 public enum MenuShortcut {
     private static let characters: [Character: Key] = {
         var table: [Character: Key] = ["-": .minus, "=": .equal, "[": .leftBracket, "]": .rightBracket, ";": .semicolon,
-                                       "'": .quote, ",": .comma, ".": .period, "/": .slash, "\\": .backslash, "`": .grave]
+                                       "'": .quote, " ": .space, ",": .comma, ".": .period, "/": .slash, "\\": .backslash, "`": .grave]
         for key in Key.allCases where key.rawValue.count == 1 { table[Character(key.rawValue)] = key }
         for (digit, key) in zip("0123456789", [Key.zero, .one, .two, .three, .four, .five, .six, .seven, .eight, .nine]) {
             table[digit] = key
