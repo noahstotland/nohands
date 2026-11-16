@@ -1,7 +1,8 @@
 # NH-52: System controls by voice: Design
 
 **Date:** 2026-11-16  **Ticket:** [NH-52](https://github.com/noahstotland/nohands/issues/52)
-**Status:** Proposed
+**Status:** Shipped
+**Shipped:** in PR #161, with differences: [as-built](../as-built/2026-11-16-nh-52-system-controls.md)
 
 ## Intent
 
