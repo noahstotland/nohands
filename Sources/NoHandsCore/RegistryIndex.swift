@@ -5,6 +5,12 @@ import CryptoKit
 public struct RegistryError: Error, Equatable, Sendable {
     public let reason: String
     init(_ reason: String) { self.reason = reason }
+
+    /// Reasons a caller tells apart (everything else is a malformed registry or pack).
+    public static let signatureFailed = "signature check failed"
+    public static let unknownKey = "unknown signing key"
+    public static let hashMismatch = "download did not match the registry"
+    public static let packFailedPrefix = "pack failed checks: "
 }
 
 public struct RegistryEntry: Equatable, Sendable {
@@ -29,7 +35,7 @@ public struct RegistryIndex: Sendable {
         try expect(root, ["format", "keyID", "index", "signature"], "registry file")
         guard isOne(root["format"]) else { throw RegistryError("unsupported registry format (must be 1)") }
         guard let keyID = root["keyID"] as? String, let key = keys.first(where: { $0.keyID == keyID }) else {
-            throw RegistryError("unknown signing key")
+            throw RegistryError(RegistryError.unknownKey)
         }
         guard let indexText = root["index"] as? String, let index = Data(base64Encoded: indexText),
               let signatureText = root["signature"] as? String, let signature = Data(base64Encoded: signatureText) else {
@@ -37,7 +43,7 @@ public struct RegistryIndex: Sendable {
         }
         guard let publicKey = try? Curve25519.Signing.PublicKey(rawRepresentation: key.publicKey),
               publicKey.isValidSignature(signature, for: PackRegistry.signingInput(index)) else {
-            throw RegistryError("signature check failed")
+            throw RegistryError(RegistryError.signatureFailed)
         }
         let body = try object(index, "index")
         try expect(body, ["format", "serial", "packs"], "index")
@@ -59,9 +65,9 @@ public struct RegistryIndex: Sendable {
     /// The pack in `bytes` if it is the file the index promised: its SHA-256 matches, it passes every NH-80 pack rule,
     /// and its `id`, `version` and `bundleIDs` equal the entry's.
     public static func verifyPack(_ bytes: Data, against entry: RegistryEntry) throws(RegistryError) -> AppPack {
-        guard hex(SHA256.hash(data: bytes)) == entry.sha256 else { throw RegistryError("download did not match the registry") }
+        guard hex(SHA256.hash(data: bytes)) == entry.sha256 else { throw RegistryError(RegistryError.hashMismatch) }
         let pack: AppPack
-        do { pack = try PackFile.parse(bytes) } catch { throw RegistryError("pack failed checks: \(error.reason)") }
+        do { pack = try PackFile.parse(bytes) } catch { throw RegistryError(RegistryError.packFailedPrefix + error.reason) }
         guard pack.id == entry.id, pack.version == entry.version, pack.bundleIDs == Set(entry.bundleIDs) else {
             throw RegistryError("pack does not match its registry entry (id, version or apps differ)")
         }

@@ -2,7 +2,7 @@ import Foundation
 import CryptoKit
 
 /// Where packs can be found and which keys vouch for the index there. Pure checks on strings and bytes: nothing here
-/// reaches the network (`PackFetcher` in NoHandsMac does).
+/// reaches the network (the fetch lives in NoHandsMac).
 public enum PackRegistry {
     /// Stands for "no registry chosen yet". Any `.invalid` host (a reserved name that never resolves) means none set.
     public static let defaultURLPlaceholder = "https://registry-not-chosen.invalid/index.json"

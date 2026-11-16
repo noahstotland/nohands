@@ -188,7 +188,7 @@ public enum PackFile {
 
     /// Whether `spoken` is an `https` URL with a public host, no user or password, up to 2048 characters (the pack
     /// `open_url` rule, shared with the registry's pack URLs).
-    static func isPublicHTTPSURL(_ spoken: String) -> Bool {
+    public static func isPublicHTTPSURL(_ spoken: String) -> Bool {
         guard spoken.count <= 2048, case .ok = checkHTTPS(spoken) else { return false }
         return true
     }
