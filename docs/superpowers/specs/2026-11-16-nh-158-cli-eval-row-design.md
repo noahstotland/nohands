@@ -14,7 +14,7 @@ One new row in the `docs/cli.md` table, right after `scenarios` (the order the u
 
 | Subcommand | Does |
 |---|---|
-| `eval <file> [--runs N]` | Dry run: sends each phrase in the fixture file (e.g. `scripts/intent-eval.json`) to the configured backend `N` times (default 1), prints `PASS` or `FAIL` with the time per call, then accuracy, median time (without the first 2 calls) and model. Executes nothing; spends API credit with the Claude backend. Exits 0 even when cases fail; 1 for a bad file or with the backend off |
+| `eval <file> [--runs N]` | Dry run: sends each phrase in the fixture file (e.g. `scripts/intent-eval.json`) to the configured backend `N` times (default 1), prints `PASS` or `FAIL` with the time of each call, then accuracy, median time (without the first 2 calls) and model. Executes nothing; spends API credit with the Claude backend. Exits 0 even when cases fail; 1 for a bad file or `--runs`, or with the backend off |
 
 Facts behind the row (from `main.swift` and `CLIHelpers.swift`): `--runs` takes an integer of at least 1, anything else prints the usage and exits 1; an unreadable or invalid file throws and exits 1; `loadResolver` exits 1 with `error: LLM off` when the backend is off; there is no start delay.
 
