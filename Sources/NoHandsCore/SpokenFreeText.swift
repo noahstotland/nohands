@@ -32,7 +32,7 @@ extension Action {
         case .pressKey, .pressMouse, .releaseMouse, .scroll, .showGrid, .zoomGrid, .showLabels, .hideOverlay, .setMode,
              .moveWindow, .wait, .checkMedia, .ignore, .clearField, .setChecked, .setExpanded, .focusElement, .scrollTo,
              .scrollIn, .drag, .readClipboard, .readPage, .readValue, .readNotifications, .dismissNotifications, .waitFor,
-             .closeTab, .closeWindow, .selectTab, .closeOtherTabs, .listTabs, .look:
+             .closeTab, .closeWindow, .selectTab, .closeOtherTabs, .listTabs, .look, .system:
             return false
         }
     }

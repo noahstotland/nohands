@@ -400,6 +400,8 @@ extension OverlayController: OverlayPresenting {
                 hideStaleOverlay()
             case .volume(let change):
                 if let failure = changeVolume(change) { return failure }
+            case .system:
+                return "system controls are not wired up yet"
             case .setValue, .typeInto, .clearField, .selectOption, .setChecked, .setExpanded, .focusElement, .scrollTo,
                  .scrollIn, .drag, .clickIn, .menuItem, .closeApp, .windowAction, .clipboardSet, .readClipboard,
                  .readValue, .readNotifications, .dismissNotifications, .waitFor:

@@ -76,6 +76,17 @@ public struct CommandGrammar: Sendable {
             "mute": [.volume(.mute(true))], "mute sound": [.volume(.mute(true))],
             "unmute": [.volume(.mute(false))], "unmute sound": [.volume(.mute(false))],
 
+            "lock screen": [.system(.lockScreen)], "lock computer": [.system(.lockScreen)], "lock mac": [.system(.lockScreen)],
+            "screenshot": [.system(.screenshot(.screen))], "take screenshot": [.system(.screenshot(.screen))],
+            "screenshot screen": [.system(.screenshot(.screen))],
+            "screenshot selection": [.system(.screenshot(.selection))], "screenshot area": [.system(.screenshot(.selection))],
+            "screenshot window": [.system(.screenshot(.window))],
+            "mission control": [.system(.missionControl)], "show desktop": [.system(.showDesktop)],
+            "next space": [.system(.space(.right))], "previous space": [.system(.space(.left))],
+            "notification center": [.system(.notificationCenter)], "notification centre": [.system(.notificationCenter)],
+            "show notifications": [.system(.notificationCenter)],
+            "empty trash": [.system(.emptyTrash)],
+
             "is it playing": [.checkMedia], "is the video playing": [.checkMedia],
             "is anything playing": [.checkMedia],
 
@@ -176,6 +187,11 @@ public struct CommandGrammar: Sendable {
         if let hit = Self.parseTab(tokens, transcript: transcript) { return hit }
         if let edit = Self.parseEdit(transcript, textFocused: textFocused) { return [.editText(edit, otherwise: nil)] }
         if let hit = Self.parseMedia(tokens) { return hit }
+        if let request = Self.parseSettings(tokens) {
+            // An unknown pane after "open settings for" is the grammar's own phrase: `rejection` says so; the model never guesses.
+            guard case .pane(let pane) = request else { return nil }
+            return [.system(.openSettings(pane))]
+        }
         if let hit = parsePattern(tokens, transcript: transcript) { return hit }
         return Self.strippedExactMatch(tokens)
     }
@@ -330,6 +346,24 @@ public struct CommandGrammar: Sendable {
         return [.volume(.by(sign * (percent ? n : n * 10)))]
     }
 
+    private enum SettingsRequest { case pane(SettingsPane), unknown(String) }
+
+    /// "open settings for <pane>", "open <pane> settings", "<pane> settings" (an article after the lead is optional). An
+    /// unknown name is `.unknown` after "open settings for" only; "open <x> settings" with an unknown `<x>` is nil, so it
+    /// stays an app named that ("open system settings").
+    private static func parseSettings(_ tokens: [String]) -> SettingsRequest? {
+        var rest = tokens[...]
+        let opened = rest.first == "open"
+        if opened { rest = rest.dropFirst() }
+        func the(_ words: ArraySlice<String>) -> [String] { Array(words.first == "the" ? words.dropFirst() : words) }
+        if opened, rest.starts(with: ["settings", "for"]) {
+            let name = the(rest.dropFirst(2))
+            return SettingsPane.parse(name).map(SettingsRequest.pane) ?? .unknown(name.joined(separator: " "))
+        }
+        guard rest.count >= 2, rest.last == "settings" else { return nil }
+        return SettingsPane.parse(the(rest.dropLast())).map(SettingsRequest.pane)
+    }
+
     /// "<n> [percent]": an absolute level, clamped to 0 to 100.
     private static func volumeLevel(_ words: [String]) -> [Action]? {
         guard let n = NumberWords.parse(splitPercent(words).count) else { return nil }
@@ -362,10 +396,14 @@ public struct CommandGrammar: Sendable {
         }
     }
 
-    /// The HUD line for a `spell` phrase that can't be typed; nil for anything else. Such a phrase is
-    /// the grammar's own, so it must never fall through to the model, which could guess at what to type.
+    /// The HUD line for a `spell` phrase that can't be typed or an "open settings for" an unknown pane; nil for anything
+    /// else. Such a phrase is the grammar's own, so it must never fall through to the model, which could guess at what
+    /// to type or which pane to open.
     public func rejection(_ transcript: String) -> String? {
         let tokens = Self.normalize(transcript)
+        if case .unknown(let name)? = Self.parseSettings(tokens) {
+            return name.isEmpty ? "say open settings for and a pane, like bluetooth" : "no settings pane called \(name): say open system settings"
+        }
         guard tokens.first == "spell", case .failure(let error) = Speller.spell(Array(tokens.dropFirst())) else { return nil }
         switch error {
         case .empty: return "say spell and then the letters"
