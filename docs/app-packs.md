@@ -48,7 +48,7 @@ Nothing is written to `~/.config/nohands/packs/` until all of that has passed an
 
 ### Pick a registry
 
-The registry address and its key come from `config.json` ([Configuration](configuration.md#pack-registry)):
+The registry address and its key come from `config.json` ([Configuration](configuration.md)):
 
 ```json
 {

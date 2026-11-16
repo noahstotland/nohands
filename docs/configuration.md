@@ -35,7 +35,7 @@ Optional file `~/.config/nohands/config.json`; every key may be omitted. Changes
 | `routeMemory` | `true` | `false` stops saving and using routes for finished tasks (an existing `routes.json` is left as is); see [Tasks](tasks.md#multi-step-tasks) |
 | `vocabulary` | `[]` | up to 200 entries; see Vocabulary |
 | `macros` | `{}` | up to 50 macros of 20 steps; see Macros |
-| `packRegistryURL` | none set | an `https` address with a public host and no user or password; `""` turns the registry off; see [Pack registry](#pack-registry) |
+| `packRegistryURL` | none set | an `https` address with a public host and no user or password; `""` turns the registry off; see the Pack registry note below |
 | `packRegistryKey` | none | the registry's public key (base64); needed for any registry you set |
 
 The agent-desktop keys are under [agent-desktop harness keys](#agent-desktop-harness-keys).
