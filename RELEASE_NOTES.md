@@ -1,5 +1,11 @@
 # Release notes
 
+## 2026-11-16 Chrome voice commands: windows, tabs, bookmarks, history and more (NH-74) (#171)
+
+Merged 2026-11-16 8:28 pm UTC.
+
+In Chrome you can now say `new window`, `new incognito window`, `reopen closed tab`, `bookmark this page`, `show history`, `downloads`, `developer tools`, `address bar` and dozens more, with or without "open" in front. `open settings` opens Chrome's settings while Chrome is in front, and browsing data is `delete browsing data`.
+
 ## 2026-11-16 Finder voice commands (NH-78) (#169)
 
 Merged 2026-11-16 8:25 pm UTC.
