@@ -6,6 +6,8 @@
 
 ## Differs from the spec
 
+- `undo` exempts nothing in pack files: a pack's `undo send` asks too. Only the built-in Mail `undo send` stays unmarked. (The spec said a phrase starting with "undo" is never forced.)
+- A pack command is forced when its actions contain a marked built-in's actions in a row, with or without other steps, ignoring the `function` modifier. (The spec said "equal".)
 - The spec's forced rule lists the `IrreversibleGuard` verbs. It also forces the confirm on the word "trash" in a pack phrase, so "trash note" asks.
 - `nohands-cli run` uses the plain global grammar, so it refuses only global marked phrases (`empty trash`). A pack phrase is never run from the CLI, because `run` has no frontmost app.
 - A newly added phrase in a `PackDiff` does not carry `(asks first)`; the diff reports `now asks first` and `no longer asks first` for phrases that exist in both versions. `pack add`, `install` and `update` summaries show `(asks first)` on every phrase.
