@@ -32,6 +32,9 @@ import NoHandsCore
         var goal: String
         var transcript: String
         var trace: LatencyTrace
+        /// Set for a rewrite of the selection: it waits on the model like a task, so it holds the task slot (a spoken
+        /// stop cancels it and other speech waits) but needs no runner.
+        var rewrite: RewriteInstruction?
     }
 
     private let config: AppConfig
@@ -129,6 +132,7 @@ import NoHandsCore
                        screenshots: config.visionEnabled ? WindowScreenshotter(ax: ax) : nil)
         }
         self.executor = executor
+        executor.useRewriter(config: config)
         self.overlay = overlay
         self.ax = ax
         self.harness = harness
@@ -156,6 +160,7 @@ import NoHandsCore
     /// like `init` does (screenshots follow `config.visionEnabled`); a task already running finishes on its own
     /// runner, and a command held behind it goes to the new one. Other settings in `config` are not re-read.
     public func switchBackend(config: AppConfig, resolver: any IntentResolving, observer: ScreenObserver) {
+        executor.useRewriter(config: config)
         replaceRunner(TaskRunner(config: config, resolver: resolver, executor: executor, observer: observer,
                                  overlay: overlay, harness: harness,
                                  screenshots: config.visionEnabled ? WindowScreenshotter(ax: ax) : nil))
@@ -544,9 +549,11 @@ import NoHandsCore
         }
         lastTranscript = text
         let modeBefore = modeMachine.mode
-        // Edits that name words in the field need to know a text field has focus; any other phrase never asks.
+        // Edits that name words in the field, and rewrites of the selection, need to know a text field has focus; any
+        // other phrase never asks. Dictation types rewrite phrases as words, so only command mode asks for those.
         var textFocused = false
-        if ModeMachine.namesTextEdit(text, attention: attention) {
+        if ModeMachine.namesTextEdit(text, attention: attention)
+            || (modeBefore == .command && ModeMachine.namesRewrite(text, attention: attention)) {
             let ax = self.ax
             textFocused = await Task.detached { ax.isTextFocused() }.value
         }
@@ -576,6 +583,10 @@ import NoHandsCore
             guard canExecute else {
                 overlay.report(job.id, text: text, status: .dropped(PipelineText.cancelled))
                 outcome += " (cancelled)"; detail += " (cancelled)"; break
+            }
+            // A rewrite waits on the model: it runs in the task slot, where a spoken stop can cancel it.
+            if actions.count == 1, case .rewriteText(let how) = actions[0] {
+                return PendingTask(id: job.id, goal: "", transcript: text, trace: trace, rewrite: how)
             }
             let began = Date(), clock = ContinuousClock.now
             let failure = await executor.execute(actions)
@@ -623,14 +634,18 @@ import NoHandsCore
     /// Runs `first` in `activeTask`, then the held job (if any) inside the same task so it stays serialized; a held
     /// job that routes to the LLM runs as the next task.
     private func startTask(_ first: PendingTask) {
-        guard runner != nil else { return }
+        guard runner != nil || first.rewrite != nil else { return }
         activeTask = Task { [self] in
             var next: PendingTask? = first
             while let pending = next {
                 next = nil
                 applyPendingRunner()
-                guard let runner else { break }
-                await runTask(pending, runner: runner)
+                if let how = pending.rewrite {
+                    await runRewrite(pending, how)
+                } else {
+                    guard let runner else { break }
+                    await runTask(pending, runner: runner)
+                }
                 applyPendingRunner()
                 while next == nil, canExecute, let held = heldJob {
                     heldJob = nil
@@ -645,6 +660,38 @@ import NoHandsCore
             applyPendingRunner()
             activeTask = nil
         }
+    }
+
+    /// Runs a rewrite of the selection and shows how it ended on its row. The command log and the logs get counts only:
+    /// the selected text and the answer are model input and output the user has not read.
+    private func runRewrite(_ pending: PendingTask, _ how: RewriteInstruction) async {
+        let id = pending.id, text = pending.transcript
+        executor.onRewriteStart = { [weak self] in self?.overlay.report(id, text: text, status: .running(PipelineText.rewriting)) }
+        let began = Date(), clock = ContinuousClock.now
+        let failure = await executor.execute([.rewriteText(how)])
+        executor.onRewriteStart = nil
+        let report = executor.takeRewrite()
+        let durationMs = CommandLogEntry.milliseconds(clock.duration(to: .now))
+        let result: CommandLogEntry.Outcome
+        let kind: String
+        if failure == ActionExecutor.cancelled {
+            overlay.report(id, text: text, status: .stopped(PipelineText.stopped))
+            result = .stopped; kind = "stopped"
+        } else if let failure {
+            overlay.report(id, text: text, status: .failed(failure))
+            result = .failed(failure); kind = "failed"
+        } else {
+            overlay.report(id, text: text, status: .done(report?.preview ?? ""))
+            result = .done; kind = "done"
+        }
+        let action = report.map { "rewrote \($0.from) → \($0.to) characters" } ?? "rewrite \(how.kind)"
+        recordCommand(CommandLogEntry(date: began, phrase: text, resolver: .grammar,
+                                      steps: [.init(number: 1, action: action, result: result, startedAt: began, durationMs: durationMs)],
+                                      outcome: result, durationMs: durationMs))
+        var trace = pending.trace
+        trace.actionsDone = .now
+        PipelineLog.utterance(trace: trace, transcript: text, outcome: "rewrite(\(how.kind), \(kind))", detail: "rewrite(\(how.kind), \(kind)) \(action)")
+        publishStatus()
     }
 
     private func runTask(_ pending: PendingTask, runner: TaskRunner) async {

@@ -210,6 +210,36 @@ private func step(_ intent: String, _ status: StepStatus, _ actions: [Action] = 
     #expect(!r.pipeline.isTaskActive)
 }
 
+@MainActor @Test func aRewriteHoldsTheTaskSlotAndAStopCancelsItBeforeAnythingIsTyped() async {
+    let url = FileManager.default.temporaryDirectory.appendingPathComponent("nohands-log-\(UUID().uuidString).json")
+    defer { try? FileManager.default.removeItem(at: url) }
+    let log = CommandLogStore(url: url)
+    let hello = FocusedText(value: "Hello there.", selection: TextSpan(location: 12, length: 0), line: nil, rangeSettable: true)
+    // (spoken stop during the wait?, status the row ends on, typed, what the command log says)
+    let table: [(Bool, String, [String], CommandLogEntry.Outcome, String)] = [
+        (false, "Hi.", ["type:Hi."], .done, "rewrote 12 → 3 characters"),
+        (true, "stopped", [], .stopped, "rewrite shorter"),
+    ]
+    for (stop, status, typed, outcome, action) in table {
+        let r = rig(commandLog: log)
+        r.ax.fieldFocused = true; r.ax.field = hello
+        let entered = Gate()
+        r.executor.rewriter = FakeRewriter(.success("Hi.")) {
+            entered.open()
+            for _ in 0..<300 where stop && !Task.isCancelled { try? await Task.sleep(for: .milliseconds(10)) }
+        }
+        await r.pipeline.handle(transcript: "make that shorter", trace: trace())
+        #expect(r.pipeline.isTaskActive, "\(action)")                  // the wait holds the task slot, not the consumer
+        await entered.wait()
+        if stop { await r.pipeline.handle(transcript: "stop", trace: trace()) }
+        await r.pipeline.waitForTask()
+        #expect(r.typed == typed && r.overlay.statuses.last == status, "\(action)")
+        // Counts only: neither the text nor the answer is in the command log.
+        let entry = log.log.entries.first
+        #expect(entry?.outcome == outcome && entry?.steps.first?.action == action && !r.pipeline.isTaskActive, "\(action)")
+    }
+}
+
 @MainActor @Test func utteranceDuringTaskIsHeldThenRun() async {
     let r = rig()
     let entered = Gate(), release = Gate()
