@@ -34,6 +34,10 @@ func usage() -> Never {
       nohands-cli pack list          (installed packs: id, version, on or off, phrases, notes)
       nohands-cli pack remove <id>   (removes an installed pack)
       nohands-cli pack builtin <id>  (prints a built-in pack as a pack file, as a template)
+      nohands-cli pack new [--app <name or bundle id>] [--out <file>]
+                                     (reads the app's top-level menu items, waits 3 s without --app to read the app in
+                                      front, and writes a draft pack file, listing what it left out; never overwrites a
+                                      file or installs: edit it, then pack add)
       nohands-cli menu "<words>"     (waits 2 s, then prints the frontmost app's menu item those words name and presses it)
       nohands-cli menu --list        (waits 3 s, prints the frontmost app's menu items, without the Apple menu)
       nohands-cli run "<phrase>"...  (waits 2 s, executes each phrase in order, 0.8 s apart)
