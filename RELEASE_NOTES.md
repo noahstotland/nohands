@@ -1,5 +1,11 @@
 # Release notes
 
+## 2026-11-16 add the eval row to the CLI docs table (NH-158) (#174)
+
+Merged 2026-11-16 8:42 pm UTC.
+
+`docs/cli.md` now lists `nohands-cli eval`, which scores the configured backend on a fixture file.
+
 ## 2026-11-16 exact pack menu steps, negated quit/close and lookalike titles (NH-150) (#173)
 
 Merged 2026-11-16 8:30 pm UTC.
