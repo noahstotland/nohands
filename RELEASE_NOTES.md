@@ -1,5 +1,11 @@
 # Release notes
 
+## 2026-11-16 exact pack menu steps, negated quit/close and lookalike titles (NH-150) (#173)
+
+Merged 2026-11-16 8:30 pm UTC.
+
+Packs you install now press a menu item only when its title matches exactly, so a short title can no longer press a longer one. Saying "don't quit Safari" no longer lets a task quit it. Menu items disguised with lookalike letters are ignored.
+
 ## 2026-11-16 dark mode and Do Not Disturb by voice (NH-163) (#172)
 
 Merged 2026-11-16 8:29 pm UTC.
