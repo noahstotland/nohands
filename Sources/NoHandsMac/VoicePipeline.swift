@@ -96,6 +96,17 @@ import NoHandsCore
     /// The row the merge window opened for words still being spoken; the job they become takes it over.
     private var listeningID: Int?
 
+    /// A list of files a spoken "open file" found, waiting for a number (NH-58). It opens only from a grammar command
+    /// with no task running, and any task, pause or other command closes it.
+    private struct OpenPick {
+        var pick: FilePick
+        var text: String
+        var timer: Task<Void, Never>
+    }
+    private var openPick: OpenPick?
+    /// How long a file list waits for a pick. Tests shorten it.
+    var pickTimeout: Duration = FilePick.timeout
+
     private func newPromptID() -> Int {
         nextPromptID += 1
         return nextPromptID
@@ -415,6 +426,7 @@ import NoHandsCore
         stopGeneration += 1
         lastTask = nil
         stopped = true
+        closePick(.stopped(PipelineText.cancelled))
         mic?.stop()
         mic = nil
         for t in tasks { t.cancel() }
@@ -551,6 +563,7 @@ import NoHandsCore
             overlay.report(job.id, text: text, status: .dropped(held ? PipelineText.dropped : PipelineText.skippedBusy))
             return nil
         }
+        if await answersPick(job) { return nil }
         lastTranscript = text
         let modeBefore = modeMachine.mode
         // Edits that name words in the field need to know a text field has focus; any other phrase never asks.
@@ -594,7 +607,8 @@ import NoHandsCore
                 outcome += " (cancelled)"; detail += " (cancelled)"; break
             }
             let began = Date(), clock = ContinuousClock.now
-            let failure = await executor.execute(actions)
+            let failure = await executor.execute(actions, files: .spoken)
+            let offer = failure == nil ? executor.takeFileOffer() : nil
             // An edit moved the caret or the text: "scratch that" no longer matches the screen. Dictation that an edit
             // fell back to typing is the exception, the record is right.
             let typedAsWords = executor.editTypedOtherwise
@@ -603,16 +617,21 @@ import NoHandsCore
             }
             // Dictation typed as the fallback is the speaker's words, not a command: it never goes in the command log.
             if isCommand, !typedAsWords {
-                recordCommand(.grammar(date: began, phrase: text, action: PipelineText.describe(actions), failure: failure,
+                recordCommand(.grammar(date: began, phrase: text, action: PipelineText.describe(actions),
+                                       failure: failure.map(FileRefusal.redacted),
                                        durationMs: CommandLogEntry.milliseconds(clock.duration(to: .now))))
             }
             let reading = executor.takeReadings().first   // "is it playing" answers on the row
             if let failure {
                 overlay.report(job.id, text: text, status: .failed(failure))
                 outcome += " FAILED"
-                detail += " FAILED(\(failure))"
+                detail += " FAILED(\(FileRefusal.redacted(failure)))"
+            } else if let offer {
+                showPick(of: offer, for: job)
+                detail += " (\(offer.count) files)"
             } else {
-                overlay.report(job.id, text: text, status: .done(reading ?? ""))
+                let opened = actions.contains { if case .openFile = $0 { true } else { false } }
+                overlay.report(job.id, text: text, status: .done(reading ?? (opened ? "opened" : "")))
             }
         case .forgetRoutes(let all):
             overlay.report(job.id, text: text, status: .done(forgetRoutes(all: all)))
@@ -642,6 +661,7 @@ import NoHandsCore
     /// job that routes to the LLM runs as the next task.
     private func startTask(_ first: PendingTask) {
         guard runner != nil || first.macro != nil else { return }
+        closePick(.ignored(PipelineText.dropped))
         activeTask = Task { [self] in
             var next: PendingTask? = first
             while let pending = next {
@@ -733,8 +753,9 @@ import NoHandsCore
             switch routing {
             case .execute(let actions):
                 let began = Date(), clock = ContinuousClock.now
-                failure = await executor.execute(actions)
-                recordCommand(.grammar(date: began, phrase: phrase, action: PipelineText.describe(actions), failure: failure,
+                failure = await executor.execute(actions, files: .macro)
+                recordCommand(.grammar(date: began, phrase: phrase, action: PipelineText.describe(actions),
+                                       failure: failure.map(FileRefusal.redacted),
                                        durationMs: CommandLogEntry.milliseconds(clock.duration(to: .now))))
                 _ = executor.takeReadings()   // a reading ("is it playing") belongs to this step, not the next spoken command
                 if failure == nil, n < total { try? await Task.sleep(for: macroStepPause) }
@@ -787,6 +808,85 @@ import NoHandsCore
             return "forgot all routes"
         }
         return routes?.remove(dropped) == true ? "forgot that route" : "no route to forget"
+    }
+
+    // MARK: - File list (NH-58)
+
+    /// Shows the hits as numbered rows under the prompt and waits for a number. The row keeps its place on the board.
+    private func showPick(of ranked: [FileHit], for job: Job) {
+        let pick = FilePick(ranked: ranked, rowID: job.id, timeout: pickTimeout)
+        let timer = Task { @MainActor [weak self] in
+            try? await Task.sleep(until: pick.deadline, clock: .continuous)
+            guard !Task.isCancelled, self?.openPick?.pick.rowID == pick.rowID else { return }
+            self?.closePick(.ignored(PipelineText.noPick))
+        }
+        openPick = OpenPick(pick: pick, text: job.transcript, timer: timer)
+        overlay.report(job.id, trail: pick.trail)
+        overlay.report(job.id, text: job.transcript, status: .running(pick.prompt))
+    }
+
+    /// Takes the open list away and clears its rows from the corner panel; the caller reports how it ended.
+    private func takePick() -> OpenPick? {
+        guard let taken = openPick else { return nil }
+        taken.timer.cancel()
+        openPick = nil
+        overlay.report(taken.pick.rowID, trail: TaskTrail(maxSteps: 0))
+        return taken
+    }
+
+    private func closePick(_ status: PromptStatus) {
+        guard let taken = takePick() else { return }
+        overlay.report(taken.pick.rowID, text: taken.text, status: status)
+    }
+
+    /// True when the utterance was the answer to an open file list, or stray speech the list ignores. A stop phrase
+    /// closes the list and goes on to the normal stop path (false); so does anything that is not a number.
+    private func answersPick(_ job: Job) async -> Bool {
+        guard let current = openPick else { return false }
+        let text = job.transcript
+        // A stop is checked first, never read as a number, and never gated by the attention word.
+        if attention.isStop(text) { closePick(.stopped(PipelineText.cancelled)); return false }
+        if .now >= current.pick.deadline { closePick(.ignored(PipelineText.noPick)); return false }
+        if isUnaddressed(text) {
+            if job.shown { overlay.report(job.id, text: text, status: .ignored("")) }
+            PipelineLog.utterance(trace: job.trace, transcript: text, outcome: "ignore(not addressed)", detail: "ignore(not addressed)")
+            return true
+        }
+        var reply = text
+        if case .addressed(let rest) = attention.check(text) { reply = rest }
+        switch current.pick.reply(reply) {
+        case .cancel:
+            closePick(.stopped(PipelineText.cancelled))
+            return false
+        case .passThrough:
+            closePick(.ignored(PipelineText.dropped))
+            return false
+        case .retry:
+            overlay.report(job.id, text: text, status: .ignored(current.pick.retryPrompt))
+            overlay.report(current.pick.rowID, text: current.text, status: .running(current.pick.retryPrompt))
+            PipelineLog.utterance(trace: job.trace, transcript: text, outcome: "pick(retry)", detail: "pick(retry)")
+            return true
+        case .open(let index):
+            _ = takePick()
+            overlay.report(job.id, text: text, status: .heard)
+            guard canExecute else {
+                overlay.report(job.id, text: text, status: .dropped(PipelineText.cancelled))
+                overlay.report(current.pick.rowID, text: current.text, status: .stopped(PipelineText.cancelled))
+                return true
+            }
+            let began = Date(), clock = ContinuousClock.now
+            let failure = await executor.openPicked(current.pick.hits[index])
+            recordCommand(.grammar(date: began, phrase: text, action: "open file pick \(index + 1)",
+                                   failure: failure.map(FileRefusal.redacted),
+                                   durationMs: CommandLogEntry.milliseconds(clock.duration(to: .now))))
+            let shown: PromptStatus = failure.map { .failed($0) } ?? .done("opened")
+            overlay.report(job.id, text: text, status: shown)
+            overlay.report(current.pick.rowID, text: current.text, status: shown)
+            let outcome = failure == nil ? "pick(open)" : "pick(open) FAILED"
+            PipelineLog.utterance(trace: job.trace, transcript: text, outcome: outcome, detail: outcome)
+            publishStatus()
+            return true
+        }
     }
 
     private func recordCommand(_ entry: CommandLogEntry) {
