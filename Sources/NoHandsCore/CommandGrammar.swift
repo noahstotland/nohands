@@ -348,17 +348,22 @@ public struct CommandGrammar: Sendable {
 
     private enum SettingsRequest { case pane(SettingsPane), unknown(String) }
 
-    /// "open settings for <pane>", "open <pane> settings", "<pane> settings" (an article after the lead is optional). An
-    /// unknown name is `.unknown` after "open settings for" only; "open <x> settings" with an unknown `<x>` is nil, so it
-    /// stays an app named that ("open system settings").
+    /// "open settings for <pane>", "open <pane> settings", "<pane> settings" (an article after the lead is optional). After
+    /// "open settings for", filler words ("the", "please") are dropped and `&` reads as "and"; a name that is no pane is
+    /// `.unknown` when it is a short plain name, and nil (the model's) when it holds a compound word ("bluetooth and turn it
+    /// off") or runs past four words. "open <x> settings" with an unknown `<x>` is nil, so it stays an app named that
+    /// ("open system settings").
     private static func parseSettings(_ tokens: [String]) -> SettingsRequest? {
-        var rest = tokens[...]
+        var rest = tokens.map { $0 == "&" ? "and" : $0 }[...]
         let opened = rest.first == "open"
         if opened { rest = rest.dropFirst() }
         func the(_ words: ArraySlice<String>) -> [String] { Array(words.first == "the" ? words.dropFirst() : words) }
-        if opened, rest.starts(with: ["settings", "for"]) {
-            let name = the(rest.dropFirst(2))
-            return SettingsPane.parse(name).map(SettingsRequest.pane) ?? .unknown(name.joined(separator: " "))
+        if opened, the(rest).starts(with: ["settings", "for"]) {
+            let spoken = the(rest).dropFirst(2)
+            let name = Array(spoken.filter { !fillers.contains($0) })
+            if let pane = SettingsPane.parse(name) { return .pane(pane) }
+            guard name.count <= 4, name.allSatisfy({ !compoundMarkers.contains($0) }) else { return nil }
+            return .unknown(name.joined(separator: " "))
         }
         guard rest.count >= 2, rest.last == "settings" else { return nil }
         return SettingsPane.parse(the(rest.dropLast())).map(SettingsRequest.pane)

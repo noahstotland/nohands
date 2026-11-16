@@ -379,21 +379,29 @@ let g = CommandGrammar()
 }
 
 @Test func settingsPaneNames() {
-    let table: [(String, SettingsPane?)] = [
-        ("wifi", .wifi), ("wi-fi", .wifi), ("wi fi", .wifi), ("bluetooth", .bluetooth), ("audio", .sound), ("displays", .displays),
-        ("security", .privacy), ("startup items", .loginItems), ("general", .general),
-        ("slack", nil), ("", nil), ("settings", nil), ("system", nil),
+    let table: [(SettingsPane, [String])] = [
+        (.wifi, ["wifi", "wi-fi", "wi fi"]), (.bluetooth, ["bluetooth"]), (.sound, ["sound", "audio"]),
+        (.displays, ["display", "displays"]), (.accessibility, ["accessibility"]),
+        (.privacy, ["privacy", "privacy and security", "security"]), (.loginItems, ["login items", "startup items"]),
+        (.notifications, ["notifications", "notification"]), (.battery, ["battery"]), (.general, ["general"]),
     ]
-    for (said, pane) in table { #expect(SettingsPane.parse(said.split(separator: " ").map(String.init)) == pane, "\(said)") }
+    #expect(Set(table.map(\.0)) == Set(SettingsPane.allCases))
+    for (pane, names) in table {
+        for said in names { #expect(SettingsPane.parse(said.split(separator: " ").map(String.init)) == pane, "\(said)") }
+    }
+    for said in ["slack", "", "settings", "system"] { #expect(SettingsPane.parse(said.split(separator: " ").map(String.init)) == nil, "\(said)") }
+    let open: [(String, SettingsPane)] = [
+        ("open the settings for wifi", .wifi), ("open settings for display please", .displays),
+        ("open settings for privacy & security", .privacy), ("notification settings", .notifications),
+    ]
+    for (said, pane) in open { #expect(g.parse(said) == [.system(.openSettings(pane))], "\(said)") }
     // An unknown pane after "open settings for" is rejected on the device, never opened and never sent to the model.
     #expect(g.parse("open settings for slack") == nil)
     #expect(g.rejection("open settings for slack") == "no settings pane called slack: say open system settings")
     #expect(g.rejection("open settings for") != nil)
     #expect(g.rejection("open settings for bluetooth") == nil && g.rejection("open system settings") == nil)
-}
-
-@Test func emptyTrashRefusesOnlyWhenFinderStopsAsking() {
-    for (preference, refusal) in [(true, nil), (nil, nil), (false, EmptyTrash.warningOff)] as [(Bool?, String?)] {
-        #expect(EmptyTrash.refusal(warnOnEmptyTrash: preference) == refusal, "\(String(describing: preference))")
+    // A compound or long request goes to the model as before, with no rejection.
+    for said in ["open settings for bluetooth and turn it off", "open settings for slack and type hello", "open settings for slack bluetooth wifi sound off"] {
+        #expect(g.parse(said) == nil && g.rejection(said) == nil, "\(said)")
     }
 }

@@ -31,7 +31,7 @@ public enum SettingsPane: String, Equatable, Codable, Sendable, CaseIterable {
         "accessibility": .accessibility,
         "privacy": .privacy, "privacy and security": .privacy, "security": .privacy,
         "login items": .loginItems, "startup items": .loginItems,
-        "notifications": .notifications, "battery": .battery, "general": .general,
+        "notifications": .notifications, "notification": .notifications, "battery": .battery, "general": .general,
     ]
 
     /// The pane the words name (already normalized); nil for an unknown or empty name, never a guess.
