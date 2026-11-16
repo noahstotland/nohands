@@ -132,7 +132,7 @@ Manual on macOS 14 (listed in the PR, with any phrase that fails): each phrase i
   selection while the message list has focus; in a message body they scroll a line. Plain `up` / `down` stay global.
 - **`go to inbox` is ⌘1** (the first Favorites mailbox, Inbox by default) and **`go to sent` is the menu item by
   title**, because the chord for Sent depends on the Favorites bar. The path is `Mailbox > Go to Favorite Mailbox > Sent`, so
-  the Use This Mailbox For > Sent item can never match, and a path never falls back to agent-desktop (its menu search
+  the Use This Mailbox For > Sent item can never match, and a path of three or more parts never falls back to agent-desktop (its menu search
   ignores the path). Without Sent in the bar it fails with "no menu item called Sent".
 - **`search mail` only focuses Mail's search field** (⌥⌘F); the words to search for are then dictated or typed.
   "search mail for X" in one breath is left to the model.
