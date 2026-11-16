@@ -1,5 +1,11 @@
 # Release notes
 
+## 2026-11-16 installable app packs (NH-80) (#142)
+
+Merged 2026-11-16 1:38 pm UTC.
+
+You can add voice commands for more apps by installing a pack file with `nohands-cli pack add <file>`, no new build needed. NoHands shows what the pack does and asks before installing; packs only act in their own apps and can't type text, click, or touch "stop". Turn packs off or remove them from the new Packs menu.
+
 ## 2026-11-16 VS Code voice commands (NH-83) (#144)
 
 Merged 2026-11-16 1:33 pm UTC.
