@@ -197,3 +197,11 @@ import Foundation
     }
     #expect(try AppConfig.load(from: Data(#"{"macros":7,"silenceMs":500}"#.utf8), environment: [:]).silenceMs == 500)
 }
+
+@Test func routeMemoryIsOnUnlessTheConfigSaysFalse() throws {
+    let table: [(String?, Bool)] = [(nil, true), ("{}", true), (#"{"routeMemory":false}"#, false), (#"{"routeMemory":true}"#, true),
+                                    (#"{"routeMemory":"no"}"#, true), (#"{"routeMemory":0}"#, true), (#"{"routeMemory":null}"#, true)]
+    for (json, expected) in table {
+        #expect(try AppConfig.load(from: json.map { Data($0.utf8) }, environment: [:]).routeMemory == expected, "\(json ?? "nil")")
+    }
+}

@@ -28,7 +28,7 @@ private func load(_ json: String) throws -> Macros {
         (#"{"":["click"],"  ":["click"]}"#, [], 2),                                  // empty name
         (#"{"a b c d e f g":["click"]}"#, [], 1),                                    // over 6 words
         (#"{"stop it":["click"],"never mind":["click"],"cancel the game":["click"]}"#, [], 3),
-        (#"{"go back":["click"],"click":["click"],"spell":["click"]}"#, [], 3),      // the grammar owns it
+        (#"{"go back":["click"],"click":["click"],"spell":["click"],"Forget that route":["click"],"forget all routes":["click"]}"#, [], 5),   // the grammar owns it
         (#"{"a":[]}"#, [], 1),                                                       // no steps
         (#"{"a":["click","","click"],"b":["\#(long)"],"c":[5],"d":"click"}"#, [], 4),
         (#"{"a":[\#(twentyOne)]}"#, [], 1),

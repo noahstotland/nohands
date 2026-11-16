@@ -15,7 +15,7 @@ private func good() -> Doc {
                   cmd(["archive note"], [["kind": "menu_item", "title": "Archive Note"]]),
                   cmd(["bear help"], [["kind": "open_url", "url": "https://bear.app/faq/"]]),
                   cmd(["quit bear"], [cmdQ]),
-                  cmd(["empty the trash"], [["kind": "press_key", "key": "delete", "modifiers": ["command", "shift"]]]),
+                  cmd(["empty trash now"], [["kind": "press_key", "key": "delete", "modifiers": ["command", "shift"]]]),
                   cmd(["bear site"], [cmdN, ["kind": "open_url", "url": "https://bear.app/"]])]]
 }
 private func data(_ edit: (inout Doc) -> Void = { _ in }) -> Data {

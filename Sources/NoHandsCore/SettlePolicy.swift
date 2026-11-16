@@ -34,7 +34,7 @@ public enum SettlePolicy: Int, Comparable, Sendable {
             return loads ? .full : .oneLook
         case .openURL, .openApp, .click, .search, .searchSite, .menuItem, .clickIn, .windowAction, .selectOption,
              .setExpanded, .drag, .closeApp, .closeTab, .closeWindow, .selectTab, .goToTab, .closeOtherTabs, .pressMouse, .releaseMouse,
-             .showGrid, .zoomGrid, .showLabels, .hideOverlay, .setMode, .dismissNotifications:
+             .showGrid, .zoomGrid, .showLabels, .hideOverlay, .setMode, .dismissNotifications, .system:
             return .full
         }
     }

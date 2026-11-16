@@ -134,6 +134,8 @@ public enum Action: Equatable, Codable, Sendable {
     // Voice commands for what is playing and the system volume. Grammar only; the model has no kind for them.
     case media(MediaCommand)
     case volume(VolumeChange)
+    /// A system chore ("lock screen", "next space", "open bluetooth settings"). Grammar only; the model has no kind for it.
+    case system(SystemCommand)
 
     /// Ask for a picture of the focused window on the next step. Only the task loop gives it meaning; anywhere
     /// else the executor runs it as a successful no-op.

@@ -70,6 +70,9 @@ public struct AppConfig: Codable, Equatable, Sendable {
     public var visionFallback: Bool = false
     /// How long (ms) after a task ends that "no, the other one" and similar requests refer back to it. 0 turns it off.
     public var followUpWindowMs: Int = 30000
+    /// Remember the steps of tasks that ended `done` and hint them to the model when a similar goal comes in (NH-46).
+    /// Off, nothing is matched or saved and an existing routes file is left as it is.
+    public var routeMemory: Bool = true
     /// The user's own words: misheard spellings swapped for the right ones in every transcript (see `Vocabulary`).
     public private(set) var vocabulary = Vocabulary()
     /// The user's named step sequences, run by saying the name (see `Macros`).
@@ -87,7 +90,7 @@ public struct AppConfig: Codable, Equatable, Sendable {
         case maxTaskSteps, maxMediaTaskSteps, llmDeadlineMs, settleMs, maxObservedElements
         case localLlmDeadlineMs, localMaxObservedElements
         case desktopHarness, agentDesktopPath, agentDesktopTimeoutMs, agentDesktopSnapshotMs, agentDesktopHeadedFallback, agentDesktopTrace
-        case echoCancellation, attentionWord, visionFallback, vocabulary, macros, followUpWindowMs
+        case echoCancellation, attentionWord, visionFallback, vocabulary, macros, followUpWindowMs, routeMemory
     }
 
     public init(from decoder: Decoder) throws {
@@ -126,6 +129,8 @@ public struct AppConfig: Codable, Equatable, Sendable {
         d.attentionWord = try c.decodeIfPresent(String.self, forKey: .attentionWord) ?? d.attentionWord
         d.visionFallback = try c.decodeIfPresent(Bool.self, forKey: .visionFallback) ?? d.visionFallback
         d.followUpWindowMs = try c.decodeIfPresent(Int.self, forKey: .followUpWindowMs) ?? d.followUpWindowMs
+        // Lenient: a value that is not a bool keeps the default.
+        d.routeMemory = (try? c.decodeIfPresent(Bool.self, forKey: .routeMemory)) ?? d.routeMemory
         // Lenient: a `vocabulary` that is not a list is ignored and counted as one skipped entry; each bad entry is skipped inside `Vocabulary`.
         if c.contains(.vocabulary) {
             d.vocabulary = (try? c.decode(Vocabulary.self, forKey: .vocabulary)) ?? Vocabulary(skipped: 1)

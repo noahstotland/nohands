@@ -16,6 +16,8 @@ final class FakeInput: InputSynthesizing, @unchecked Sendable {
     var mediaKeys: [SystemMediaKey] = []
     func press(_ chord: KeyChord) throws { calls.append("press"); chords.append(chord) }
     func pressMediaKey(_ key: SystemMediaKey) throws { calls.append("mediaKey"); mediaKeys.append(key) }
+    var hardwareArrows: [KeyChord] = []
+    func pressHardwareArrow(_ chord: KeyChord) throws { calls.append("arrow"); hardwareArrows.append(chord) }
     func moveMouse(to point: CGPoint) throws { calls.append("move:\(Int(point.x)),\(Int(point.y))") }
     func click(at point: CGPoint, button: MouseButton, count: Int) throws { calls.append("click:\(Int(point.x)),\(Int(point.y))") }
     func mouseDown(_ button: MouseButton, at point: CGPoint) throws { calls.append("down") }
@@ -358,4 +360,16 @@ final class FakeRewriter: TextRewriting {
         await during()
         return try answer.get()
     }
+}
+
+/// Route memory held in an array, with no file.
+@MainActor final class FakeRouteStore: RouteStoring {
+    var routes: [Route] = []
+    func save(_ route: Route) { routes = RouteMemory.saving(route, into: routes) }
+    @discardableResult func remove(_ dropped: [Route]) -> Bool {
+        let before = routes.count
+        routes.removeAll { dropped.contains($0) }
+        return routes.count != before
+    }
+    func removeAll() { routes = [] }
 }

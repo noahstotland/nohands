@@ -114,10 +114,14 @@ public struct StepRequest: Sendable {
     public var vision: VisionInput? = nil
     /// The task this one follows up on; nil for a normal request. Sent on every step, before the goal.
     public var earlier: EarlierTask? = nil
+    /// A saved route that worked for a similar goal (NH-46); nil when none matched or route memory is off. Sent on every
+    /// step, as a hint the model follows only where the screen agrees.
+    public var pastRoute: Route? = nil
     public init(goal: String, step: Int, maxSteps: Int, history: [StepRecord], observation: ScreenObservation,
-                vision: VisionInput? = nil, earlier: EarlierTask? = nil) {
+                vision: VisionInput? = nil, earlier: EarlierTask? = nil, pastRoute: Route? = nil) {
         self.goal = goal; self.step = step; self.maxSteps = maxSteps
         self.history = history; self.observation = observation; self.vision = vision; self.earlier = earlier
+        self.pastRoute = pastRoute
     }
 
     /// Step 1 of a one-shot request (eval, CLI, legacy callers).

@@ -198,3 +198,21 @@ import Foundation
     #expect(m.routeStep("night game") == .resolveWithLLM("night game"))   // a step never expands a macro or needs the word
     #expect(m.routeStep("click") == .execute([.click(.cursor, button: .left, count: 1)]))
 }
+
+@Test func forgetRoutePhrasesRouteInCommandModeOnly() {
+    // (attention word, mode, said, routes)
+    let table: [(String, Mode, String, Routing)] = [
+        ("", .command, "Forget that route.", .forgetRoutes(all: false)),
+        ("", .command, "forget all routes", .forgetRoutes(all: true)),
+        ("computer", .command, "computer, forget that route", .forgetRoutes(all: false)),
+        ("computer", .command, "forget all routes", .ignore(reason: "not addressed")),
+        ("", .command, "forget that route please", .resolveWithLLM("forget that route please")),
+        ("", .command, "forget the route", .resolveWithLLM("forget the route")),
+        ("", .dictation, "forget all routes", .execute([.typeText("Forget all routes")])),
+        ("", .sleep, "forget all routes", .ignore(reason: "sleeping")),
+    ]
+    for (word, mode, said, expected) in table {
+        var m = ModeMachine(mode: mode, attention: AttentionGate(configured: word))
+        #expect(m.route(said) == expected, "\(word) \(mode) \(said)")
+    }
+}
