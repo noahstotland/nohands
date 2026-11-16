@@ -28,6 +28,9 @@ private func el(_ id: Int, _ title: String, role: String = "AXButton", states: [
         (click(2), labels, "reply to Anna", nil), (click(3), labels, "reply to Anna", nil),
         (click(4), labels, "reply to Anna", nil), (click(6), labels, "reply to Anna", nil),
         ([.menuItem("Mailbox > Erase Deleted Items")], labels, "tidy up", nil),
+        // empty parts of a menu path are dropped, as the executor does: the leaf is the last part with a name
+        ([.menuItem("Send>")], labels, "tidy up", "send"), ([.menuItem("Message > Send >> ")], labels, "tidy up", "send"),
+        ([.menuItem("Empty Trash >")], labels, "tidy up", "empty trash"), ([.menuItem(" > ")], labels, "tidy up", "unnamed menu item"),
         ([.typeText("send"), .scroll(.down, amount: 3), .click(.point(CGPoint(x: 1, y: 1)), button: .left, count: 1)],
          labels, "reply to Anna", nil),
         // the goal's own verb, in any form, allows it; each verb only by its own forms

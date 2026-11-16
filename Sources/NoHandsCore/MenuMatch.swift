@@ -39,6 +39,13 @@ public enum MenuMatch {
         return t.split(whereSeparator: { $0.isWhitespace }).joined(separator: " ")
     }
 
+    /// The part of a menu path that names the item to press: the last part of `path` split on ">" that is not empty
+    /// once trimmed ("File > Open Recent > Empty" is "Empty"; "Send>" is "Send"), nil when no part has a character.
+    /// The guards and both lookups in the executor use this one definition, so they cannot disagree on what is pressed.
+    public static func leaf(of path: String) -> String? {
+        path.split(separator: ">").map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.last { !$0.isEmpty }
+    }
+
     /// Titles in the Apple menu: never pressed by name, whichever way the item is found.
     public static let appleMenuTitles: Set<String> = [
         "about this mac", "system settings", "system preferences", "app store", "recent items", "force quit",
@@ -72,7 +79,7 @@ public enum MenuMatch {
             { $0.starts(with: words) },
             { title in words.allSatisfy(title.contains) },
         ]
-        let spokenPlain = plain(spoken.split(separator: ">").last.map(String.init) ?? spoken)
+        let spokenPlain = plain(leaf(of: spoken) ?? spoken)
         for matches in exactOnly ? Array(tiers.prefix(1)) : tiers {
             let hits = candidates.filter {
                 !folded[$0]!.isEmpty && matches(folded[$0]!) && (!exactOnly || plain(entries[$0].title) == spokenPlain)

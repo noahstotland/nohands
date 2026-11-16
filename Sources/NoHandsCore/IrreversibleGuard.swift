@@ -40,11 +40,7 @@ public enum IrreversibleGuard {
     /// Letters and digits only, so "Send…" and "File > Send" split into words; "check out" is one word, "checkout".
     private static func words(_ text: String) -> [String] {
         let cleaned = String(text.map { $0.isLetter || $0.isNumber ? $0 : " " })
-        var out: [String] = []
-        for word in CommandGrammar.normalize(cleaned) {
-            if word == "out", out.last == "check" { out[out.count - 1] = "checkout" } else { out.append(word) }
-        }
-        return out
+        return mergeCheckOut(CommandGrammar.normalize(cleaned))
     }
 
     private static func contains(_ words: [String], _ phrase: [String]) -> Bool {
@@ -75,6 +71,10 @@ public enum IrreversibleGuard {
         let goalWords = goalVerbs(goal)
         var asked: [String] = []
         for action in actions {
+            if case .menuItem(let path) = action, MenuMatch.leaf(of: path) == nil {
+                if !asked.contains(unnamedMenuItem) { asked.append(unnamedMenuItem) }
+                continue
+            }
             guard let name = targetName(of: action, labels: labels) else { continue }
             // The executor finds a named target by exact title, else a partial match ("order" finds "Place order"), in a
             // live walk that may differ from `labels`, so every label it could pick is checked too.
@@ -84,11 +84,46 @@ public enum IrreversibleGuard {
             }
             for nameWords in candidates {
                 for verb in verbs where contains(nameWords, words(verb.name)) && !asked.contains(verb.name) {
-                    if !verb.allowedBy.allSatisfy({ !$0.isDisjoint(with: goalWords) }) { asked.append(verb.name) }
+                    if !allows(verb, goalWords) { asked.append(verb.name) }
                 }
             }
         }
         return asked.isEmpty ? nil : asked.joined(separator: " and ")
+    }
+
+    private static func allows(_ verb: Verb, _ goalWords: Set<String>) -> Bool {
+        verb.allowedBy.allSatisfy { !$0.isDisjoint(with: goalWords) }
+    }
+
+    /// What a menu title with no name in it ("", ">", " > ") is called when it is held: the executor has nothing to
+    /// match, so a pack or model step may not carry one.
+    private static let unnamedMenuItem = "unnamed menu item"
+
+    /// The verb a short menu title could press at run time, nil when none. Only the last non-empty part of the path
+    /// counts (`MenuMatch.leaf`), since that is what the executor matches. Menu items are found by words (a prefix of the title's words, then any
+    /// title holding every spoken word), so "Empty" can press "Empty Trash…". A title is held when its plain form is
+    /// part of a guarded verb's name ("Emp", "rash"), or each of its words, as `MenuMatch.fold` splits them ("check
+    /// out" is one word, "checkout"), starts a word of the name ("Empty", "Plac", "Check"), and the goal does not
+    /// allow that verb.
+    public static func namesLoosely(title: String, goal: String) -> String? {
+        guard let leaf = MenuMatch.leaf(of: title) else { return unnamedMenuItem }
+        let plain = MenuMatch.plain(leaf)
+        let titleWords = mergeCheckOut(MenuMatch.fold(leaf))
+        guard !titleWords.isEmpty else { return nil }
+        let goalWords = goalVerbs(goal)
+        return verbs.first { verb in
+            let nameWords = mergeCheckOut(MenuMatch.fold(verb.name))
+            let loose = verb.name.contains(plain) || titleWords.allSatisfy { w in nameWords.contains { $0.hasPrefix(w) } }
+            return loose && !allows(verb, goalWords)
+        }?.name
+    }
+
+    private static func mergeCheckOut(_ words: [String]) -> [String] {
+        var out: [String] = []
+        for word in words {
+            if word == "out", out.last == "check" { out[out.count - 1] = "checkout" } else { out.append(word) }
+        }
+        return out
     }
 
     /// The elements a name may press: those with exactly that title, else every one whose title contains it. Both
@@ -114,7 +149,7 @@ public enum IrreversibleGuard {
         switch action {
         case .click(.label(let n), _, _), .click(.numbered(let n), _, _): return labels[n]?.title
         case .click(.element(let name), _, _), .clickIn(_, let name): return name
-        case .menuItem(let path): return path
+        case .menuItem(let path): return MenuMatch.leaf(of: path)
         case .setValue(.label(let n), _): return labels[n]?.title
         case .setValue(.named(let name), _), .selectOption(.named(let name), _), .typeInto(.named(let name), _),
              .setChecked(.named(let name), _): return name

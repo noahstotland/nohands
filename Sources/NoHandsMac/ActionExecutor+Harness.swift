@@ -133,7 +133,7 @@ extension ActionExecutor {
             if m.disabled { return "'\(name)' is disabled" }
             return outcome(await harness.act(.click(ref: m.ref, button: .left, count: 1)))
         case .menuItem(let name):
-            let last = name.split(separator: ">").last.map { $0.trimmingCharacters(in: .whitespaces) } ?? name
+            guard let last = MenuMatch.leaf(of: name) else { return "no menu item called \(name)" }
             // agent-desktop looks a title up in the whole menu bar and cannot keep to a submenu path, so a path of three or more
             // parts never falls back to it ("Mailbox > Go to Favorite Mailbox > Sent" must not find "Use This Mailbox For > Sent").
             let canFallBack = harness != nil && name.split(separator: ">").count < 3
