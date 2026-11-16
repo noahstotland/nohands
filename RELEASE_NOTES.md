@@ -1,5 +1,11 @@
 # Release notes
 
+## 2026-11-16 dark mode and Do Not Disturb by voice (NH-163) (#172)
+
+Merged 2026-11-16 8:29 pm UTC.
+
+Say `dark mode`, `light mode` or `toggle dark mode` to change the Mac's appearance. The first time, macOS asks to let NoHands control System Events; allow it and say the phrase again. `do not disturb on` and `do not disturb off` run two Shortcuts you make once, named `NoHands Do Not Disturb On` and `NoHands Do Not Disturb Off` (steps in the voice command docs).
+
 ## 2026-11-16 Chrome voice commands: windows, tabs, bookmarks, history and more (NH-74) (#171)
 
 Merged 2026-11-16 8:28 pm UTC.
