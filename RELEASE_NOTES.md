@@ -1,5 +1,13 @@
 # Release notes
 
+## 2026-11-16 cut the repo docs to a fraction of their length (NH-99) (#135)
+
+Merged 2026-11-16 12:28 am UTC.
+
+The repo docs are about 57% shorter. Nothing changes for users of the app.
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
 ## 2026-11-16 text editing by voice (NH-54) (#136)
 
 Merged 2026-11-16 12:23 am UTC.
