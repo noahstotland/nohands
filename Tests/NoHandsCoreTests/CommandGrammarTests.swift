@@ -207,7 +207,7 @@ let g = CommandGrammar()
         ("scroll to top gear", [.findOnPage("top gear", movePointer: true)]),
         ("find", [.pressKey(KeyChord(.f, [.command]))]),               // bare find stays command-F
         ("find the", [.pressKey(KeyChord(.f, [.command]))]),
-        ("scroll to the top", nil), ("scroll to bottom", nil), ("scroll to the top of the page", nil), ("scroll to", nil), ("scroll to the down", nil),
+        ("scroll to", nil), ("scroll to the down", nil), ("scroll to the left", nil),
         ("scroll down", [.scroll(.down, amount: 5)]),
     ]
     for (phrase, expected) in table { #expect(g.parse(phrase) == expected, "\(phrase)") }
@@ -404,4 +404,29 @@ let g = CommandGrammar()
     for said in ["open settings for bluetooth and turn it off", "open settings for slack and type hello", "open settings for slack bluetooth wifi sound off", "open settings for bluetooth to connect airpods", "open settings for sound to fifty"] {
         #expect(g.parse(said) == nil && g.rejection(said) == nil, "\(said)")
     }
+}
+
+@Test func pointerAndPageControlPhrases() {
+    func key(_ k: Key, _ m: Set<Modifier> = [.command]) -> [Action] { [.pressKey(KeyChord(k, m))] }
+    let drag: [Action] = [.drag(from: .numbered(5), to: .numbered(12))]
+    let hold: [Action] = [.moveCursor(.numbered(12)), .pressMouse(.left)]
+    let center: [Action] = [.moveCursor(.screenCenter)]
+    let table: [(String, [Action]?)] = [
+        ("drag 5 to 12", drag), ("drag from 5 to 12", drag), ("drag five to twelve", drag), ("drag two to three", [.drag(from: .numbered(2), to: .numbered(3))]),
+        ("click 12 and hold", hold), ("click twelve and hold", hold),
+        ("top of page", key(.up)), ("top of the page", key(.up)), ("scroll to the top", key(.up)), ("scroll to top of the page", key(.up)),
+        ("bottom of the page", key(.down)), ("scroll to bottom", key(.down)), ("scroll to the bottom of the page", key(.down)),
+        ("zoom in", key(.equal)), ("zoom out", key(.minus)), ("actual size", key(.zero)), ("reset zoom", key(.zero)),
+        ("move to center", center), ("move to the centre", center), ("move to the center of the screen", center),
+        // Unchanged: names, bare directions, the grid, the existing click counts and the caret moves.
+        ("drag the file to the trash", nil), ("drag to 12", nil), ("drag 5", nil), ("drag", nil),
+        ("click save and hold", [.click(.element(named: "save and hold"), button: .left, count: 1)]),
+        ("zoom 35", [.zoomGrid(35)]), ("move to 12", [.moveCursor(.numbered(12))]), ("scroll to the right", nil),
+        ("double click 12", [.click(.numbered(12), button: .left, count: 2)]),
+        ("right click 12", [.click(.numbered(12), button: .right, count: 1)]),
+        ("go to the top of the document", [.editText(.caret(.documentStart), otherwise: nil)]),
+    ]
+    for (phrase, expected) in table { #expect(g.parse(phrase) == expected, "\(phrase)") }
+    // A pack's own phrase still wins in its app.
+    #expect(g.parse("scroll to top", frontmost: "com.apple.Terminal") == key(.home))
 }

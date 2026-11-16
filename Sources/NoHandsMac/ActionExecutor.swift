@@ -621,6 +621,7 @@ extension OverlayController: OverlayPresenting {
         }
     }
 
+    var overlayShown: Bool { overlay.state != .none }
     func hideStaleOverlay() { if overlay.state != .none { overlay.hide() } }
 
     /// Open `url` in the named browser or the default one, then wait for it to come to the front when more
@@ -829,6 +830,12 @@ extension OverlayController: OverlayPresenting {
         return checkOnScreen(TargetResolver.resolveMove(t, overlay: overlay.state, cursor: cursor ?? .zero,
                                           elements: elements ?? (needsElements ? ax.actionableElements() : []),
                                           screens: ax.screenRectsCG(), labels: labelSnapshot), checked: direct)
+    }
+
+    /// A spoken stop: releases a mouse button a command left held (`hold click`), leaving any grid or labels shown.
+    public func releaseHeldButton() {
+        input.releaseAll()
+        pressed = []
     }
 
     /// Safety net for pause/quit: release any held mouse button and drop any grid/labels overlay.

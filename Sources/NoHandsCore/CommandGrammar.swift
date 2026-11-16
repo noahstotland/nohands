@@ -63,6 +63,11 @@ public struct CommandGrammar: Sendable {
             "spotlight": chord(.space, [.command]),
             "delete word": chord(.delete, [.option]),
 
+            "top of page": chord(.up, [.command]), "top of the page": chord(.up, [.command]),
+            "bottom of page": chord(.down, [.command]), "bottom of the page": chord(.down, [.command]),
+            "zoom in": chord(.equal, [.command]), "zoom out": chord(.minus, [.command]),
+            "actual size": chord(.zero, [.command]), "reset zoom": chord(.zero, [.command]),
+
             "play": [.media(.play)], "resume": [.media(.play)],
             "play the music": [.media(.play)],
             "pause": [.media(.pause)], "pause the video": [.media(.pause)], "pause the music": [.media(.pause)],
@@ -490,6 +495,7 @@ public struct CommandGrammar: Sendable {
             if tokens.count > 1, tokens[1] == "to" { return parseFind(tokens, transcript: transcript, skipping: 2, edgesAreWords: false) }
             return parseScroll(Array(tokens.dropFirst()))
         case "find": return parseFind(tokens, transcript: transcript, skipping: 1, edgesAreWords: true)
+        case "drag": return Self.parseDrag(Array(tokens.dropFirst()))
         case "zoom":
             let rest = Array(tokens.dropFirst())
             guard let n = NumberWords.parse(rest) else { return nil }
@@ -555,21 +561,34 @@ public struct CommandGrammar: Sendable {
         return words.count == tokens.count ? words : nil
     }
 
-    /// What "scroll to ..." can say that is not words on a page: an end of the page or a direction ("scroll to the down").
-    private static let scrollEdges: Set<String> = [
-        "top", "bottom", "top of page", "bottom of page", "top of the page", "bottom of the page",
-        "up", "down", "left", "right",
-    ]
+    private static let topEdges: Set<String> = ["top", "top of page", "top of the page"]
+    private static let bottomEdges: Set<String> = ["bottom", "bottom of page", "bottom of the page"]
+    /// The directions "scroll to ..." can say that are not words on a page ("scroll to the down"); they go to the model.
+    private static let scrollDirections: Set<String> = ["up", "down", "left", "right"]
+
+    /// "drag <n> to <m>" and "drag from <n> to <m>": two numbers, split at the first "to". nil for anything else
+    /// ("drag the file to the trash", "drag to 12"), which goes to the model.
+    private static func parseDrag(_ words: [String]) -> [Action]? {
+        let rest = words.first == "from" ? Array(words.dropFirst()) : words
+        guard let at = rest.firstIndex(of: "to"),
+              let from = NumberWords.parse(Array(rest[..<at])),
+              let to = NumberWords.parse(Array(rest[(at + 1)...])) else { return nil }
+        return [.drag(from: .numbered(from), to: .numbered(to))]
+    }
 
     /// "find <words>" and "scroll to <words>" (`skipping` is the words of the command itself): scroll the page to them
-    /// and leave the pointer there. Bare "find" and "find the" stay command-F (nil here, then the exact table), and
-    /// `scroll to` an edge or a direction stays with the model.
+    /// and leave the pointer there. Bare "find" and "find the" stay command-F (nil here, then the exact table).
+    /// `scroll to` the top or bottom of the page presses command-up or command-down; a direction stays with the model.
     private func parseFind(_ tokens: [String], transcript: String, skipping: Int, edgesAreWords: Bool) -> [Action]? {
         guard let raw = Self.rawWords(transcript, matching: tokens) else { return nil }
         let spoken = raw.dropFirst(skipping).joined(separator: " ")
         let normalized = PageFind.normalize(spoken)
         guard !normalized.isEmpty else { return nil }
-        if !edgesAreWords, Self.scrollEdges.contains(normalized) { return nil }
+        if !edgesAreWords {
+            if Self.topEdges.contains(normalized) { return [.pressKey(KeyChord(.up, [.command]))] }
+            if Self.bottomEdges.contains(normalized) { return [.pressKey(KeyChord(.down, [.command]))] }
+            if Self.scrollDirections.contains(normalized) { return nil }
+        }
         return [.findOnPage(spoken, movePointer: true)]
     }
 
@@ -584,6 +603,11 @@ public struct CommandGrammar: Sendable {
     }
 
     private func parseClick(_ rest: [String], button: MouseButton, count: Int) -> [Action]? {
+        // "click 12 and hold": the pointer to 12, then the left button down. A name keeps its meaning (the element).
+        if button == .left, count == 1, rest.count > 2, rest.suffix(2) == ["and", "hold"],
+           let n = NumberWords.parse(Array(rest.dropLast(2))) {
+            return [.moveCursor(.numbered(n)), .pressMouse(.left)]
+        }
         if let n = NumberWords.parse(rest) {
             return [.click(.numbered(n), button: button, count: count)]
         }
@@ -604,6 +628,12 @@ public struct CommandGrammar: Sendable {
 
     private func parseMove(_ tokens: [String]) -> [Action]? {
         if tokens.first == "to" {
+            var place = tokens.dropFirst()
+            if place.first == "the" { place = place.dropFirst() }
+            if place.first == "center" || place.first == "centre",
+               place.dropFirst().isEmpty || Array(place.dropFirst()) == ["of", "the", "screen"] {
+                return [.moveCursor(.screenCenter)]
+            }
             guard let n = NumberWords.parse(Array(tokens.dropFirst())) else { return nil }
             return [.moveCursor(.numbered(n))]
         }

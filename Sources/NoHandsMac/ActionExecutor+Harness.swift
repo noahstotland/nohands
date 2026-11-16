@@ -228,7 +228,18 @@ extension ActionExecutor {
         }
     }
 
+    /// Pauses that a spoken stop does not cut short: a drag runs to its release, so it never stops with the button down.
+    private static func pause(_ interval: Duration) async {
+        await Task.detached { try? await Task.sleep(for: interval) }.value
+    }
+
+    private static let dragSteps = 10
+
     private func drag(from: MoveTarget, to: MoveTarget) async throws -> String? {
+        // The labels or grid are stale once something has moved ("click 12" hides them the same way).
+        var usedOverlay = false
+        for case .numbered in [from, to] where overlayShown { usedOverlay = true }
+        defer { if usedOverlay { hideStaleOverlay() } }
         if let harness {
             func endpoint(_ t: MoveTarget) -> (ref: String?, xy: CGPoint?, failure: String?) {
                 if case .label(let n) = t, let e = labelSnapshot?[n], let ref = e.ref { return (ref, nil, nil) }
@@ -243,10 +254,22 @@ extension ActionExecutor {
         }
         guard case .point(let p1) = resolveMove(from) else { return "can't resolve drag start" }
         guard case .point(let p2) = resolveMove(to) else { return "can't resolve drag end" }
+        // Finder and most apps ignore a drag that arrives in one jump: press, wait, move in steps, wait, release.
         try input.moveMouse(to: p1)
         try input.mouseDown(.left, at: p1)
-        try input.moveMouse(to: p2)
-        try input.mouseUp(.left, at: p2)
+        do {
+            await Self.pause(.milliseconds(100))
+            for i in 1...Self.dragSteps {
+                let t = CGFloat(i) / CGFloat(Self.dragSteps)
+                try input.moveMouse(to: CGPoint(x: p1.x + (p2.x - p1.x) * t, y: p1.y + (p2.y - p1.y) * t))
+                await Self.pause(.milliseconds(15))
+            }
+            await Self.pause(.milliseconds(50))
+            try input.mouseUp(.left, at: p2)
+        } catch {
+            input.releaseAll()   // a drag that fails half way must not leave the button down
+            throw error
+        }
         return nil
     }
 

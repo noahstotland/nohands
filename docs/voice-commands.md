@@ -47,15 +47,19 @@ Everything NoHands understands without a model. Anything else goes to Claude or 
 | `open settings for <pane>`, `open <pane> settings`, `<pane> settings` | Opens that System Settings pane. Panes: `wifi` (`wi-fi`, `wi fi`), `bluetooth`, `sound` (`audio`), `displays` (`display`), `accessibility`, `privacy` (`privacy and security`, `security`), `login items` (`startup items`), `notifications`, `battery`, `general`. An unknown name after `open settings for` says `no settings pane called <name>: say open system settings` and opens nothing; `open <name> settings` with another name still opens an app of that name, and `open system settings` is unchanged. `open settings for <pane>` drops filler words such as `the`, `a` and `please`; a name with `and`, `then` and the like, or a name of more than four words after fillers are dropped, goes to the model |
 | `empty trash`, `empty the trash` | Presses Finder's `Empty Trash…` item, so Finder asks `Are you sure you want to permanently erase the items in the Trash?`: answer `enter` or `escape` yourself, NoHands does not. If Finder's `Show warning before emptying the Trash` is off the row says `Finder's Trash warning is off: turn it on in Finder Settings > Advanced, or empty the Trash by hand` and nothing is pressed; an empty Trash says `the Trash is already empty` |
 | `click`, `double click`, `right click`, `middle click` | Clicks at the pointer |
-| `click 42` | Clicks label or grid cell 42 |
+| `click 42`, `double click 12`, `right click 12` | Clicks label or grid cell 42; `double click` and `right click` take a number the same way |
 | `click save` | Clicks the element named "save" |
 | `click first video`, `click the second result`, `click the 3rd link`, `click last video` | With no exact title, the position among numbered elements (`first` to `tenth`, `1st`, `2nd`, … `last`); too few: `no element named …; say its label number from the list` |
-| `hold click` / `release click` | Press and release the button (drag) |
-| `move up 100`, `move to 12` | Moves the pointer |
+| `drag 5 to 12`, `drag from 5 to 12` | Drags from label or grid cell 5 to 12 (numbers only; `drag the file to the trash` goes to the model). The drag moves in steps and takes about a third of a second, and a stop during it waits for the release. NoHands can't undo a drag: say `undo` where the app supports it |
+| `hold click` / `release click`, `click 12 and hold` | Press and release the button (drag by hand). `click 12 and hold` moves to 12 and presses (numbers only, left button). Between them `move to 30`, `move down 100` and `move to center` are drags; `escape` cancels the drag in most apps. `release click` or any stop phrase (`stop`, `cancel`) lets go, with or without a task running, and `stop` keeps the grid up |
+| `move up 100`, `move to 12`, `move to center`, `move to the center of the screen` | Moves the pointer; `center` is the middle of the screen the pointer is on (`centre` works too) |
 | `scroll down 10` | Scrolls |
 | `find <words>` | Scrolls until text or an element with those words shows, pointer left on it; bare `find` is command-F; none: `no match for <words> on this page` |
-| `scroll to <words>` | Same as `find <words>`; `scroll to the top` and `scroll to the bottom` go to the model |
-| `grid`, `zoom 35`, `show numbers`, `hide` | Targeting overlays |
+| `scroll to <words>` | Same as `find <words>`; `scroll to the left` and the other directions go to the model |
+| `scroll to the top`, `scroll to top`, `top of page`, `top of the page` | Jumps to the top of the page (command-up; in a focused text field it moves the caret to the start). Terminal's own `scroll to top` still goes to the scrollback |
+| `scroll to the bottom`, `scroll to bottom`, `bottom of page`, `bottom of the page` | Jumps to the bottom of the page (command-down) |
+| `grid`, `zoom 35`, `show numbers`, `hide` | Targeting overlays; `zoom <n>` is the grid |
+| `zoom in`, `zoom out`, `actual size`, `reset zoom` | Makes the page bigger or smaller (command-equals, command-minus), or back to normal size (command-0), in browsers, Preview and most apps; always the page, never the grid. `zoom out` and `actual size` undo `zoom in` |
 | `open safari` | Opens or focuses an app |
 | `open youtube`, `open youtube.com`, `open reddit in safari` | Website in the default or named browser (any `name.com` works) |
 | `start dictating` / `stop dictating` | Switch between command and dictation mode |
@@ -127,7 +131,7 @@ An app can have phrases that work only while it is in front and win on a shared 
 | Messages | `close window` | Closes the Messages window (command-W) |
 | Messages | `delete conversation` | Opens Messages' own delete confirm |
 
-The global `new tab`, `close tab`, `close window`, `next tab`, `previous tab`, `find`, `page up` and `page down` also work in Terminal. Closing a tab or window with a running command shows Terminal's own confirm, which NoHands does not answer (say `enter` or `escape`). `stop` never interrupts a shell command; say `interrupt`.
+The global `new tab`, `close tab`, `close window`, `next tab`, `previous tab`, `find`, `page up` and `page down` also work in Terminal. Closing a tab or window with a running command shows Terminal's own confirm, which NoHands does not answer (say `enter` or `escape`). `stop` never interrupts a shell command; say `interrupt`. `top of page` and `bottom of page` press command-up and command-down in Terminal too; its own `scroll to top` and `scroll to bottom` still win there.
 
 The global `find`, `next tab`, `previous tab` and `search for <name>` also work in Messages. `delete conversation` asks first, and NoHands does not answer that question for you (say `enter` or `escape`). Sending stays `enter` (or `press return`), so there is no `send` phrase. Pin and unpin are not phrases yet: say them as a request and the model handles them.
 
