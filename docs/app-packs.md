@@ -151,7 +151,7 @@ A command may carry `"confirm": true` or `"confirm": false` (any other value is 
 
 Some commands are **forced** to ask, whatever the file says:
 
-- a phrase has a word NoHands guards, in any form but the past (send, sends, sending, delete, ...; `sent` and `deleted` are not guarded, so `go to sent` is fine), with punctuation splitting words (`send-it`) (send, delete, remove, discard, pay, buy, purchase, checkout, confirm, submit, publish, post, unsubscribe, transfer, place order, empty trash, and the word trash; `undo` does not free it: `undo send` in a pack asks too, while Mail's built-in `undo send` does not);
+- a phrase has a word NoHands guards (send, delete, remove, discard, pay, buy, purchase, checkout, confirm, submit, publish, post, unsubscribe, transfer, place order, empty trash, and the word trash), in any form but the past (`sending`, `sends`; not `sent` or `deleted`, so `go to sent` is fine), with punctuation splitting words (`send-it`). `undo` does not free it: `undo send` in a pack asks too, while Mail's built-in `undo send` does not;
 - its actions contain the actions of a built-in command that asks first, in an app both cover, with or without other steps, and whether or not the function key is held (so `zap` bound to command-shift-D in Mail asks, like `send message`);
 - its actions contain the actions of another forced command in the same pack.
 
