@@ -415,7 +415,7 @@ let g = CommandGrammar()
         ("drag 5 to 12", drag), ("drag from 5 to 12", drag), ("drag five to twelve", drag), ("drag two to three", [.drag(from: .numbered(2), to: .numbered(3))]),
         ("click 12 and hold", hold), ("click twelve and hold", hold),
         ("top of page", key(.up)), ("top of the page", key(.up)), ("scroll to the top", key(.up)), ("scroll to top of the page", key(.up)),
-        ("bottom of the page", key(.down)), ("scroll to bottom", key(.down)), ("scroll to the bottom of the page", key(.down)),
+        ("bottom of the page", key(.down)), ("bottom of page", key(.down)), ("scroll to bottom", key(.down)), ("scroll to the bottom of the page", key(.down)),
         ("zoom in", key(.equal)), ("zoom out", key(.minus)), ("actual size", key(.zero)), ("reset zoom", key(.zero)),
         ("move to center", center), ("move to the centre", center), ("move to the center of the screen", center),
         // Unchanged: names, bare directions, the grid, the existing click counts and the caret moves.

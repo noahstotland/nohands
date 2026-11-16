@@ -173,6 +173,9 @@ extension OverlayController: OverlayPresenting {
     /// How long an app that just came to the front may take to show a window (a cold launch on a loaded Mac).
     private let windowTimeout: Duration
     private var pressed: Set<MouseButton> = []
+    /// True while a native drag holds the left button; a spoken stop must not release it mid-drag (the drag's own
+    /// mouse-up, or its catch, does).
+    var dragInFlight = false
     /// Label snapshot of the current LLM-derived batch; `.label(n)` resolves only against this.
     var labelSnapshot: [Int: UIElementInfo]?
     /// The `Tabs:` list the current batch was chosen from; tab and window numbers resolve only against this.
@@ -833,7 +836,9 @@ extension OverlayController: OverlayPresenting {
     }
 
     /// A spoken stop: releases a mouse button a command left held (`hold click`), leaving any grid or labels shown.
+    /// Does nothing during a native drag: the drag releases its own button when it ends or fails.
     public func releaseHeldButton() {
+        guard !dragInFlight else { return }
         input.releaseAll()
         pressed = []
     }

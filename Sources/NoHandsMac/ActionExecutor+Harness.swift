@@ -239,7 +239,6 @@ extension ActionExecutor {
         // The labels or grid are stale once something has moved ("click 12" hides them the same way).
         var usedOverlay = false
         for case .numbered in [from, to] where overlayShown { usedOverlay = true }
-        defer { if usedOverlay { hideStaleOverlay() } }
         if let harness {
             func endpoint(_ t: MoveTarget) -> (ref: String?, xy: CGPoint?, failure: String?) {
                 if case .label(let n) = t, let e = labelSnapshot?[n], let ref = e.ref { return (ref, nil, nil) }
@@ -250,12 +249,16 @@ extension ActionExecutor {
             }
             let a = endpoint(from), b = endpoint(to)
             if let m = a.failure ?? b.failure { return m }
-            return outcome(await harness.act(.drag(fromRef: a.ref, fromXY: a.xy, toRef: b.ref, toXY: b.xy)))
+            let m = outcome(await harness.act(.drag(fromRef: a.ref, fromXY: a.xy, toRef: b.ref, toXY: b.xy)))
+            if m == nil, usedOverlay { hideStaleOverlay() }
+            return m
         }
         guard case .point(let p1) = resolveMove(from) else { return "can't resolve drag start" }
         guard case .point(let p2) = resolveMove(to) else { return "can't resolve drag end" }
         // Finder and most apps ignore a drag that arrives in one jump: press, wait, move in steps, wait, release.
         try input.moveMouse(to: p1)
+        dragInFlight = true
+        defer { dragInFlight = false }
         try input.mouseDown(.left, at: p1)
         do {
             await Self.pause(.milliseconds(100))
@@ -270,6 +273,7 @@ extension ActionExecutor {
             input.releaseAll()   // a drag that fails half way must not leave the button down
             throw error
         }
+        if usedOverlay { hideStaleOverlay() }
         return nil
     }
 
