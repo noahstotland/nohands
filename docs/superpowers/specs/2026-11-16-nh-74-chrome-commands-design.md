@@ -174,6 +174,10 @@ there, and `delete browsing data` opening the dialog only.
 - **No bare `back`, `forward` or `print`.** A one-word phrase fires before the rest of a sentence arrives; `go back`,
   `go forward` and `print page` cover them. `incognito`, `history`, `downloads`, `bookmarks`, `extensions` and
   `settings` are bare because they are nouns that don't start a longer command.
+- **`find next` and `find previous` step through Chrome's find matches** (⌘G, ⇧⌘G) while Chrome is in front.
+  Everywhere else they stay NH-44's find on page, which moves the pointer to the word "next" or "previous". In the
+  same way, `go to downloads`, `go to history` and `go to settings` open Chrome's pages there instead of typing the
+  words into the address bar.
 - **`home page` and `go home`, not `home`**, so the Home key and `open home` (the Home app) keep working.
 - **Pin and unpin are two phrases with two titles** (Chrome flips the menu title), not one toggle.
 - **Chrome only (`com.google.Chrome`)**, not Beta, Canary or other Chromium browsers, per the ticket.
