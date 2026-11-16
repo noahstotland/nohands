@@ -2,7 +2,7 @@
 
 **Date:** 2026-11-15  **Ticket:** [NH-82](https://github.com/noahstotland/nohands/issues/82)
 **Status:** Shipped
-**Shipped:** in PR #PRN, as specified
+**Shipped:** in PR #143, as specified
 
 ## Intent
 
@@ -121,7 +121,7 @@ Core, table-driven (`MessagesPackTests.swift`, Core only, no permissions), the s
   and "cancel that" with Messages in front give what they give with no app in front.
 
 Manual on macOS 14, listed in the PR along with any phrase that fails: each phrase with Messages in front, first as a
-dry run with `nohands-cli parse --app com.apple.MobileSMS "<phrase>"`, then by voice in the app. Also: "mark as read"
+dry run with the grammar tests, then by voice in the app. Also: "mark as read"
 on an unread conversation, and "delete conversation" showing Messages' confirm with nothing answering it.
 
 ## Calls I made
