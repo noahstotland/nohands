@@ -2,7 +2,7 @@
 
 **Date:** 2026-11-16  **Ticket:** [NH-78](https://github.com/noahstotland/nohands/issues/78)
 **Status:** Shipped
-**Shipped:** in PR #169, as specified
+**Shipped:** in PR #169, with differences: [as-built](../as-built/2026-11-16-nh-78-finder-commands.md)
 
 ## Intent
 

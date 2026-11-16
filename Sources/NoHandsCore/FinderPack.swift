@@ -4,7 +4,9 @@ extension AppPack {
     /// Finder's own shortcuts (macOS 14.5). Navigation keys are whole `go to` phrases, so NH-58's `open the downloads
     /// folder` and `open trash` are untouched and no bare place name is a key. There is no bare `delete`, `trash`
     /// or `home` (a bare `go to trash` must never trash the selection). `put back` is the menu item, so outside the
-    /// Trash it fails instead of pressing command-delete. Sidebar, path bar, hidden files and Quick Look are toggles.
+    /// Trash it fails instead of pressing command-delete. No trash key may follow "open" or "open the" as an NH-58
+    /// phrase ("open the trash file" is a file called trash), so `trash file` and `delete file` are not keys.
+    /// Sidebar, path bar, hidden files and Quick Look are toggles.
     static let finder: AppPack = {
         func chord(_ key: Key, _ modifiers: Set<Modifier> = [.command]) -> [Action] { [.pressKey(KeyChord(key, modifiers))] }
         let groups: [([String], [Action])] = [
@@ -30,7 +32,7 @@ extension AppPack {
             (["move here", "move it here", "move items here", "move them here", "paste as move", "paste here as a move"],
              chord(.v, [.command, .option])),
             (["move to trash", "move to the trash", "move it to the trash", "move it to trash", "move this to the trash",
-              "trash this", "trash it", "trash file", "trash this file", "delete file", "delete this file"], chord(.delete)),
+              "trash this", "trash it", "trash this file", "delete this file"], chord(.delete)),
             (["put back", "put it back"], [.menuItem("File > Put Back")]),
             (["show hidden files", "hide hidden files", "toggle hidden files"], chord(.period, [.command, .shift])),
             (["search", "search finder", "search files"], chord(.f)),

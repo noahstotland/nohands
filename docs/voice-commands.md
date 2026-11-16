@@ -143,7 +143,7 @@ An app can have phrases that work only while it is in front and win on a shared 
 | Messages | `tapback`, `react` | Opens the tapback picker |
 | Messages | `close window` | Closes the Messages window (command-W) |
 | Messages | `delete conversation` | Opens Messages' own delete confirm |
-| Finder | `new window`, `new folder` | Opens a new Finder window, or a new folder |
+| Finder | `new window`, `new folder` | Opens a new Finder window, or creates a new folder |
 | Finder | `go to downloads`, `go to my documents`, `go home` | Moves the front window to that folder (also desktop, applications, iCloud Drive) |
 | Finder | `go to folder` | Opens Go to Folder (then `type ~/Projects`, `enter`) |
 | Finder | `go up` | Goes up a folder |
