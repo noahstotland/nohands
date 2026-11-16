@@ -739,6 +739,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         do {
             config = try AppConfig.load(from: data, environment: env)
             fileHasKey = (try? AppConfig.load(from: data, environment: [:]))?.anthropicAPIKey?.isEmpty == false
+            // A count only: the words are never logged.
+            if config.vocabulary.skipped > 0 {
+                PipelineLog.warning("vocabulary: skipped \(config.vocabulary.skipped) entries (see docs/configuration.md)")
+            }
             if fileHasKey,
                let perms = (try? FileManager.default.attributesOfItem(atPath: url.path))?[.posixPermissions] as? Int,
                ConfigFileSecurity.isTooOpen(posixPermissions: perms) {

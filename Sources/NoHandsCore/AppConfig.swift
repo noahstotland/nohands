@@ -70,6 +70,8 @@ public struct AppConfig: Codable, Equatable, Sendable {
     public var visionFallback: Bool = false
     /// How long (ms) after a task ends that "no, the other one" and similar requests refer back to it. 0 turns it off.
     public var followUpWindowMs: Int = 30000
+    /// The user's own words: misheard spellings swapped for the right ones in every transcript (see `Vocabulary`).
+    public private(set) var vocabulary = Vocabulary()
 
     public static let defaultOllamaURL = "http://127.0.0.1:11434"
     public static let efforts = ["low", "medium", "high", "xhigh", "max"]
@@ -83,7 +85,7 @@ public struct AppConfig: Codable, Equatable, Sendable {
         case maxTaskSteps, maxMediaTaskSteps, llmDeadlineMs, settleMs, maxObservedElements
         case localLlmDeadlineMs, localMaxObservedElements
         case desktopHarness, agentDesktopPath, agentDesktopTimeoutMs, agentDesktopSnapshotMs, agentDesktopHeadedFallback, agentDesktopTrace
-        case echoCancellation, attentionWord, visionFallback, followUpWindowMs
+        case echoCancellation, attentionWord, visionFallback, vocabulary, followUpWindowMs
     }
 
     public init(from decoder: Decoder) throws {
@@ -122,6 +124,10 @@ public struct AppConfig: Codable, Equatable, Sendable {
         d.attentionWord = try c.decodeIfPresent(String.self, forKey: .attentionWord) ?? d.attentionWord
         d.visionFallback = try c.decodeIfPresent(Bool.self, forKey: .visionFallback) ?? d.visionFallback
         d.followUpWindowMs = try c.decodeIfPresent(Int.self, forKey: .followUpWindowMs) ?? d.followUpWindowMs
+        // Lenient: a `vocabulary` that is not a list is ignored and counted as one skipped entry; each bad entry is skipped inside `Vocabulary`.
+        if c.contains(.vocabulary) {
+            d.vocabulary = (try? c.decode(Vocabulary.self, forKey: .vocabulary)) ?? Vocabulary(skipped: 1)
+        }
         self = d
     }
 

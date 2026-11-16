@@ -32,6 +32,7 @@ Optional file `~/.config/nohands/config.json`; every key may be omitted. Changes
 | `attentionWord` | `""` | up to three words |
 | `visionFallback` | `false` | |
 | `followUpWindowMs` | `30000` | 0 to 120000; `0` turns follow-ups off |
+| `vocabulary` | `[]` | up to 200 entries; see Vocabulary |
 
 The agent-desktop keys are under [agent-desktop harness keys](#agent-desktop-harness-keys).
 
@@ -40,6 +41,16 @@ The agent-desktop keys are under [agent-desktop harness keys](#agent-desktop-har
 - **Session total:** once Claude has made a call, a second line shows the running total for this app session, e.g. `Claude this session: 14 calls, 31k in, 9k cached, 2k out` ("in" is fresh input including cache writes, "cached" is cache reads). It counts every call that got a reply, including the connection check and stopped tasks, resets when NoHands restarts (not on config reload or backend change), and holds counts only, never text. Details: `docs/superpowers/specs/2026-11-15-nh-112-token-usage-design.md`.
 - **Echo cancellation.** `echoCancellation` removes what the Mac's speakers play (macOS voice processing); set `false` if an external audio interface clashes.
 - **Attention word.** `attentionWord` (empty = off): command mode acts only on utterances starting with it (`computer, new tab` works, `new tab` alone does nothing). More than three words, or a stop phrase, counts as off. `stop`, `wake up` and the dictation escapes (`stop dictating`, `command mode`) work with or without it. Details: `docs/superpowers/specs/2026-11-05-nh-12-attention-word-design.md`.
+- **Vocabulary.** `vocabulary` lists words the recognizer mishears; every transcript has each misheard spelling swapped for the right one before anything acts on it:
+
+  ```json
+  "vocabulary": [
+    { "hear": "raptures", "say": "Raptors" },
+    { "hear": ["stream east", "streem east"], "say": "StreamEast" }
+  ]
+  ```
+
+  `hear` is a string or a list of up to five-word spellings; `say` is up to 100 characters. Whole words only, any case (`raptures` does not touch `enraptured`); the longest spelling wins, then the first entry; punctuation between the words of a spelling stops a match, and punctuation around a word is kept (`raptures,` becomes `Raptors,`). Dictation types `say` as written. Entries with no `say` or `hear`, or with `stop`, `cancel`, `never mind`, `abort` or `halt` in either, are skipped, and a stop, or a mode phrase such as `wake up` or `stop dictating`, is never rewritten (nor is a rewrite made that would form a stop). A `vocabulary` that is not a list counts as one skipped entry. Past 200 entries the rest are skipped. Do not list your `attentionWord` as a `hear` spelling: it would be rewritten and addressed commands would stop working. A launch log line gives the count skipped, never the words. Read at launch; restart to apply changes. `nohands-cli transcribe` and `parse` show the raw text. Details: `docs/superpowers/specs/2026-11-16-nh-56-custom-vocabulary-design.md`.
 - **Task loop keys.** `maxMediaTaskSteps` replaces `maxTaskSteps` for a request to play or watch. `llmDeadlineMs`: per model call. `settleMs`: the most wait for the screen to settle after an action. `maxObservedElements`: elements sent to the model. The local model uses `localLlmDeadlineMs` and `localMaxObservedElements` instead.
 - **Pausing mid-command.** `silenceMs` closes an utterance. A complete command and a stop phrase close after `earlySilenceMs` (one 256 ms chunk), so a pause of 350 ms or more inside acts on the first part ("click twenty … three" clicks 20); open-ended commands (`type …`, `open …`, `go to …`, `search for …`, `click <name>`, `play`, `skip ahead …`, `volume …`), unparsed speech, dictation and sleep keep `silenceMs`. Speech the grammar does not understand is then held `mergeWindowMs` (`mergeWindowUnfinishedMs` if it starts with `spell` or ends on a word like "the"), row `listening…`, later speech appended. A stop phrase (see Stopping; also "um, stop") is never held or merged: it goes through at once, and in command mode it discards the unfinished words before it. Details: `docs/superpowers/specs/2026-11-08-nh-36-early-grammar-endpointing-design.md`.
 - **How the model reads a request.** A one-sentence `intent`, then the actions. `intentEffort` sets how hard Claude thinks; `low` is fastest. `claude-haiku-5-5` at `low` is chosen for cost; for more, set `"intentModel": "claude-opus-5-5"` and `"intentEffort": "medium"`. No server-side fallback on Haiku.

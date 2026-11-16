@@ -85,7 +85,7 @@ public enum EndpointReplay {
 
         let (jobs, jobCont) = AsyncStream<VoicePipeline.ASRJob>.makeStream(bufferingPolicy: .bufferingNewest(4))
         let recorder = Recorder(inner: transcriber, log: log)
-        let asr = Task { await VoicePipeline.runASR(jobs, transcriber: recorder, merge: merge) }
+        let asr = Task { await VoicePipeline.runASR(jobs, transcriber: recorder, merge: merge, vocabulary: config.vocabulary, attention: attention) }
 
         var assembler = UtteranceAssembler()
         var voiceEnd: ContinuousClock.Instant?
