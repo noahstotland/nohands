@@ -24,11 +24,7 @@ public enum MenuShortcutReader {
     static let maxItems = 1500
 
     /// The menu items of the app with `pid`, one level in (`File > Save`, not `File > Open Recent > x`).
-    public static func entries(pid: pid_t) throws(ReadError) -> [MenuEntry] {
-        try read(pid: pid).entries
-    }
-
-    /// Like `entries(pid:)`, and says when the time or item budget cut the read short.
+    /// Says when the time or item budget cut the read short.
     public static func read(pid: pid_t) throws(ReadError) -> (entries: [MenuEntry], stoppedEarly: Bool) {
         let appEl = AXUIElementCreateApplication(pid)
         AXUIElementSetMessagingTimeout(appEl, 0.25)
