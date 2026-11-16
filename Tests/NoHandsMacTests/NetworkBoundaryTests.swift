@@ -22,8 +22,7 @@ private func swiftFiles() -> [(path: String, text: String)] {
     }
     let callers = mentioning(["PackFetcher"], in: files)
     #expect(callers.contains("NoHandsMac/PackFetcher.swift") && callers.isSubset(of: [
-        "NoHandsMac/PackFetcher.swift", "NoHands/PackBrowser.swift", "NoHands/AppDelegate.swift",
-        "nohands-cli/PackCommands.swift", "nohands-cli/RegistryCommands.swift"]), "PackFetcher callers: \(callers)")
+        "NoHandsMac/PackFetcher.swift", "NoHands/PackBrowser.swift", "nohands-cli/PackCommands.swift"]), "PackFetcher callers: \(callers)")
     let commandPath = files.filter { f in
         ["VoicePipeline.swift", "CommandGrammar.swift", "ModeMachine.swift", "TaskRunner.swift"].contains { f.path.hasSuffix("/" + $0) } || f.path.contains("/ActionExecutor")
     }
