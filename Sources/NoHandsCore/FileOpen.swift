@@ -158,6 +158,8 @@ public struct FileFacts: Equatable, Sendable {
     public var found: String
     public var resolved: String
     public var hidden = false
+    /// A Finder alias: `realpath` does not follow it, so it is refused rather than guessed at.
+    public var isAlias = false
     public var isDirectory = false
     public var isRegularFile = false
     public var isPackage = false
@@ -207,6 +209,7 @@ public enum FileOpenGuard {
         "app", "command", "tool", "sh", "bash", "zsh", "csh", "ksh", "fish", "py", "pl", "rb", "js", "jar", "terminal",
         "workflow", "action", "pkg", "mpkg", "dmg", "mobileconfig", "prefpane", "saver", "kext", "plugin", "bundle",
         "qlgenerator", "scpt", "scptd", "applescript", "osascript", "webloc", "inetloc", "fileloc", "url", "shortcut",
+        "tcsh", "pyw", "afploc", "ftploc",
     ]
 
     private static func parts(_ path: String) -> [String] { path.split(separator: "/").map(String.init) }
@@ -238,7 +241,7 @@ public enum FileOpenGuard {
         if let found = below(f.found, f.foundHome), isHiddenOrLibrary(found) { return .refuse(.outside) }
         // 4. Never executable.
         let ext = f.fileExtension.lowercased()
-        if f.conformsToExecutable || deniedExtensions.contains(ext) || (f.isPackage && !f.conformsToContent)
+        if f.isAlias || f.conformsToExecutable || deniedExtensions.contains(ext) || (f.isPackage && !f.conformsToContent)
             || (f.isRegularFile && f.hasExecuteBit) { return .refuse(.runnable) }
         // 5. Exists and is readable.
         return f.exists && f.readable ? .allow : .refuse(.gone)

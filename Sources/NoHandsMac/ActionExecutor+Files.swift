@@ -58,7 +58,7 @@ extension ActionExecutor {
         for hit in FileRank.order(found, words: query.words) {
             switch FileOpenGuard.decide(fileOpener.facts(forPath: hit.path)) {
             case .allow: allowed.append(hit)
-            case .refuse(let why): refusal = refusal ?? why.message(name: hit.name)
+            case .refuse(let why): refusal = refusal ?? why.message(name: refusalName(hit))
             }
         }
         return (allowed, refusal)
@@ -66,12 +66,17 @@ extension ActionExecutor {
 
     private func open(_ hit: FileHit) async -> String? {
         let facts = fileOpener.facts(forPath: hit.path)
-        if case .refuse(let why) = FileOpenGuard.decide(facts) { return why.message(name: hit.name) }
+        if case .refuse(let why) = FileOpenGuard.decide(facts) { return why.message(name: refusalName(hit)) }
         let folder = facts.isDirectory && !facts.isPackage
-        guard await fileOpener.open(path: hit.path, inFinder: folder) else { return "couldn't open that file" }
+        // The path the guard checked, not the spelling the search found.
+        guard await fileOpener.open(path: facts.resolved, inFinder: folder) else { return "couldn't open that file" }
         noteOpened(folder: folder)
         return nil
     }
+
+    /// A spoken refusal names the hit (it was on screen); a macro or the model gets no file name, which would reach the
+    /// model and the logs.
+    private func refusalName(_ hit: FileHit) -> String { fileContext == .spoken ? hit.name : "a file" }
 
     /// The model is told what happened, in words that name nothing; a spoken command's row says "opened" itself.
     private func noteOpened(folder: Bool) {

@@ -108,13 +108,14 @@ import NoHandsCore
             return gone
         }
         var f = FileFacts(home: home, foundHome: foundHome, found: path, resolved: resolved)
-        let keys: Set<URLResourceKey> = [.isHiddenKey, .isDirectoryKey, .isRegularFileKey, .isPackageKey, .contentTypeKey, .isReadableKey]
+        let keys: Set<URLResourceKey> = [.isHiddenKey, .isDirectoryKey, .isRegularFileKey, .isPackageKey, .contentTypeKey, .isReadableKey, .isAliasFileKey]
         let values = try? URL(fileURLWithPath: resolved).resourceValues(forKeys: keys)
         f.hidden = values?.isHidden ?? false
         f.isDirectory = values?.isDirectory ?? false
         f.isRegularFile = values?.isRegularFile ?? false
         f.isPackage = values?.isPackage ?? false
         f.readable = values?.isReadable ?? false
+        f.isAlias = values?.isAliasFile ?? false
         if let type = values?.contentType {
             f.conformsToExecutable = type.conforms(to: .executable)
             f.conformsToContent = type.conforms(to: .content)

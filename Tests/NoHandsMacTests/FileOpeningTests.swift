@@ -38,6 +38,8 @@ private func file(_ name: String, in dir: String = "Documents") -> FileHit { Fil
         ([], .named("budget", kind: .folder), .macro, "no folder called \"budget\"", [], false),
         ([], .named("budget", kind: .file), .model, "no file matched", [], false),
         ([script], .named("budget", kind: .file), .spoken, "won't open budget.sh: it can run as a program", [], false),
+        ([script], .named("budget", kind: .file), .model, "won't open a file: it can run as a program", [], false),
+        ([script], .named("budget", kind: .file), .macro, "won't open a file: it can run as a program", [], false),
         ([script, a], .named("budget", kind: .file), .spoken, nil, [a.path], false),
         ([a, b], .recent(.spreadsheet), .spoken, nil, [a.path], false),
         ([], .recent(.keynote), .spoken, "no recent keynote", [], false),
