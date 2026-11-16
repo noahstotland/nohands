@@ -1,7 +1,8 @@
 # NH-59: Grammar for pointer and page control: Design
 
 **Date:** 2026-11-16  **Ticket:** [NH-59](https://github.com/noahstotland/nohands/issues/59)
-**Status:** Draft
+**Status:** Shipped
+**Shipped:** in PR #164, as specified
 
 ## Intent
 
