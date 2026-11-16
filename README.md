@@ -37,7 +37,7 @@ Build from an up-to-date `main`. The first build downloads and compiles [FluidAu
 1. **Microphone:** macOS asks at start. If you say no, the menu shows "Microphone denied" with an item that opens Settings.
 2. **Accessibility:** enable NoHands under System Settings > Privacy & Security > Accessibility. A red "Grant Accessibility…" item shows until you do.
 3. **Screen Recording** (optional): only for `visionFallback` with Claude. A red "Grant Screen Recording…" item opens the setting.
-4. **Automation** (optional): macOS asks the first time you say `dark mode` or `light mode`, to let NoHands control System Events. Allow it and say the phrase again.
+4. **Automation** (optional): macOS asks the first time you say a dark-mode phrase (`dark mode`, `light mode` or `toggle dark mode`), to let NoHands control System Events. Allow it and say the phrase again.
 
 NoHands starts listening once Microphone and Accessibility are granted. Every ad-hoc rebuild is a new app to macOS, so you grant them again each time (`tccutil reset AppleEvents dev.nohands.app` clears the Automation one); [Using NoHands](docs/using-nohands.md) shows how to sign with a stable identity to avoid that. It also covers the on-screen panels, Start at Login and logs.
 

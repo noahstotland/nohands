@@ -19,7 +19,7 @@ Build from an up-to-date `main` (`scripts/bundle.sh` warns when behind `origin/m
 1. **Microphone:** macOS asks at start; on Don't Allow the menu shows "Microphone denied" with an open-Settings item.
 2. **Accessibility:** enable NoHands under System Settings > Privacy & Security > Accessibility; a red "Grant Accessibility…" item shows until granted.
 3. **Screen Recording** (optional): with `visionFallback` on and Claude as backend, a red "Grant Screen Recording…" item opens System Settings > Privacy & Security > Screen & System Audio Recording; it often applies after a relaunch. Without it steps run without a picture (`screen recording not granted`).
-4. **Automation** (optional): asked only the first time you say `dark mode` or `light mode`, for System Events. The row says to allow it and say the phrase again; if you decline, `open automation settings` opens the list.
+4. **Automation** (optional): asked only the first time you say a dark-mode phrase (`dark mode`, `light mode` or `toggle dark mode`), for System Events. The row says to allow it and say the phrase again; if you decline, `open automation settings` opens the list.
 5. NoHands listens only once Microphone and Accessibility are granted, re-checking Accessibility every few seconds.
 
 **Ad-hoc signature:** every rebuild is a new app to macOS, so re-grant Microphone, Accessibility, Screen Recording and Automation each time (to clear a stale Automation grant: `tccutil reset AppleEvents dev.nohands.app`). A stable identity avoids this:
@@ -28,7 +28,7 @@ Build from an up-to-date `main` (`scripts/bundle.sh` warns when behind `origin/m
 CODESIGN_IDENTITY="Apple Development: Your Name (TEAMID)" scripts/bundle.sh
 ```
 
-The app is not sandboxed and is signed without the hardened runtime, so it needs no entitlement to send Apple Events. A later build signed with `--options runtime` (for notarization) must pass an entitlements file with `com.apple.security.automation.apple-events` set to true to `codesign`, or `dark mode` fails as denied without a prompt. Under `swift run` there is no app bundle: the Automation prompt names the terminal.
+The app is not sandboxed and is signed without the hardened runtime, so it needs no entitlement to send Apple Events. A later build signed with `--options runtime` (for notarization) must pass an entitlements file with `com.apple.security.automation.apple-events` set to true to `codesign`, or a dark-mode phrase fails as denied without a prompt. Under `swift run` there is no app bundle: the Automation prompt names the terminal.
 
 **Speak Feedback:** a submenu with Off, Outcomes and All (the current one ticked). Off, the default, says nothing. Outcomes says how a task, macro or rewrite ended (`Done: open the menu.`, `Stuck: no Raptors game listed.`); All adds the model's questions and `Say yes to …`, and reads out what a task read. It applies at once and is saved to `config.json`. `spoken feedback on`, `spoken feedback all` and `spoken feedback off` do the same by voice. Say `stop` to cut it off, or just give the next command. See [Configuration](configuration.md) and [Privacy](privacy.md).
 
