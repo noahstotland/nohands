@@ -70,7 +70,6 @@ extension ActionExecutor {
         if step == .ask { system.requestAutomation() }
         if let line = AutomationAccess.line(for: step) { return line }
         let result = await system.runAppearance(appearance)
-        if Task.isCancelled { return Self.cancelled }
         switch AutomationAccess.outcome(result) {
         case .success(let now):
             addResult(AutomationAccess.doneLine(now))
@@ -83,7 +82,6 @@ extension ActionExecutor {
     /// "do not disturb on" and "off": the user's shortcut of that fixed name.
     private func runDoNotDisturb(on: Bool) async -> String? {
         let result = await system.runShortcut(DoNotDisturb.shortcutName(on: on))
-        if Task.isCancelled { return Self.cancelled }
         var list: String?
         if case .exited(0, _) = result {} else if result != .timedOut { list = await system.listShortcuts() }
         if let line = DoNotDisturb.failure(result, on: on, list: list) { return line }

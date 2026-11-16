@@ -36,12 +36,15 @@ enum ChildProcess {
         let seconds = Double(deadline.components.seconds)
         let timedOut = exited.wait(timeout: .now() + seconds) == .timedOut
         if timedOut {
+            // The output is thrown away, so nothing drains after this: a child that outlives SIGTERM is killed, and
+            // waiting for end of output could hold the pipeline (and `stop`) behind it.
             process.terminate()
-            _ = exited.wait(timeout: .now() + 1)
+            if exited.wait(timeout: .now() + 1) == .timedOut { kill(process.processIdentifier, SIGKILL) }
+            pipe.fileHandleForReading.readabilityHandler = nil
+            return .timedOut
         }
         pipe.fileHandleForReading.readabilityHandler = nil
         if let rest = try? pipe.fileHandleForReading.readToEnd() { collected.withLock { $0.append(rest) } }
-        if timedOut { return .timedOut }
         let text = String(decoding: collected.withLock { $0 }, as: UTF8.self)
         return .exited(Int(process.terminationStatus), text)
     }
