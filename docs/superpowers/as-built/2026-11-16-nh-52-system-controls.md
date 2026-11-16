@@ -11,3 +11,6 @@
 - The menu-bar clock is looked up in both Control Center and SystemUIServer menu extras.
 - Pane URLs open with System Settings named as the app, so another handler can't take them.
 - Packs cannot express `.system`, so `isReservedGlobal` is unchanged.
+- An unknown name after `open settings for` is rejected only when it is short. Filler words (`the`, `a`, `please`, `my`) are dropped, `&` reads as `and`, and a name with a compound word (`and`, `then`, `to`, `type`, ...) or of more than four words after fillers goes to the model instead, so `open settings for bluetooth and turn it off` still works as a task.
+- `screenshot window` waits up to 1 s for the screenshot tool to start (a fixed 300 ms when it was already running) before pressing space, and fails with `the screenshot tool did not start` instead of typing a space into the front app.
+- `mission control` and `show desktop` return `couldn't open Mission Control` or `couldn't show the desktop` when the app can't be opened.
