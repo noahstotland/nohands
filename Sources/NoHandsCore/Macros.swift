@@ -50,10 +50,10 @@ public struct Macros: Codable, Equatable, Sendable {
         init(from decoder: Decoder) throws { value = try? T(from: decoder) }
     }
 
-    /// Not empty, short, no stop word, and not a phrase the grammar already owns (it would never be reached).
+    /// Not empty, short, no stop word, and not a phrase the grammar or the route commands already own (it would never be reached).
     private static func nameIsUsable(_ name: String, grammar: CommandGrammar) -> Bool {
         guard !name.isEmpty, name.split(separator: " ").count <= maxNameWords, !Vocabulary.hasStopWord(name) else { return false }
-        return grammar.parse(name) == nil && grammar.rejection(name) == nil
+        return grammar.parse(name) == nil && grammar.rejection(name) == nil && CommandGrammar.forgetsRoutes(name) == nil
     }
 
     /// Every step is short, has no stop word, does not change mode and is not a macro name (no recursion).

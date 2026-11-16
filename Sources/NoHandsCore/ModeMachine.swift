@@ -8,6 +8,9 @@ public enum Routing: Equatable, Sendable {
     case reject(String)
     /// The whole phrase is a macro's name (command mode only; the grammar is asked first). The pipeline runs its steps.
     case macro(Macro)
+    /// "forget that route" (`all: false`) or "forget all routes" (`all: true`): route memory is the pipeline's, not the
+    /// executor's. Command mode only; never sent to the model.
+    case forgetRoutes(all: Bool)
 }
 
 public struct ModeMachine: Sendable {
@@ -146,6 +149,7 @@ public struct ModeMachine: Sendable {
     private mutating func routeCommand(_ transcript: String, frontmost bundleID: String?, textFocused: Bool,
                                        lookUpMacro: Bool = true) -> Routing {
         let phrase = CommandGrammar.normalize(transcript).joined(separator: " ")
+        if let all = CommandGrammar.forgetsRoutes(phrase) { return .forgetRoutes(all: all) }
         guard let actions = grammar.parse(transcript, frontmost: bundleID, textFocused: textFocused) else {
             if let message = grammar.rejection(transcript) { return .reject(message) }
             if lookUpMacro, let macro = macros.match(transcript) { return .macro(macro) }

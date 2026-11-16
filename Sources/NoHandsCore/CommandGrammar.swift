@@ -362,6 +362,17 @@ public struct CommandGrammar: Sendable {
         }
     }
 
+    /// Whether `transcript` is a route-forgetting phrase (NH-46): false for "forget that route", true for "forget all
+    /// routes", nil for anything else. The whole phrase only. The pipeline, not the executor, acts on it, so it is not in
+    /// `parse`; `ModeMachine` asks first and a macro cannot take either name.
+    public static func forgetsRoutes(_ transcript: String) -> Bool? {
+        switch normalize(transcript).joined(separator: " ") {
+        case "forget that route": false
+        case "forget all routes": true
+        default: nil
+        }
+    }
+
     /// The HUD line for a `spell` phrase that can't be typed; nil for anything else. Such a phrase is
     /// the grammar's own, so it must never fall through to the model, which could guess at what to type.
     public func rejection(_ transcript: String) -> String? {

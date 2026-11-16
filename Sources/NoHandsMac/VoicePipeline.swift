@@ -611,6 +611,9 @@ import NoHandsCore
             } else {
                 overlay.report(job.id, text: text, status: .done(reading ?? ""))
             }
+        case .forgetRoutes(let all):
+            // No route is saved yet, so there is nothing to drop: the rows say so.
+            overlay.report(job.id, text: text, status: .done(all ? "forgot all routes" : "no route to forget"))
         case .resolveWithLLM(let phrase):
             overlay.report(job.id, text: text, status: .heard)
             if runner == nil {
@@ -750,7 +753,7 @@ import NoHandsCore
                     failure = noResolverHint()
                 }
             case .reject(let message): failure = message
-            case .ignore, .macro: failure = PipelineText.didntCatch
+            case .ignore, .macro, .forgetRoutes: failure = PipelineText.didntCatch
             }
             if let failure {
                 let ended = failure == ActionExecutor.cancelled || !canExecute
