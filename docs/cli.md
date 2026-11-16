@@ -22,7 +22,7 @@ Back to the [README](../README.md).
 | `pack add <file>` | Checks a pack file, shows its summary (apps, every phrase with what it does, sites and apps it opens, phrases it replaces or loses to an earlier pack), and installs only if you answer `y` or `yes` at `Install? [y/N]`. No `--yes`. Exits 1 if declined or invalid. See [App packs](app-packs.md) |
 | `pack list` | Installed packs: id, version, on or off, phrase count, shadowed or invalid note |
 | `pack remove <id>` | Removes an installed pack, no prompt |
-| `pack builtin <id>` | Prints a built-in pack (`terminal`, `chrome`, ...; an unknown id lists them) as a pack file, as a template |
+| `pack builtin <id>` | Prints a built-in pack (`terminal`, `vs-code`, `mail`, `messages`, `safari`, `finder` or `chrome`; an unknown id lists them) as a pack file, as a template |
 | `pack new [--app <name or bundle id>] [--out <file>]` | Reads the app's top-level menu items (the app in front after 3 s, or a running app by name or bundle ID) and writes a draft pack file, listing the items it left out and why. Never overwrites a file and never installs; edit it, then `pack add`. Needs Accessibility. See [App packs](app-packs.md) |
 | `pack search [words]` | Fetches the pack registry's signed list and prints each pack whose id, name or description contains all the words (all packs with no words): id, version, name, apps, and `installed` or `update to <version>`. Reaches the network, only because you ran it. See [App packs](app-packs.md#get-packs-from-a-registry) |
 | `pack install <id>` | Fetches that pack from the registry, checks it, shows its summary and installs only if you answer `y` or `yes` at `Install? [y/N]`. No `--yes`. If the pack is already installed it tells you to use `pack update` |
