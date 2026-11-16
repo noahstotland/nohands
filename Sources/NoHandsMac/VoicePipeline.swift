@@ -223,10 +223,10 @@ import NoHandsCore
 
     /// The ASR loop: transcribes jobs one at a time, so an early pass always finishes before the full pass of its
     /// segment. Internal so tests can drive it with a fake transcriber. Every transcript goes through `vocabulary`
-    /// before anything else sees it, except a stop, which is passed on as heard.
+    /// before anything else sees it, except a stop or a mode phrase, which is passed on as heard (`Vocabulary.rewrite`).
     nonisolated static func runASR(_ jobs: AsyncStream<ASRJob>, transcriber: any Transcribing, merge: MergeBuffer,
                                    vocabulary: Vocabulary = Vocabulary(), attention: AttentionGate = .off) async {
-        func corrected(_ heard: String) -> String { attention.isStop(heard) ? heard : vocabulary.apply(heard) }
+        func corrected(_ heard: String) -> String { vocabulary.rewrite(heard, attention: attention) }
         var ledger = EarlyCloseLedger()
         for await job in jobs {
             var trace = LatencyTrace()

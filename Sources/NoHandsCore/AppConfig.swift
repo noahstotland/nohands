@@ -121,8 +121,10 @@ public struct AppConfig: Codable, Equatable, Sendable {
         d.echoCancellation = try c.decodeIfPresent(Bool.self, forKey: .echoCancellation) ?? d.echoCancellation
         d.attentionWord = try c.decodeIfPresent(String.self, forKey: .attentionWord) ?? d.attentionWord
         d.visionFallback = try c.decodeIfPresent(Bool.self, forKey: .visionFallback) ?? d.visionFallback
-        // Lenient: a `vocabulary` that is not a list is ignored; each bad entry is skipped inside `Vocabulary`.
-        d.vocabulary = (try? c.decodeIfPresent(Vocabulary.self, forKey: .vocabulary)) ?? Vocabulary()
+        // Lenient: a `vocabulary` that is not a list is ignored and counted as one skipped entry; each bad entry is skipped inside `Vocabulary`.
+        if c.contains(.vocabulary) {
+            d.vocabulary = (try? c.decode(Vocabulary.self, forKey: .vocabulary)) ?? Vocabulary(skipped: 1)
+        }
         self = d
     }
 

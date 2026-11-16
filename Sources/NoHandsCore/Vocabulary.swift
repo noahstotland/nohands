@@ -19,6 +19,8 @@ public struct Vocabulary: Codable, Equatable, Sendable {
     public private(set) var skipped: Int
 
     public init() { entries = []; skipped = 0 }
+    /// An empty list that counts a `vocabulary` value that was not a list as one skipped entry.
+    init(skipped: Int) { entries = []; self.skipped = skipped }
 
     public init(from decoder: Decoder) throws {
         let raw = try decoder.singleValueContainer().decode([Lossy<Raw>].self)
@@ -87,6 +89,21 @@ public struct Vocabulary: Codable, Equatable, Sendable {
         let rest = chunk.dropFirst(lead.count)
         let core = rest.reversed().drop(while: isEdge).reversed()
         return Word(lead: String(lead), core: String(core).lowercased(), trail: String(rest.dropFirst(core.count)))
+    }
+
+    /// What the pipeline hears: `apply`, except that a stop, a mode or release phrase ("wake up", "stop dictating",
+    /// "command mode") is passed as heard, and so is any rewrite that would turn the words into a stop. The list can
+    /// neither hide nor make a stop, nor take the user's way back out of a mode.
+    public func rewrite(_ heard: String, attention: AttentionGate) -> String {
+        func isReserved(_ text: String) -> Bool {
+            if attention.isStop(text) { return true }
+            var phrase = text
+            if case .addressed(let rest) = attention.check(text) { phrase = rest }
+            return CommandGrammar.isReservedGlobal(CommandGrammar.normalize(phrase).joined(separator: " "))
+        }
+        if isReserved(heard) { return heard }
+        let out = apply(heard)
+        return attention.isStop(out) ? heard : out
     }
 
     /// Returns `transcript` with each heard spelling replaced by its `say`. Whole words only, case-insensitive; the

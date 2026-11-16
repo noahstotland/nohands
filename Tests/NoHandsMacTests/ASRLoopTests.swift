@@ -81,16 +81,18 @@ private func drive(_ jobs: [VoicePipeline.ASRJob], replies: [Result<String, Erro
 }
 
 @Test func vocabularyRewritesTranscriptsButNeverAStop() async throws {
-    let vocabulary = try JSONDecoder().decode(Vocabulary.self, from: Data(#"[{"hear":"raptures","say":"Raptors"},{"hear":"computer","say":"Hal"}]"#.utf8))
+    let vocabulary = try JSONDecoder().decode(Vocabulary.self, from: Data(#"[{"hear":"raptures","say":"Raptors"},{"hear":"search","say":"find"},{"hear":"nether","say":"never"},{"hear":"dictating","say":"dictation"}]"#.utf8))
     let table: [(name: String, heard: String, emitted: String)] = [
-        ("a command", "search for raptures", "search for Raptors"),
+        ("a command", "search for raptures", "find for Raptors"),
         ("a stop", "stop", "stop"),
         ("an addressed stop keeps the attention word as heard", "computer, stop", "computer, stop"),
-        ("an addressed command is rewritten", "computer, search for raptures", "Hal, search for Raptors"),
+        ("an addressed command is rewritten", "computer, search for raptures", "computer, find for Raptors"),
+        ("a rewrite that would make a stop is not made", "nether mind", "nether mind"),
+        ("a mode phrase is passed as heard", "stop dictating", "stop dictating"),
     ]
     for row in table {
         let r = try await drive([job(.full, chunks: 2, voiced: 2)], replies: [.success(row.heard)], vocabulary: vocabulary,
-                                attention: AttentionGate(configured: "computer"), settleMs: 800)
+                                attention: AttentionGate(configured: "computer"), settleMs: 400)
         #expect(r.emitted == [row.emitted], "\(row.name)")
     }
 }

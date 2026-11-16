@@ -162,7 +162,7 @@ import Foundation
     let many = (0..<203).map { #"{"hear":"w\#($0)","say":"W"}"# }.joined(separator: ",")
     let table: [(json: String, kept: [Vocabulary.Entry], skipped: Int)] = [
         (#"{}"#, [], 0),
-        (#"{"vocabulary":"raptures"}"#, [], 0),
+        (#"{"vocabulary":"raptures"}"#, [], 1),
         (#"{"vocabulary":[{"hear":"raptures","say":"Raptors"}]}"#, [.init(hear: ["raptures"], say: "Raptors")], 0),
         (#"{"vocabulary":[{"hear":["a b","c"],"say":"X"}]}"#, [.init(hear: ["a b", "c"], say: "X")], 0),
         (#"{"vocabulary":[{"hear":"x"},{"say":"X"},{"hear":"x","say":""},{"hear":5,"say":"X"},7]}"#, [], 5),
