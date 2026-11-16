@@ -81,6 +81,14 @@ public enum TaskOutcome: Equatable, Sendable {
     private(set) var cancelled = false
     /// While a plan runs, the element cap for each observation (the model is not sent those lists); nil otherwise.
     private var planLimit: Int?
+    /// The steps of the current (or last) `run`, kept so `finish` can hand them to the next request as an `EarlierTask`.
+    private var history: [StepRecord] = []
+    /// The last screen the task read, for the same reason.
+    private var lastSeen: ScreenObservation?
+    /// What a follow-up can refer to: set when a run ends `done`, `stuck` or `stopped`, nil when it ends `ignored` or
+    /// `failed`. Its goal chains the earlier goal with the follow-up's words, so a second follow-up still sees the first.
+    public private(set) var lastTask: EarlierTask?
+    private var runGoal = ""
     /// Steps whose actions were executed in the current (or last) `run`.
     public private(set) var stepsRun = 0
     /// Each step's settle wait in ms, in the order `onStep` reported them, for the current (or last) `run`.
@@ -136,20 +144,27 @@ public enum TaskOutcome: Equatable, Sendable {
 
     private var isCancelled: Bool { cancelled || Task.isCancelled }
 
-    public func run(goal: String, mode: Mode) async -> TaskOutcome {
+    /// `earlier` is the task this one follows up on (see `FollowUp.memory`); it goes on every request, and a follow-up
+    /// is never planned (the plan prompt cannot see the earlier task).
+    public func run(goal: String, mode: Mode, earlier: EarlierTask? = nil) async -> TaskOutcome {
         cancelled = false
+        // Media budget, the done-when-playing rule and site routes read the earlier goal as well.
+        let context = earlier.map { "\($0.goal) \(goal)" } ?? goal
+        runGoal = earlier.map { String("\($0.goal); then: \(goal)".prefix(EarlierTask.goalLimit)) } ?? goal
+        lastTask = nil
         planLimit = nil
         stepsRun = 0
         settleTimes = []
         // A goal about playing media gets a longer budget: stream sites throw overlays and pop-unders first.
-        let maxSteps = max(1, MediaGoal.matches(goal) ? config.maxMediaTaskSteps : config.maxTaskSteps)
+        let maxSteps = max(1, MediaGoal.matches(context) ? config.maxMediaTaskSteps : config.maxTaskSteps)
         trail = TaskTrail(maxSteps: maxSteps)
         setPhase(.reading)   // before the first screen read, which can take a second or two
         ledger = TabLedger()
         markTaskTab = false
         atTaskStart = true
         observer.resetBrowserTokens()
-        var history: [StepRecord] = []
+        history = []
+        lastSeen = nil
         var repeats = RepeatDetector(limit: 3)
         var askedAgainForMedia = false
         // Observe once. Settle first only when that walk just exposed a Chromium page tree (it fills in ~0.5 s
@@ -178,7 +193,7 @@ public enum TaskOutcome: Equatable, Sendable {
         // A goal that looks multi-step may get a plan the model writes once; code then runs and checks it, and the
         // loop below takes over on any miss. Every step still goes through the guards below.
         var engine: PlanEngine?
-        if PlanGate.mayPlan(goal: goal) {
+        if earlier == nil, PlanGate.mayPlan(goal: goal) {
             setPhase(.planning)
             if let plan = await askForPlan(goal) {
                 engine = PlanEngine(plan: plan)
@@ -205,7 +220,9 @@ public enum TaskOutcome: Equatable, Sendable {
                     endPlan(&observation, &labels)
                 }
             }
-            var request = StepRequest(goal: goal, step: n, maxSteps: maxSteps, history: history, observation: observation)
+            lastSeen = observation
+            var request = StepRequest(goal: goal, step: n, maxSteps: maxSteps, history: history, observation: observation,
+                                      earlier: earlier)
             var step: IntentStep
             if let planned {
                 step = planned
@@ -342,7 +359,7 @@ public enum TaskOutcome: Equatable, Sendable {
             if step.status == .done && failure == nil {
                 let finished = TaskOutcome.done(step.intent)
                 let hud = readings.first.map { "\(step.intent) — \($0.prefix(80))" }
-                guard MediaSignal.wantsPlayback(goal: goal) else { return await finish(finished, hud: hud) }
+                guard MediaSignal.wantsPlayback(goal: context) else { return await finish(finished, hud: hud) }
                 // A goal to play something is done when it plays, not when the page loaded: look once more at the
                 // screen after this step's actions. A visible Play button sends the model round once more.
                 settleStart = ContinuousClock.now
@@ -634,6 +651,19 @@ public enum TaskOutcome: Equatable, Sendable {
 
     static func stoppedHUD(_ intent: String) -> String { intent.isEmpty ? PipelineText.stopped : "stopped: \(intent)" }
 
+    /// What a follow-up sees of a run that ended `done`, `stuck` or `stopped`; nil for `ignored` and `failed`.
+    nonisolated static func earlierTask(goal: String, history: [StepRecord], outcome: TaskOutcome, seen: ScreenObservation?) -> EarlierTask? {
+        let result: String
+        switch outcome {
+        case .done(let text): result = "done: " + clipped(text, to: EarlierTask.resultLimit)
+        case .stuck(let text): result = "stuck: " + clipped(text, to: EarlierTask.resultLimit)
+        case .stopped: result = "stopped"
+        case .ignored, .failed: return nil
+        }
+        return EarlierTask(goal: goal, history: history, result: result, endedApp: seen?.app ?? "",
+                           endedWindow: seen?.windowTitle ?? "", endedURL: seen?.url)
+    }
+
     /// The finish line as a prompt status: the outcome's kind, `text`, and how many steps ran.
     static func finalStatus(_ outcome: TaskOutcome, text: String, steps: Int) -> PromptStatus {
         let line = steps > 0 ? "\(text) (\(steps) step\(steps == 1 ? "" : "s"))" : text
@@ -665,6 +695,7 @@ public enum TaskOutcome: Equatable, Sendable {
         if case .done = outcome {} else { executor.releaseAll() }
         observer.resetBrowserTokens()
         planLimit = nil
+        lastTask = Self.earlierTask(goal: runGoal, history: history, outcome: outcome, seen: lastSeen)
         if case .stuck(let why) = outcome { trail.ending = why == Self.stepLimit ? .stepCap : .stuck }
         trail.phase = nil
         onTrail?(trail)
