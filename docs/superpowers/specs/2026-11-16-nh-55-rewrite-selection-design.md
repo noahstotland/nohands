@@ -1,7 +1,8 @@
 # NH-55: Rewrite the selection with the model: Design
 
 **Date:** 2026-11-16  **Ticket:** [NH-55](https://github.com/noahstotland/nohands/issues/55)
-**Status:** Draft
+**Status:** Shipped
+**Shipped:** in the NH-55 PR
 
 ## Intent
 

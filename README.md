@@ -73,7 +73,7 @@ Optional file `~/.config/nohands/config.json`. Every key may be omitted, and cha
 ## Privacy
 
 - Audio never leaves your machine.
-- Only commands the grammar can't match go to Claude (or the local model, which stays on your Mac), as text, plus, only with `visionFallback` on, a screenshot of the focused window to Claude.
+- Only commands the grammar can't match go to Claude (or the local model, which stays on your Mac), as text, and the rewrite commands (`make that shorter`, `fix the grammar`), which send the text you selected, plus, only with `visionFallback` on, a screenshot of the focused window to Claude.
 - Without an API key nothing is sent off the Mac. The local backend talks only to Ollama on `127.0.0.1`.
 - There is no wake-word model, so other people or loud playback can be acted on. Say "go to sleep" before leaving the desk or during calls.
 
