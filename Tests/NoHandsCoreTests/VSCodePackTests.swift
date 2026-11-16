@@ -50,7 +50,7 @@ private let globals: [(String, [Action])] = [
         #expect(grammar.parse(phrase, frontmost: code) == grammar.parse(phrase, frontmost: nil), Comment(rawValue: phrase))
     }
     // A bare verb is a complete command and would fire before the rest of a sentence, so none is a pack phrase.
-    for phrase in ["replace", "rename", "format", "comment", "debug", "continue"] {
+    for phrase in ["replace", "rename", "format", "comment", "uncomment", "breakpoint", "debug", "continue"] {
         #expect(grammar.parse(phrase, frontmost: code) == grammar.parse(phrase, frontmost: nil), Comment(rawValue: phrase))
     }
     let edit = grammar.parse("replace foo with bar", frontmost: code, textFocused: true)

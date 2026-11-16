@@ -2,7 +2,7 @@ import Foundation
 
 extension AppPack {
     /// VS Code's default macOS keybindings (1.109). Overrides the global new tab, next/previous tab and go back/forward,
-    /// whose chords mean something else in VS Code. No bare verbs (replace, rename, format, comment, debug, continue): a one-word phrase counts as complete, so it would fire before the
+    /// whose chords mean something else in VS Code. No bare verbs (replace, rename, format, comment, debug, continue, breakpoint): a one-word phrase counts as complete, so it would fire before the
     /// rest of a longer sentence arrived. There is no "stop debugging" phrase: no pack phrase may contain "stop".
     static let vscode: AppPack = {
         func chord(_ key: Key, _ modifiers: Set<Modifier> = [.command]) -> [Action] { [.pressKey(KeyChord(key, modifiers))] }
@@ -35,7 +35,7 @@ extension AppPack {
             (["toggle terminal", "show terminal", "hide terminal"], chord(.grave, [.control])),
             (["new terminal"], chord(.grave, [.control, .shift])),
             (["start debugging", "continue debugging"], chord(.f5, [])),
-            (["toggle breakpoint", "breakpoint", "add breakpoint", "remove breakpoint"], chord(.f9, [])),
+            (["toggle breakpoint", "add breakpoint", "remove breakpoint"], chord(.f9, [])),
             (["step over"], chord(.f10, [])),
             (["step into", "step in"], [.menuItem("Step Into")]),  // plain F11 is macOS Show Desktop
             (["step out"], chord(.f11, [.shift])),

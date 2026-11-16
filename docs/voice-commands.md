@@ -80,7 +80,7 @@ An app can have phrases that work only while it is in front and win on a shared 
 | VS Code | `toggle sidebar`, `explorer`, `source control`, `extensions`, `problems` | Shows the side bar or a view in it |
 | VS Code | `save all`, `format document`, `rename symbol`, `toggle comment` | Edits the file |
 | VS Code | `move line up`, `move line down`, `duplicate line` | Moves or copies the current line |
-| VS Code | `find in files`, `replace`, `replace in files` | Searches, or replaces in the file or the project |
+| VS Code | `find in files`, `find and replace`, `replace in files` | Searches, or replaces in the file or the project |
 | VS Code | `toggle terminal`, `new terminal` | Shows the integrated terminal, or opens a new one |
 | VS Code | `start debugging`, `toggle breakpoint`, `step over`, `step into`, `step out` | Drives the debugger |
 | VS Code | `zen mode`, `new window`, `settings` | Window and settings |
