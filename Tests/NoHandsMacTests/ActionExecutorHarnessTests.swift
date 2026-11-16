@@ -193,9 +193,9 @@ private let labels: [Int: UIElementInfo] = [
 @MainActor @Test func dragUsesHarnessWithRefsAndPointsOrNativeMouse() async {
     let (x, i, _, _, h, _) = makeHarnessed()
     #expect(await x.execute([.drag(from: .label(1), to: .point(CGPoint(x: 300, y: 400)))], labels: labels) == nil)
-    #expect(h!.calls == ["act:--headed drag --from @s1:e1 --to-xy 300,400"] && i.calls.isEmpty)
+    #expect(h!.calls == ["act:--headed drag --from @s1:e1 --to-xy=300,400"] && i.calls.isEmpty)
     #expect(await x.execute([.drag(from: .point(CGPoint(x: 1, y: 2)), to: .label(3))], labels: labels) == nil)
-    #expect(h!.calls.last == "act:--headed drag --from-xy 1,2 --to-xy 55,55")
+    #expect(h!.calls.last == "act:--headed drag --from-xy=1,2 --to-xy=55,55")
     let (n, ni, _, _, _, _) = makeHarnessed(harness: nil)
     #expect(await n.execute([.drag(from: .point(CGPoint(x: 1, y: 2)), to: .label(3))], labels: labels) == nil)
     #expect(ni.calls == ["move:1,2", "down", "move:55,55", "up"])
