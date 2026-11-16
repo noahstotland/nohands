@@ -1,6 +1,6 @@
 # As-built: Spoken yes before irreversible fixed phrases
 
-**Shipped:** in PR #PRNUM
+**Shipped:** in PR #175
 **Ticket:** NH-149
 **Spec:** [2026-11-16-nh-149-spoken-confirm-design.md](../specs/2026-11-16-nh-149-spoken-confirm-design.md)
 

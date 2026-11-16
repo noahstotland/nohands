@@ -2,7 +2,7 @@
 
 **Date:** 2026-11-16  **Ticket:** [NH-149](https://github.com/noahstotland/nohands/issues/149)
 **Status:** Shipped
-**Shipped:** in PR #PRNUM, with differences: [as-built](../as-built/2026-11-16-nh-149-spoken-confirm.md)
+**Shipped:** in PR #175, with differences: [as-built](../as-built/2026-11-16-nh-149-spoken-confirm.md)
 
 ## Intent
 
