@@ -1,7 +1,8 @@
 # NH-74: Chrome voice commands: Design
 
 **Date:** 2026-11-16  **Ticket:** [NH-74](https://github.com/noahstotland/nohands/issues/74)
-**Status:** Proposed
+**Status:** Shipped
+**Shipped:** in PR #171, as specified
 
 ## Intent
 
