@@ -1,5 +1,11 @@
 # Release notes
 
+## 2026-11-16 list every built-in pack id in the pack and CLI docs (NH-151) (#176)
+
+Merged 2026-11-16 11:36 pm UTC.
+
+The CLI and pack docs now list every built-in pack id: `terminal`, `vs-code`, `mail`, `messages`, `safari`, `finder` and `chrome`.
+
 ## 2026-11-16 ask for a spoken yes before irreversible fixed phrases (NH-149) (#175)
 
 Merged 2026-11-16 11:29 pm UTC.
