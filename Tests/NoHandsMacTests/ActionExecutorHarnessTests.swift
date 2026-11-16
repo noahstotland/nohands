@@ -198,7 +198,8 @@ private let labels: [Int: UIElementInfo] = [
     #expect(h!.calls.last == "act:--headed drag --from-xy=1,2 --to-xy=55,55")
     let (n, ni, _, _, _, _) = makeHarnessed(harness: nil)
     #expect(await n.execute([.drag(from: .point(CGPoint(x: 1, y: 2)), to: .label(3))], labels: labels) == nil)
-    #expect(ni.calls == ["move:1,2", "down", "move:55,55", "up"])
+    // Press, ten stepped moves ending on the target, release.
+    #expect(Array(ni.calls.prefix(2)) == ["move:1,2", "down"] && ni.calls.count == 13 && Array(ni.calls.suffix(2)) == ["move:55,55", "up"])
 }
 
 @MainActor @Test func mediaPlayingWaitIsPolledByNoHandsNotTheHarness() async {

@@ -570,6 +570,7 @@ import NoHandsCore
     private func busy(_ job: Job) {
         guard !stopped else { return }
         if attention.isStop(job.transcript) {
+            executor.releaseHeldButton()
             if let held = heldJob {
                 // Shown as stopped, not dropped: the corner panel must stay clear after a stop (`TaskPanelText`).
                 overlay.report(held.id, text: held.transcript, status: .stopped(PipelineText.dropped))
@@ -630,6 +631,9 @@ import NoHandsCore
         let text = job.transcript
         var trace = job.trace
         let maxAge = held ? Self.heldJobMaxAge : StaleJobPolicy.defaultMaxAge
+        // A stop phrase lets go of a held mouse button, with or without a task, even when the job is stale (it keeps
+        // the grid up; `cancel` still hides it).
+        if attention.isStop(text) { executor.releaseHeldButton() }
         if let spoke = trace.speechEnd, StaleJobPolicy.isStale(age: spoke.duration(to: .now), maxAge: maxAge) {
             PipelineLog.warning("busy: skipped (stale) utterance (older than \(maxAge))")
             overlay.report(job.id, text: text, status: .dropped(held ? PipelineText.dropped : PipelineText.skippedBusy))
@@ -637,6 +641,7 @@ import NoHandsCore
         }
         if await answersPick(job) { return nil }
         lastTranscript = text
+        // A stop phrase lets go of a held mouse button, with or without a task (it keeps the grid up; `cancel` still hides it).
         let modeBefore = modeMachine.mode
         // Edits that name words in the field, and rewrites of the selection, need to know a text field has focus; any
         // other phrase never asks. Dictation types rewrite phrases as words, so only command mode asks for those.

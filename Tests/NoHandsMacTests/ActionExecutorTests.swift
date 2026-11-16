@@ -90,6 +90,16 @@ import NoHandsCore
     #expect(i.calls == ["down", "releaseAll"])
 }
 
+@MainActor @Test func spokenStopDoesNotReleaseMidDrag() async {
+    let (x, i, _, _) = make()
+    x.dragInFlight = true
+    x.releaseHeldButton()
+    #expect(i.calls.isEmpty)   // the drag's own mouse-up or catch releases
+    x.dragInFlight = false
+    x.releaseHeldButton()
+    #expect(i.calls == ["releaseAll"])
+}
+
 @MainActor @Test func releasedButtonIsNotReleasedAgain() async {
     let (x, i, _, _) = make()
     _ = await x.execute([.pressMouse(.left), .releaseMouse(.left), .zoomGrid(1)])

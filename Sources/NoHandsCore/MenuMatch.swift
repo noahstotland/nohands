@@ -8,12 +8,15 @@ public struct MenuEntry: Equatable, Sendable {
     public let enabled: Bool
     /// An item that only opens a submenu: pressing it does nothing, so it is never a match.
     public let hasSubmenu: Bool
+    /// The item's keyboard shortcut when the pack format can express it; only `pack new` reads it.
+    public let shortcut: KeyChord?
 
-    public init(title: String, path: [String], enabled: Bool, hasSubmenu: Bool = false) {
+    public init(title: String, path: [String], enabled: Bool, hasSubmenu: Bool = false, shortcut: KeyChord? = nil) {
         self.title = title
         self.path = path
         self.enabled = enabled
         self.hasSubmenu = hasSubmenu
+        self.shortcut = shortcut
     }
 }
 

@@ -110,3 +110,16 @@ private let browser: [UIElementInfo] = [
     #expect(TargetResolver.resolveMove(.element(named: "second video"), overlay: .none, cursor: .zero, elements: browser,
                                        labels: LabelAssigner.assign(browser)) == at(14))
 }
+
+@Test func screenCenterIsTheMiddleOfTheCursorsScreen() {
+    let main = CGRect(x: 0, y: 0, width: 1000, height: 800), side = CGRect(x: 1000, y: 0, width: 400, height: 600)
+    let table: [(CGPoint, [CGRect], TargetResolution)] = [
+        (CGPoint(x: 1100, y: 50), [main, side], .point(CGPoint(x: 1200, y: 300))),
+        (CGPoint(x: 10, y: 10), [main, side], .point(CGPoint(x: 500, y: 400))),
+        (CGPoint(x: -50, y: 9000), [main, side], .point(CGPoint(x: 500, y: 400))),   // off every screen: the first
+        (CGPoint(x: 10, y: 10), [], .failure("no screen")),
+    ]
+    for (cursor, screens, expected) in table {
+        #expect(TargetResolver.resolveMove(.screenCenter, overlay: .none, cursor: cursor, elements: [], screens: screens) == expected)
+    }
+}

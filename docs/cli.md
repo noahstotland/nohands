@@ -23,6 +23,7 @@ Back to the [README](../README.md).
 | `pack list` | Installed packs: id, version, on or off, phrase count, shadowed or invalid note |
 | `pack remove <id>` | Removes an installed pack, no prompt |
 | `pack builtin <id>` | Prints a built-in pack (`terminal`) as a pack file, as a template |
+| `pack new [--app <name or bundle id>] [--out <file>]` | Reads the app's top-level menu items (the app in front after 3 s, or a running app by name or bundle ID) and writes a draft pack file, listing the items it left out and why. Never overwrites a file and never installs; edit it, then `pack add`. Needs Accessibility. See [App packs](app-packs.md) |
 | `menu "<words>"` / `menu --list` | After 2 s (3 s for `--list`) presses the frontmost app's named menu item, or lists them |
 | `run "<phrase>"...` | Executes grammar phrases in order |
 | `observe` | Prints what the task loop sends the model: title, URL, `Media:` line, numbered elements |

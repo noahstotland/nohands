@@ -19,6 +19,8 @@ public enum MoveTarget: Equatable, Codable, Sendable {
     case element(named: String)
     case point(CGPoint)
     case relative(dx: Int, dy: Int)
+    /// The middle of the screen holding the pointer. Grammar only: `IntentDecoder` never produces it.
+    case screenCenter
 }
 
 /// An element the harness acts on: a number from the request's element list, or a name looked up live.
