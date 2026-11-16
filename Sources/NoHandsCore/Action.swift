@@ -65,6 +65,8 @@ public enum Action: Equatable, Codable, Sendable {
     case showLabels
     case hideOverlay
     case setMode(Mode)
+    /// Change how much NoHands says out loud. Grammar only: the intent decoder has no kind for it.
+    case setSpokenFeedback(SpeakLevel)
     case openApp(String)
     /// Open a standard folder, a file or folder found by name, or the newest file of a kind (see `FileRequest`).
     case openFile(FileRequest)

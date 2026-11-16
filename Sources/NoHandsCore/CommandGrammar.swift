@@ -34,6 +34,9 @@ public struct CommandGrammar: Sendable {
             "command mode": [.setMode(.command)],
             "go to sleep": [.setMode(.sleep)],
             "wake up": [.setMode(.command)],
+            "spoken feedback on": [.setSpokenFeedback(.outcomes)], "turn on spoken feedback": [.setSpokenFeedback(.outcomes)],
+            "spoken feedback off": [.setSpokenFeedback(.off)], "turn off spoken feedback": [.setSpokenFeedback(.off)],
+            "spoken feedback all": [.setSpokenFeedback(.all)], "speak everything": [.setSpokenFeedback(.all)],
 
             "enter": chord(.return), "return": chord(.return),
             "backspace": chord(.delete), "escape": chord(.escape),
