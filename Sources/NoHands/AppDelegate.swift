@@ -743,6 +743,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             if config.vocabulary.skipped > 0 {
                 PipelineLog.warning("vocabulary: skipped \(config.vocabulary.skipped) entries (see docs/configuration.md)")
             }
+            if config.macros.skipped > 0 {
+                PipelineLog.warning("macros: skipped \(config.macros.skipped) (see docs/configuration.md)")
+            }
             if fileHasKey,
                let perms = (try? FileManager.default.attributesOfItem(atPath: url.path))?[.posixPermissions] as? Int,
                ConfigFileSecurity.isTooOpen(posixPermissions: perms) {

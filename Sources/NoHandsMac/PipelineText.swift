@@ -49,6 +49,7 @@ public enum PipelineText {
         case .resolveWithLLM: "llm"
         case .ignore(let reason): "ignore(\(reason))"
         case .reject(let message): detailed ? "reject(\(message))" : "reject"
+        case .macro(let macro): detailed ? "macro(\(macro.name), \(macro.steps.count) steps)" : "macro"
         }
     }
 
