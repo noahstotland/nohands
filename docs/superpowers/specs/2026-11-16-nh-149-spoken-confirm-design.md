@@ -1,7 +1,8 @@
 # NH-149: Spoken yes before irreversible fixed phrases: Design
 
 **Date:** 2026-11-16  **Ticket:** [NH-149](https://github.com/noahstotland/nohands/issues/149)
-**Status:** Proposed
+**Status:** Shipped
+**Shipped:** in PR #PRNUM, with differences: [as-built](../as-built/2026-11-16-nh-149-spoken-confirm.md)
 
 ## Intent
 
