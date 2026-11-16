@@ -62,9 +62,11 @@ private func route(_ goal: String, host: String? = nil, at seconds: Double = 0, 
         StepRecord(intent: "Search for 'cats on a wall' now", actions: [.search("cats on a wall")]),
         StepRecord(intent: "Which stream?", actions: [], userAnswer: "Sky Sports"),
         StepRecord(intent: "Click the sky sports stream, visible element 6.", actions: [.click(.label(6), button: .left, count: 1)]),
+        StepRecord(intent: "Open the 'cats on a wall' result, user's page", actions: [.click(.label(6), button: .left, count: 1)]),
+        StepRecord(intent: "Typed HUNTER2 into the field", actions: [.pressKey(KeyChord(.return, []))]),
     ]
-    let intents = RouteMemory.steps(from: history, names: [[:], [:], [:], [6: "Stream"]]).map(\.intent)
-    #expect(intents == ["Type the text … and press Return", "Search for … now", "Which stream?", "Click the … stream, visible the element."])
+    let intents = RouteMemory.steps(from: history, names: [[:], [:], [:], [6: "Stream"], [6: "Result"], [:]]).map(\.intent)
+    #expect(intents == ["Type the text … and press Return", "Search for … now", "Which stream?", "Click the … stream, visible the element.", "Open the … result, user's page", "Typed … into the field"])
 }
 
 @Test func theFileRoundTripsAndABadOneIsEmptyNotAnError() throws {

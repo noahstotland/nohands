@@ -48,26 +48,27 @@ public enum RouteMemory {
     public static func steps(from history: [StepRecord], names: [[Int: String]]) -> [RouteStep] {
         var kept: [RouteStep] = []
         // The user's answers are words they said, not the route's: they are cut out of every intent, as is any text a step typed.
-        let answers = history.compactMap(\.userAnswer).filter { $0.count >= 3 }
+        let secrets = (history.compactMap(\.userAnswer) + history.flatMap(\.actions).flatMap(typedText)).filter { $0.count >= 3 }
+        let typed = history.contains { $0.actions.contains { !typedText($0).isEmpty } }
         for (i, record) in history.enumerated() where record.failure == nil {
             let titles = i < names.count ? names[i] : [:]
             let asked = record.userAnswer != nil
             guard asked || !record.actions.isEmpty else { continue }
-            kept.append(RouteStep(intent: intent(record.intent, typed: record.actions.flatMap(typedText), answers: answers),
+            kept.append(RouteStep(intent: intent(record.intent, secrets: secrets, anyTyped: typed),
                                   actions: record.actions.map { describe($0, names: titles) }, asked: asked))
         }
         return Array(kept.prefix(maxSteps))
     }
 
     /// The intent as saved: the model often quotes what it typed or what the user answered, and the file must hold neither.
-    /// Every text the step's actions carry and every answer is cut out (any case), a step that typed or searched loses its
-    /// quoted spans too, and a mention of a label number ("element 6") goes, since a number means nothing on a later screen.
-    static func intent(_ text: String, typed: [String], answers: [String]) -> String {
+    /// Every text any step typed or searched for and every answer is cut out (any case), and when the route typed anything
+    /// the quoted spans go too, and a mention of a label number ("element 6") goes, since a number means nothing on a later screen.
+    static func intent(_ text: String, secrets: [String], anyTyped: Bool) -> String {
         var s = text
-        for secret in (typed + answers).filter({ !$0.isEmpty }).sorted(by: { $0.count > $1.count }) {
+        for secret in secrets.sorted(by: { $0.count > $1.count }) {
             s = s.replacingOccurrences(of: secret, with: "…", options: .caseInsensitive)
         }
-        if !typed.isEmpty { s = s.replacingOccurrences(of: #"["“'‘][^"”'’]*["”'’]"#, with: "…", options: .regularExpression) }
+        if anyTyped { s = s.replacingOccurrences(of: #"\"[^\"]*\"|“[^”]*”|(?<!\w)'[^']*'|‘[^’]*’"#, with: "…", options: .regularExpression) }
         s = s.replacingOccurrences(of: #"(?i)\b(element|label|number|badge)\s*#?\d+"#, with: "the element", options: .regularExpression)
         return ClaudeRequestBuilder.sanitize(s, limit: intentLimit)
     }
