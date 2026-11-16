@@ -19,6 +19,9 @@ public enum PackDiff {
         for phrase in oldPhrases.intersection(newPhrases).sorted() where old.phrases[phrase] != new.phrases[phrase] {
             out.append("changed phrase \(PackSummary.quoted(phrase)): was \(actions(old, phrase)), now \(actions(new, phrase))")
         }
+        for phrase in oldPhrases.intersection(newPhrases).sorted() where old.confirms.contains(phrase) != new.confirms.contains(phrase) {
+            out.append("phrase \(PackSummary.quoted(phrase)) " + (new.confirms.contains(phrase) ? "now asks first" : "no longer asks first"))
+        }
         let (a, b) = (PackSummary(old), PackSummary(new))
         for (label, before, after) in [("app", a.apps, b.apps), ("url host", a.urlHosts, b.urlHosts), ("opened app", a.openedApps, b.openedApps)] {
             out += Set(after).subtracting(before).sorted().map { "added \(label) \(PackSummary.printable($0))" }

@@ -680,6 +680,9 @@ import NoHandsCore
             overlay.report(job.id, text: text, status: .failed(message))
             recordCommand(CommandLogEntry(date: Date(), phrase: text, resolver: .grammar, steps: [],
                                           outcome: .failed(message), durationMs: 0))
+        case .confirm:
+            // NH-149 task 4 holds the phrase for a spoken yes; until then it is not run.
+            overlay.report(job.id, text: text, status: .failed("not supported yet"))
         case .execute(let actions):
             overlay.report(job.id, text: text, status: .heard)
             guard canExecute else {
@@ -906,6 +909,7 @@ import NoHandsCore
                 }
             case .reject(let message): failure = message
             case .forgetRoutes(let all): _ = forgetRoutes(all: all)
+            case .confirm: failure = "not supported yet"   // NH-149 task 4 holds it for a spoken yes
             case .ignore, .macro: failure = PipelineText.didntCatch
             }
             if let failure {

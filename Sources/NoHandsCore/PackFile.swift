@@ -53,24 +53,60 @@ public enum PackFile {
         guard let commands = root["commands"] as? [Any], !commands.isEmpty else { throw PackError("no commands") }
         guard commands.count <= maxCommands else { throw PackError("too many commands (over \(maxCommands))") }
         var phrases: [String: [Action]] = [:]
+        var parsed: [ParsedCommand] = []
         var count = 0
         for (index, raw) in commands.enumerated() {
-            do { try parseCommand(raw, into: &phrases, count: &count) } catch {
+            do { parsed.append(try parseCommand(raw, into: &phrases, count: &count)) } catch {
                 throw PackError("command \(index + 1): \(error.reason)")
             }
         }
-        return AppPack(id: id, name: name, version: version, author: author, bundleIDs: bundleIDs, phrases: phrases)
+        // A command asks first when its phrase or actions say so (`forcesConfirm`), or it shares actions with one that
+        // does, or the author set `"confirm": true`. Only an explicit false on a forced command is an error.
+        let forcedActions: [[Action]] = parsed.filter { cmd in
+            cmd.keys.contains { forcesConfirm(phrase: $0, actions: cmd.actions, bundleIDs: bundleIDs) }
+        }.map(\.actions)
+        var confirms = Set<String>()
+        for (index, cmd) in parsed.enumerated() {
+            let forced = forcedActions.contains(cmd.actions)
+            if forced, cmd.confirm == false {
+                throw PackError("command \(index + 1): confirm false on an irreversible command (it names send, delete or another guarded verb)")
+            }
+            if forced || cmd.confirm == true { confirms.formUnion(cmd.keys) }
+        }
+        return AppPack(id: id, name: name, version: version, author: author, bundleIDs: bundleIDs, phrases: phrases, confirms: confirms)
     }
 
-    private static func parseCommand(_ raw: Any, into phrases: inout [String: [Action]], count: inout Int) throws(PackError) {
+    private struct ParsedCommand {
+        let keys: [String]
+        let actions: [Action]
+        let confirm: Bool?
+    }
+
+    /// Whether a phrase must ask for a spoken yes: its words name a guarded verb (or "trash") and it does not start
+    /// with "undo", or its actions equal a marked built-in command's for an app both packs cover.
+    static func forcesConfirm(phrase: String, actions: [Action], bundleIDs: Set<String>) -> Bool {
+        let words = CommandGrammar.normalize(phrase)
+        if words.first != "undo", IrreversibleGuard.namesVerb(words) { return true }
+        return AppPacks.all.contains { pack in
+            !pack.bundleIDs.isDisjoint(with: bundleIDs) && pack.confirms.contains { pack.phrases[$0] == actions }
+        }
+    }
+
+    private static func parseCommand(_ raw: Any, into phrases: inout [String: [Action]], count: inout Int) throws(PackError) -> ParsedCommand {
         guard let command = raw as? [String: Any] else { throw PackError("not an object") }
-        try expectKeys(command, required: ["phrases", "actions"], in: "command")
+        try expectKeys(command, required: ["phrases", "actions"], optional: ["confirm"], in: "command")
+        var explicit: Bool?
+        if let value = command["confirm"] {
+            guard let flag = value as? NSNumber, CFGetTypeID(flag) == CFBooleanGetTypeID() else { throw PackError("bad confirm (true or false)") }
+            explicit = flag.boolValue
+        }
         guard let list = command["actions"] as? [Any], !list.isEmpty else { throw PackError("no actions") }
         guard list.count <= maxActions else { throw PackError("too many actions (over \(maxActions))") }
         var actions: [Action] = []
         for item in list { actions.append(try parseAction(item)) }
         try checkSequence(actions)
         guard let spoken = command["phrases"] as? [Any], !spoken.isEmpty else { throw PackError("no phrases") }
+        var keys: [String] = []
         for item in spoken {
             count += 1
             guard count <= maxPhrases else { throw PackError("too many phrases (over \(maxPhrases))") }
@@ -94,7 +130,9 @@ public enum PackFile {
                 throw PackError("held phrase (a menu_item title matches an irreversible item loosely; name the full title)")
             }
             phrases[key] = actions
+            keys.append(key)
         }
+        return ParsedCommand(keys: keys, actions: actions, confirm: explicit)
     }
 
     /// A key press with no command or option: it types a character, presses the focused button or sends a control
@@ -263,14 +301,22 @@ public enum PackFile {
     /// The pack as a file. Phrases with equal actions share a command. A command with an action the format cannot
     /// express (every case but a key chord, menu item, app or https URL) is left out; the built-ins have none.
     public static func encode(_ pack: AppPack) -> Data {
-        var groups: [(phrases: [String], actions: [Action])] = []
+        var groups: [(phrases: [String], actions: [Action], asks: Bool)] = []
         for phrase in pack.phrases.keys.sorted() {
             let actions = pack.phrases[phrase] ?? []
-            if let i = groups.firstIndex(where: { $0.actions == actions }) { groups[i].phrases.append(phrase) } else { groups.append(([phrase], actions)) }
+            let asks = pack.confirms.contains(phrase)
+            if let i = groups.firstIndex(where: { $0.actions == actions && $0.asks == asks }) {
+                groups[i].phrases.append(phrase)
+            } else {
+                groups.append(([phrase], actions, asks))
+            }
         }
         let commands: [[String: Any]] = groups.compactMap { group in
             let encoded = group.actions.compactMap(json)
-            return encoded.count == group.actions.count ? ["phrases": group.phrases, "actions": encoded] : nil
+            guard encoded.count == group.actions.count else { return nil }
+            var command: [String: Any] = ["phrases": group.phrases, "actions": encoded]
+            if group.asks { command["confirm"] = true }
+            return command
         }
         let root: [String: Any] = ["format": 1, "id": pack.id, "name": pack.name, "version": pack.version, "author": pack.author,
                                    "bundleIDs": pack.bundleIDs.sorted(), "commands": commands]

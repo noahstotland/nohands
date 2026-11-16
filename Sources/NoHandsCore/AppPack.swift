@@ -12,10 +12,12 @@ public struct AppPack: Sendable, Equatable {
     public let bundleIDs: Set<String>
     /// Keys are already normalized: lowercase, single spaces, no ASR punctuation.
     public let phrases: [String: [Action]]
+    /// The phrase keys (a subset of `phrases`' keys) that wait for a spoken yes before they run.
+    public let confirms: Set<String>
 
     /// `id` defaults to the name in id form ("Bear Notes" is "bear-notes").
     public init(id: String? = nil, name: String, version: String = "1.0.0", author: String = "",
-                bundleIDs: Set<String>, phrases: [String: [Action]]) {
+                bundleIDs: Set<String>, phrases: [String: [Action]], confirms: Set<String> = []) {
         self.id = id ?? name.lowercased().map { $0.isASCII && ($0.isLetter || $0.isNumber) ? $0 : "-" }
             .reduce(into: "") { $0.append($1) }
         self.name = name
@@ -23,6 +25,7 @@ public struct AppPack: Sendable, Equatable {
         self.author = author
         self.bundleIDs = bundleIDs
         self.phrases = phrases
+        self.confirms = confirms
     }
 }
 

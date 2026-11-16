@@ -53,6 +53,7 @@ public enum PipelineText {
         case .reject(let message): detailed ? "reject(\(message))" : "reject"
         case .macro(let macro): detailed ? "macro(\(macro.name), \(macro.steps.count) steps)" : "macro"
         case .forgetRoutes(let all): all ? "forget all routes" : "forget that route"
+        case .confirm(let held): detailed ? "confirm(\(held.phrase))" : "confirm"
         }
     }
 

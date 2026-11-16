@@ -9,6 +9,9 @@ extension AppPack {
         func chord(_ key: Key, _ modifiers: Set<Modifier> = [.command]) -> [Action] { [.pressKey(KeyChord(key, modifiers))] }
         let cs: Set<Modifier> = [.command, .shift]
         let co: Set<Modifier> = [.command, .option]
+        var confirms = Set<String>()
+        // Phrases that wait for a spoken yes before they run.
+        func asking(_ names: [String]) -> [String] { confirms.formUnion(names); return names }
         let groups: [([String], [Action])] = [
             (["new window"], chord(.n)),
             (["new incognito window", "incognito window", "incognito"], chord(.n, cs)),
@@ -34,13 +37,13 @@ extension AppPack {
             (["bookmark manager", "bookmarks", "manage bookmarks"], chord(.b, co)),
             (["history", "show history", "browsing history"], chord(.y)),
             (["downloads", "show downloads"], chord(.j, cs)),
-            (["delete browsing data"], [.menuItem("Delete Browsing Data…")]),
+            (asking(["delete browsing data"]), [.menuItem("Delete Browsing Data…")]),
             (["extensions", "show extensions", "manage extensions"], [.menuItem("Extensions")]),
             (["settings", "chrome settings", "preferences"], chord(.comma)),
             (["address bar", "focus address bar", "location bar", "url bar"], chord(.l)),
         ]
         var phrases: [String: [Action]] = [:]
         for (names, actions) in groups { for name in names { phrases[name] = actions } }
-        return AppPack(name: "Chrome", bundleIDs: ["com.google.Chrome"], phrases: phrases)
+        return AppPack(name: "Chrome", bundleIDs: ["com.google.Chrome"], phrases: phrases, confirms: confirms)
     }()
 }

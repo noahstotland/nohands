@@ -41,6 +41,7 @@ public struct PackSummary: Equatable, Sendable {
         }.sorted()
         commandLines = pack.phrases.keys.sorted().map { phrase in
             Self.quoted(phrase) + " -> " + (pack.phrases[phrase] ?? []).map(Self.describe).joined(separator: ", ")
+                + (pack.confirms.contains(phrase) ? " (asks first)" : "")
         }
     }
 
@@ -93,10 +94,12 @@ public struct PackSet: Sendable, ExpressibleByArrayLiteral {
     public let packs: [AppPack]
     public let shadowed: [Shadowed]
     private let byApp: [String: [String: [Action]]]
+    private let confirmsByApp: [String: Set<String>]
 
     public init(_ packs: [AppPack]) {
         var owners: [String: [String: String]] = [:]
         var merged: [String: [String: [Action]]] = [:]
+        var asks: [String: Set<String>] = [:]
         var lost: [Shadowed] = []
         for pack in packs {
             for app in pack.bundleIDs.sorted() {
@@ -107,6 +110,7 @@ public struct PackSet: Sendable, ExpressibleByArrayLiteral {
                     } else {
                         owners[app, default: [:]][phrase] = pack.id
                         merged[app, default: [:]][phrase] = actions
+                        if pack.confirms.contains(phrase) { asks[app, default: []].insert(phrase) }
                     }
                 }
             }
@@ -114,6 +118,7 @@ public struct PackSet: Sendable, ExpressibleByArrayLiteral {
         self.packs = packs
         shadowed = lost
         byApp = merged
+        confirmsByApp = asks
     }
 
     public init(arrayLiteral packs: AppPack...) { self.init(packs) }
@@ -123,6 +128,9 @@ public struct PackSet: Sendable, ExpressibleByArrayLiteral {
 
     /// The merged phrase table for an app, nil when no pack covers it.
     func phrases(for bundleID: String) -> [String: [Action]]? { byApp[bundleID] }
+
+    /// The phrases of an app whose winning pack asks for a spoken yes first.
+    func confirms(for bundleID: String) -> Set<String> { confirmsByApp[bundleID] ?? [] }
 }
 
 /// The one-line status under a pack in the menu bar and in `nohands-cli pack list`.

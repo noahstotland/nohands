@@ -74,9 +74,10 @@ public enum PackDraft {
         }
         guard !phrases.isEmpty else { return Result(pack: nil, data: nil, leftOut: leftOut, problem: .nothingToPut) }
         let draft = AppPack(id: id(for: bundleID), name: probe.name, bundleIDs: [bundleID], phrases: phrases)
-        let data = PackFile.encode(draft)
         do {
-            return Result(pack: try PackFile.parse(data), data: data, leftOut: leftOut, problem: nil)
+            // Written from the parsed pack, so a phrase the rules force to ask first carries `"confirm": true`.
+            let pack = try PackFile.parse(PackFile.encode(draft))
+            return Result(pack: pack, data: PackFile.encode(pack), leftOut: leftOut, problem: nil)
         } catch {
             return Result(pack: nil, data: nil, leftOut: leftOut, problem: .invalid(error.reason))
         }

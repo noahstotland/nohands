@@ -11,6 +11,22 @@ public enum Routing: Equatable, Sendable {
     /// "forget that route" (`all: false`) or "forget all routes" (`all: true`): route memory is the pipeline's, not the
     /// executor's. Command mode only; never sent to the model.
     case forgetRoutes(all: Bool)
+    /// A marked phrase: it runs only after a spoken yes. The pipeline holds it in the task slot.
+    case confirm(HeldPhrase)
+}
+
+/// A fixed phrase waiting for a spoken yes: what to read back, what to run, and the app it was heard in (nil for a
+/// global phrase) so it does not run in another one.
+public struct HeldPhrase: Equatable, Sendable {
+    public let phrase: String
+    public let actions: [Action]
+    public let bundleID: String?
+
+    public init(phrase: String, actions: [Action], bundleID: String?) {
+        self.phrase = phrase
+        self.actions = actions
+        self.bundleID = bundleID
+    }
 }
 
 public struct ModeMachine: Sendable {
@@ -156,14 +172,18 @@ public struct ModeMachine: Sendable {
                                        lookUpMacro: Bool = true) -> Routing {
         let phrase = CommandGrammar.normalize(transcript).joined(separator: " ")
         if let all = CommandGrammar.forgetsRoutes(phrase) { return .forgetRoutes(all: all) }
-        guard let actions = grammar.parse(transcript, frontmost: bundleID, textFocused: textFocused) else {
+        guard let match = grammar.match(transcript, frontmost: bundleID, textFocused: textFocused) else {
             if let message = grammar.rejection(transcript) { return .reject(message) }
             if lookUpMacro, let macro = macros.match(transcript) { return .macro(macro) }
             return .resolveWithLLM(phrase)
         }
+        let actions = match.actions
         for case .setMode(let m) in actions {
             mode = m
             if m == .dictation { session = DictationSession() }
+        }
+        if let key = match.confirm, !actions.contains(where: { if case .setMode = $0 { true } else { false } }) {
+            return .confirm(HeldPhrase(phrase: key, actions: actions, bundleID: match.bundleID))
         }
         return .execute(actions)
     }

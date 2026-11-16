@@ -137,7 +137,11 @@ private func commands(_ list: [Doc]) -> (inout Doc) -> Void { { $0["commands"] =
     for pack in AppPacks.all {
         // Installed menu steps parse as exact, so compare what is written, not the flag.
         let again = try PackFile.parse(PackFile.encode(pack), reservedIDs: [])
-        #expect(PackFile.encode(again) == PackFile.encode(pack) && again.id == pack.id, Comment(rawValue: pack.id))
+        // The forced rule may add a mark the table leaves off on purpose ("send control c"); it never drops one.
+        #expect(again.confirms.isSuperset(of: pack.confirms), Comment(rawValue: pack.id))
+        let marked = AppPack(id: again.id, name: again.name, version: again.version, author: again.author, bundleIDs: again.bundleIDs,
+                             phrases: again.phrases, confirms: pack.confirms)
+        #expect(PackFile.encode(marked) == PackFile.encode(pack) && again.id == pack.id, Comment(rawValue: pack.id))
     }
 }
 

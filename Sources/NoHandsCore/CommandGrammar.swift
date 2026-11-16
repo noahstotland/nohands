@@ -7,6 +7,15 @@ public struct GrammarConfig: Sendable {
     public init() {}
 }
 
+/// What `parse` found, and whether the phrase asks for a spoken yes before it runs.
+public struct GrammarMatch: Equatable, Sendable {
+    public let actions: [Action]
+    /// The phrase key to read back ("send message") when the table entry that hit is marked; nil otherwise.
+    public let confirm: String?
+    /// The frontmost app's bundle ID when the hit came from its pack.
+    public let bundleID: String?
+}
+
 public struct CommandGrammar: Sendable {
     private let config: GrammarConfig
     private let packs: PackSet
@@ -144,9 +153,15 @@ public struct CommandGrammar: Sendable {
     ]
 
     static func strippedExactMatch(_ tokens: [String]) -> [Action]? {
+        strippedExactKey(tokens).flatMap { exact[$0] }
+    }
+
+    /// The table key left once fillers are dropped, when there is an entry for it.
+    static func strippedExactKey(_ tokens: [String]) -> String? {
         let stripped = tokens.filter { !fillers.contains($0) }
         guard stripped.count < tokens.count, !stripped.isEmpty else { return nil }
-        return exact[stripped.joined(separator: " ")]
+        let key = stripped.joined(separator: " ")
+        return exact[key] == nil ? nil : key
     }
 
     /// Words that never appear in a bare "open <app>" request and signal a compound command.
@@ -186,33 +201,52 @@ public struct CommandGrammar: Sendable {
     /// reaches a pack. `textFocused` is whether the front app has a text field focused: only then do edits that name
     /// words in the field ("delete the old files") belong to the grammar; without it they go to the model as before.
     public func parse(_ transcript: String, frontmost bundleID: String? = nil, textFocused: Bool = false) -> [Action]? {
+        match(transcript, frontmost: bundleID, textFocused: textFocused)?.actions
+    }
+
+    /// Global phrases that ask for a spoken yes first (keys of the global table).
+    static let confirmed: Set<String> = ["empty trash"]
+
+    /// `parse` with the table entry's mark. Same rules and order as `parse`'s doc.
+    public func match(_ transcript: String, frontmost bundleID: String? = nil, textFocused: Bool = false) -> GrammarMatch? {
         let tokens = Self.normalize(transcript)
         guard !tokens.isEmpty else { return nil }
         let whole = tokens.joined(separator: " ")
-        let pack = StopWords.isStop(transcript) ? nil : bundleID.flatMap(packs.phrases(for:))
-        if let hit = pack?[whole] ?? Self.exact[whole] { return hit }
+        let appID = StopWords.isStop(transcript) ? nil : bundleID
+        let pack = appID.flatMap(packs.phrases(for:))
+        let asks = appID.map(packs.confirms(for:)) ?? []
+        func fromPack(_ key: String, _ actions: [Action]) -> GrammarMatch {
+            GrammarMatch(actions: actions, confirm: asks.contains(key) ? key : nil, bundleID: appID)
+        }
+        func fromGlobal(_ key: String, _ actions: [Action]) -> GrammarMatch {
+            GrammarMatch(actions: actions, confirm: Self.confirmed.contains(key) ? key : nil, bundleID: nil)
+        }
+        func plain(_ actions: [Action]?) -> GrammarMatch? { actions.map { GrammarMatch(actions: $0, confirm: nil, bundleID: nil) } }
+        if let hit = pack?[whole] { return fromPack(whole, hit) }
+        if let hit = Self.exact[whole] { return fromGlobal(whole, hit) }
         let (stripped, dropped) = PhraseLead.strip(tokens)
         if !stripped.isEmpty {
             let phrase = stripped.joined(separator: " ")
-            if let hit = pack?[phrase] { return hit }
+            if let hit = pack?[phrase] { return fromPack(phrase, hit) }
             // Multi-word only: "open home" stays the Home app, not the Home key.
-            if dropped == .open, stripped.count > 1, let hit = Self.exact[phrase] { return hit }
+            if dropped == .open, stripped.count > 1, let hit = Self.exact[phrase] { return fromGlobal(phrase, hit) }
         }
         if tokens.count > 1, tokens[0] == "menu" {
             let words = Self.rawWords(transcript, matching: tokens) ?? tokens
-            return [.menuItem(words.dropFirst().joined(separator: " "))]
+            return plain([.menuItem(words.dropFirst().joined(separator: " "))])
         }
-        if let hit = Self.parseTab(tokens, transcript: transcript) { return hit }
-        if let edit = Self.parseEdit(transcript, textFocused: textFocused) { return [.editText(edit, otherwise: nil)] }
-        if let how = Self.parseRewrite(transcript, textFocused: textFocused) { return [.rewriteText(how)] }
-        if let hit = Self.parseMedia(tokens) { return hit }
+        if let hit = Self.parseTab(tokens, transcript: transcript) { return plain(hit) }
+        if let edit = Self.parseEdit(transcript, textFocused: textFocused) { return plain([.editText(edit, otherwise: nil)]) }
+        if let how = Self.parseRewrite(transcript, textFocused: textFocused) { return plain([.rewriteText(how)]) }
+        if let hit = Self.parseMedia(tokens) { return plain(hit) }
         if let request = Self.parseSettings(tokens) {
             // An unknown pane after "open settings for" is the grammar's own phrase: `rejection` says so; the model never guesses.
             guard case .pane(let pane) = request else { return nil }
-            return [.system(.openSettings(pane))]
+            return plain([.system(.openSettings(pane))])
         }
-        if let hit = parsePattern(tokens, transcript: transcript) { return hit }
-        return Self.strippedExactMatch(tokens)
+        if let hit = parsePattern(tokens, transcript: transcript) { return plain(hit) }
+        if let key = Self.strippedExactKey(tokens), let hit = Self.exact[key] { return fromGlobal(key, hit) }
+        return nil
     }
 
     private static let closeOtherTabsPhrases: Set<String> = ["close the other tabs", "close other tabs", "close all other tabs"]

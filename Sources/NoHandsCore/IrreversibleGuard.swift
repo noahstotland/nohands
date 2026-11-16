@@ -37,6 +37,13 @@ public enum IrreversibleGuard {
              allowedBy: [["empty", "empties", "emptying", "emptied"], ["trash", "bin"]]),
     ]
 
+    /// Whether the words of a spoken phrase name a guarded verb ("send", "place order", "empty trash") or the word
+    /// "trash", as whole words. Used to force the spoken yes on a pack phrase.
+    static func namesVerb(_ phraseWords: [String]) -> Bool {
+        let words = mergeCheckOut(phraseWords)
+        return (verbs.map(\.name) + ["trash"]).contains { contains(words, mergeCheckOut($0.split(separator: " ").map(String.init))) }
+    }
+
     /// Letters and digits only, so "Send…" and "File > Send" split into words; "check out" is one word, "checkout".
     private static func words(_ text: String) -> [String] {
         let cleaned = String(text.map { $0.isLetter || $0.isNumber ? $0 : " " })
@@ -167,6 +174,9 @@ public enum IrreversibleGuard {
 /// Whether a spoken reply to "say yes to <verb>" is a yes. Only "yes", "confirm" and "do it" count, with "please"
 /// before or after; "yeah", "sure" or a yes with more words after it do not, so a stray word cannot confirm a payment.
 public enum ConfirmAnswer {
+    /// How long a step held for a spoken yes waits for the answer.
+    public static let timeout: Duration = .seconds(30)
+
     /// `attention` is the configured attention word: when one is set, the reply must start with it.
     public static func isYes(_ transcript: String, attention: AttentionGate = .off) -> Bool {
         var text = transcript
