@@ -1,7 +1,8 @@
 # NH-77: Safari voice commands: Design
 
 **Date:** 2026-11-16  **Ticket:** [NH-77](https://github.com/noahstotland/nohands/issues/77)
-**Status:** Draft
+**Status:** Shipped
+**Shipped:** in PR #170, as specified
 
 ## Intent
 
