@@ -1,5 +1,11 @@
 # Release notes
 
+## 2026-11-16 ask for a spoken yes before irreversible fixed phrases (NH-149) (#175)
+
+Merged 2026-11-16 11:29 pm UTC.
+
+Mail "send message", "delete message", Messages "delete conversation", Finder "move to trash", Chrome "delete browsing data" and "empty trash" now ask first: say "yes", "confirm" or "do it" within 30 seconds, or the phrase is dropped. Mail also accepts a bare "send". Pack authors can mark any phrase with `"confirm": true`, and phrases that send or delete are always marked.
+
 ## 2026-11-16 add the eval row to the CLI docs table (NH-158) (#174)
 
 Merged 2026-11-16 8:42 pm UTC.
