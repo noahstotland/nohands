@@ -12,5 +12,6 @@
 - The fetcher records a serial only when it is higher than the one stored, and refuses a lower one; the same serial is accepted.
 - The `PackFetcher` allowlist in `NetworkBoundaryTests` is `PackFetcher.swift`, `PackBrowser.swift` and `PackCommands.swift`. `AppDelegate.swift` only uses `PackBrowserController`, and `RegistryCommands.swift` does no fetching.
 - `registry sign --packs <dir>` skips a listed pack whose file is not in the directory and fails only on a file that is there and wrong. `registry keygen` refuses a key file readable by other users when signing.
-- The Browse window and the install alert pause listening while open (as the Remove alert does), so they are clicked, not spoken.
+- The install alert pauses listening while open (as the Remove alert does), so it is clicked, not spoken. The Browse window itself does not pause it.
+- The Browse window re-reads the installed version before the alert and again after it, and refuses a downgrade or a pack that changed in between.
 - Registry docs also add a failure table to `docs/app-packs.md`.

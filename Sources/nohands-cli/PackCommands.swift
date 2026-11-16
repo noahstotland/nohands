@@ -149,12 +149,12 @@ private func installFromRegistry(_ id: String, store: PackStore) async {
 }
 
 private func updateFromRegistry(_ id: String?, store: PackStore) async {
-    let installed = installedPacks(store)
-    if let id, !installed.contains(where: { $0.id == id }) { fail("\(PackSummary.printable(id)) is not installed") }
+    if let id, !installedPacks(store).contains(where: { $0.id == id }) { fail("\(PackSummary.printable(id)) is not installed") }
     let fetcher = registryFetcher()
     let index = await fetchIndexOrFail(fetcher)
     var offered = 0
     for entry in index.packs where id == nil || entry.id == id {
+        let installed = installedPacks(store)   // again each time: an earlier update changes what shadows what
         guard let old = installed.first(where: { $0.id == entry.id })?.pack else { continue }
         let decision = PackFetcher.decision(entry: entry, installedVersion: old.version)
         guard decision == .update else {

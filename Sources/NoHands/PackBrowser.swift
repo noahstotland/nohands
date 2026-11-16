@@ -194,7 +194,10 @@ final class PackBrowserController: NSObject, NSWindowDelegate, NSTableViewDataSo
     private func confirmAndInstall(data: Data, pack: AppPack, entry: RegistryEntry) {
         let installed = (try? store.list()) ?? []
         let old = installed.first { $0.id == pack.id }?.pack
-        let isUpdate = rows.first { $0.entry.id == entry.id }?.decision == .update
+        // From what is on disk now, not the row: the pack may have changed since the list loaded.
+        let fresh = PackFetcher.decision(entry: entry, installedVersion: old?.version)
+        guard fresh == .install || fresh == .update else { setNote(entry.id, fresh.userMessage, failed: true); refreshDecisions(); return }
+        let isUpdate = fresh == .update
         let verb = isUpdate ? "Update" : "Install"
         let alert = NSAlert()
         alert.messageText = "\(verb) \(PackSummary.printable(pack.name)) \(PackSummary.printable(pack.version))?"
@@ -210,6 +213,9 @@ final class PackBrowserController: NSObject, NSWindowDelegate, NSTableViewDataSo
         }
         alert.accessoryView = text
         guard runAlert(alert) == .alertSecondButtonReturn else { setNote(entry.id, nil); return }
+        // The alert can stay open a while: check again that this is still not a downgrade.
+        let again = PackFetcher.decision(entry: entry, installedVersion: ((try? store.list()) ?? []).first { $0.id == pack.id }?.pack?.version)
+        guard again == fresh else { setNote(entry.id, again.userMessage ?? "Changed while you were looking, try again", failed: true); refreshDecisions(); return }
         do {
             try store.install(data)
             setNote(entry.id, nil)
