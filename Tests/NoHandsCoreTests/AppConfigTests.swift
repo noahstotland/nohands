@@ -185,3 +185,15 @@ import Foundation
         #expect(v.skipped == row.skipped, "\(row.json.prefix(80))")
     }
 }
+
+@Test func macrosDecodeAndABadValueNeverFailsTheConfig() throws {
+    let table: [(json: String, kept: Int, skipped: Int)] = [
+        (#"{}"#, 0, 0), (#"{"macros":{"night game":["click"]}}"#, 1, 0),
+        (#"{"macros":["click"]}"#, 0, 1), (#"{"macros":"night game"}"#, 0, 1),
+    ]
+    for row in table {
+        let c = try AppConfig.load(from: Data(row.json.utf8), environment: [:])
+        #expect(c.macros.all.count == row.kept && c.macros.skipped == row.skipped, "\(row.json)")
+    }
+    #expect(try AppConfig.load(from: Data(#"{"macros":7,"silenceMs":500}"#.utf8), environment: [:]).silenceMs == 500)
+}
