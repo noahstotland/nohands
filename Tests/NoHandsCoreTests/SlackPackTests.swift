@@ -49,9 +49,7 @@ private let packOnly: [(String, [Action])] = [
 }
 
 @Test func slackHasNoStopPhrase() {
-    for phrase in AppPack.slack.phrases.keys {
-        #expect(!phrase.split(separator: " ").contains("stop"), Comment(rawValue: phrase))
-    }
+    for phrase in AppPack.slack.phrases.keys { #expect(!phrase.split(separator: " ").contains("stop"), Comment(rawValue: phrase)) }
     let grammar = CommandGrammar()
     for phrase in ["stop", "cancel", "cancel that", "stop jump to general"] {
         #expect(grammar.parse(phrase, frontmost: slack) == grammar.parse(phrase, frontmost: nil), Comment(rawValue: phrase))
