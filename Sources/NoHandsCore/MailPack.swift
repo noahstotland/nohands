@@ -2,8 +2,9 @@ import Foundation
 
 extension AppPack {
     /// Mail's own message shortcuts (macOS 14.5 menu titles). Read, flag, junk and the mailbox list use Mail's toggle
-    /// chords, since their menu titles flip with the selection. a bare `send` asks for a spoken yes first (as does every send and delete phrase), and the global
-    /// `delete`, `up`, `down`, `undo` and `find` are not repeated, so editing a reply works as in every other app.
+    /// chords, since their menu titles flip with the selection. Every send and delete phrase (a bare `send` too) asks
+    /// for a spoken yes first. The global `delete`, `up`, `down`, `undo` and `find` are not repeated, so editing a reply
+    /// works as in every other app.
     static let mail: AppPack = {
         func chord(_ key: Key, _ modifiers: Set<Modifier> = [.command]) -> [Action] { [.pressKey(KeyChord(key, modifiers))] }
         var confirms = Set<String>()
