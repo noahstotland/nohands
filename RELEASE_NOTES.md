@@ -1,5 +1,11 @@
 # Release notes
 
+## 2026-11-16 Finder voice commands (NH-78) (#169)
+
+Merged 2026-11-16 8:25 pm UTC.
+
+In Finder you can now say `new folder`, `go to downloads`, `list view`, `get info`, `rename`, `move to trash`, `put back`, `show hidden files` and more; see the Finder rows in the voice command list. `open the downloads folder` still opens a folder as before, and moving to the Trash is undone with `undo`.
+
 ## 2026-11-16 Safari voice commands (NH-77) (#170)
 
 Merged 2026-11-16 8:17 pm UTC.
