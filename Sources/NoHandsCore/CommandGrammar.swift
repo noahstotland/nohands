@@ -181,7 +181,7 @@ public struct CommandGrammar: Sendable {
     /// A pack's typing lead ("jump to design team"): the lead's actions, then the rest typed in the speaker's words,
     /// minus one leading article and one trailing "channel". An empty rest is the lead's actions alone.
     private static func typingLead(_ tokens: [String], transcript: String, pack: AppPack) -> [Action]? {
-        for (lead, actions) in pack.typingLeads {
+        for (lead, actions) in pack.typingLeads.sorted(by: { $0.key.count > $1.key.count }) {
             let leadTokens = lead.split(separator: " ").map(String.init)
             guard tokens.starts(with: leadTokens) else { continue }
             var rest = (rawWords(transcript, matching: tokens) ?? tokens).dropFirst(leadTokens.count)

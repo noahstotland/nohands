@@ -89,4 +89,4 @@ An app can have phrases that work only while it is in front and win on a shared 
 
 The global `new tab`, `close tab`, `close window`, `next tab`, `previous tab`, `find`, `page up` and `page down` also work in Terminal. Closing a tab or window with a running command shows Terminal's own confirm, which NoHands does not answer (say `enter` or `escape`). `stop` never interrupts a shell command; say `interrupt`.
 
-The global `go back`, `go forward`, `find`, `escape`, `full screen` and `enter` also work in Slack. Bare `mute` stays the Mac's speakers; say `mute huddle` for the huddle. `jump to <name>` leaves the switcher open for `enter` or `down`. The Later, sidebar and Home chords are unverified until checked against the Slack app.
+The global `go back`, `go forward`, `find`, `escape`, `full screen` and `enter` also work in Slack. Bare `mute` stays the Mac's speakers; say `mute huddle` for the huddle. `jump to <name>` leaves the switcher open for `enter` or `down`. Any `jump to …` in Slack types into the switcher, and `open settings` or `open people` there means Slack's own view. The Later, sidebar and Home chords are unverified until checked against the Slack app.
