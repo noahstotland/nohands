@@ -53,3 +53,15 @@ import Testing
         #expect((ShortcutGuard.blocked([.menuItem(title)], goal: goal) != nil) == blocked, Comment(rawValue: title))
     }
 }
+
+@Test func aNegatedQuitOrCloseWordAllowsNothing() {
+    let cmdQ: [Action] = [.pressKey(KeyChord(.q, [.command]))], cmdW: [Action] = [.pressKey(KeyChord(.w, [.command]))]
+    // (actions, goal, blocked)
+    let cases: [([Action], String, Bool)] = [
+        (cmdQ, "don't quit Safari", true), (cmdW, "never close this", true), ([.closeApp("Safari")], "don't quit", true),
+        ([.menuItem("Close Window")], "don't close it", true),
+        (cmdQ, "quit Safari", false), (cmdW, "close this tab", false), (cmdQ, "don't save, just quit", false),
+    ]
+    for (actions, goal, blocked) in cases { #expect((ShortcutGuard.blocked(actions, goal: goal) != nil) == blocked, Comment(rawValue: goal)) }
+    #expect(!ShortcutGuard.allowsClose(goal: "don't close the tabs") && ShortcutGuard.allowsClose(goal: "close the tabs"))
+}
