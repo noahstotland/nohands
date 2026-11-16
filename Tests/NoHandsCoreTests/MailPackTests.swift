@@ -11,7 +11,7 @@ private let packOnly: [(String, [Action])] = [
     ("mark unread", chord(.u, [.command, .shift])), ("unflag", chord(.l, [.command, .shift])),
     ("archive it", chord(.a, [.command, .control])), ("junk", chord(.j, [.command, .shift])),
     ("delete this message", chord(.delete)), ("hide mailbox list", chord(.m, [.command, .shift])),
-    ("go to the inbox", chord(.one)), ("go to sent", [.menuItem("Mailbox > Sent")]),
+    ("go to the inbox", chord(.one)), ("go to sent", [.menuItem("Mailbox > Go to Favorite Mailbox > Sent")]),
     ("search mail", chord(.f, [.command, .option])), ("attach a file", chord(.a, [.command, .shift])),
     ("close this message", chord(.w)),
 ]

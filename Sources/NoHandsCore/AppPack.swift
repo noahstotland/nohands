@@ -17,7 +17,7 @@ public struct AppPack: Sendable {
 }
 
 public enum AppPacks {
-    /// The shipped packs; each app ticket adds an entry here and a row in the README.
+    /// The shipped packs; each app ticket adds an entry here and a row in docs/voice-commands.md.
     public static let all: [AppPack] = [.terminal, .mail]
 }
 

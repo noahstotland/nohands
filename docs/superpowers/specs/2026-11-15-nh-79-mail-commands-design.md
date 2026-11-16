@@ -88,7 +88,7 @@ Phrases (normalized keys):
 | `delete message`, `delete this message`, `delete the message`, `delete email`, `delete this email`, `trash message`, `move to trash` | ⌘⌫ |
 | `show mailboxes`, `hide mailboxes`, `mailbox list`, `show mailbox list`, `hide mailbox list` | ⇧⌘M (toggles the sidebar) |
 | `inbox`, `inbox mailbox` (so `go to inbox`, `go to the inbox`) | ⌘1 |
-| `sent`, `sent mail`, `sent mailbox`, `sent messages` (so `go to sent`) | `.menuItem("Mailbox > Sent")` |
+| `sent`, `sent mail`, `sent mailbox`, `sent messages` (so `go to sent`) | `.menuItem("Mailbox > Go to Favorite Mailbox > Sent")` |
 | `search mail`, `search mailbox`, `search email` | ⌥⌘F (Mailbox Search) |
 | `attach a file`, `attach file`, `attach files`, `add attachment`, `attach` | ⇧⌘A (opens the Attach Files sheet) |
 | `close message`, `close email`, `close this message` | ⌘W |

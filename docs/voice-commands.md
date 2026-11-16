@@ -88,8 +88,8 @@ An app can have phrases that work only while it is in front and win on a shared 
 | Mail | `go to inbox`, `go to sent` | Opens the Inbox, or Sent |
 | Mail | `search mail` | Focuses the search field (then say or type what to find) |
 | Mail | `attach a file` | Opens the Attach Files sheet |
-| Mail | `close message` | Closes the message window (a draft shows Mail's own save sheet) |
+| Mail | `close message` | Closes the front Mail window (a draft shows Mail's own save sheet) |
 
 The global `new tab`, `close tab`, `close window`, `next tab`, `previous tab`, `find`, `page up` and `page down` also work in Terminal. Closing a tab or window with a running command shows Terminal's own confirm, which NoHands does not answer (say `enter` or `escape`). `stop` never interrupts a shell command; say `interrupt`.
 
-In Mail, read, flag, junk and the mailbox list are toggles. `go to sent` needs Sent in the Favorites bar. `next message` and `previous message` move the selection while the message list has focus. The global `delete`, `undo`, `find`, `up` and `down` keep their meaning while writing a message.
+In Mail, read, flag, junk and the mailbox list are toggles. `go to inbox` and `go to sent` open the first Favorites mailbox and the Sent favorite, so they need Inbox and Sent in the Favorites bar. `next message` and `previous message` move the selection while the message list has focus. The global `delete`, `undo`, `find`, `up` and `down` keep their meaning while writing a message.

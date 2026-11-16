@@ -27,7 +27,7 @@ extension AppPack {
              chord(.m, [.command, .shift])),
             (["inbox", "inbox mailbox"], chord(.one)),
             // Sent has no fixed chord (command-2 and up follow the Favorites bar), so it is found by title.
-            (["sent", "sent mail", "sent mailbox", "sent messages"], [.menuItem("Mailbox > Sent")]),
+            (["sent", "sent mail", "sent mailbox", "sent messages"], [.menuItem("Mailbox > Go to Favorite Mailbox > Sent")]),
             (["search mail", "search mailbox", "search email"], chord(.f, [.command, .option])),
             (["attach a file", "attach file", "attach files", "add attachment", "attach"], chord(.a, [.command, .shift])),
             (["close message", "close email", "close this message"], chord(.w)),
