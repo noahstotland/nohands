@@ -2,7 +2,7 @@
 
 **Date:** 2026-11-16  **Ticket:** [NH-55](https://github.com/noahstotland/nohands/issues/55)
 **Status:** Shipped
-**Shipped:** in the NH-55 PR
+**Shipped:** in PR #160, with differences: [as-built](../as-built/2026-11-16-nh-55-rewrite-selection.md)
 
 ## Intent
 
