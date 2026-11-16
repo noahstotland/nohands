@@ -74,5 +74,22 @@ An app can have phrases that work only while it is in front and win on a shared 
 | Terminal | `split pane`, `close pane` | Splits the window, or closes the split pane |
 | Terminal | `bigger font`, `smaller font`, `default font size` | Changes the font size |
 | Terminal | `interrupt`, `cancel command` | Sends control-C to the running command |
+| Mail | `new message`, `compose` | Opens a new message |
+| Mail | `reply`, `reply all`, `forward` | Replies to, replies to all on, or forwards the selected message |
+| Mail | `send message`, `send email` | Sends the open draft (two words on purpose: a bare `send` does nothing) |
+| Mail | `undo send` | Takes the send back while Mail's undo delay runs |
+| Mail | `next message`, `previous message` | Moves the selection in the message list |
+| Mail | `get mail`, `check mail` | Checks for new mail |
+| Mail | `mark as read`, `mark as unread` | Toggles read and unread |
+| Mail | `flag`, `unflag` | Toggles the flag |
+| Mail | `archive`, `junk` | Archives the message, or moves it to Junk |
+| Mail | `delete message`, `trash message` | Moves the message to Trash (`undo` brings it back) |
+| Mail | `show mailboxes`, `hide mailboxes` | Toggles the mailbox list |
+| Mail | `go to inbox`, `go to sent` | Opens the Inbox, or Sent |
+| Mail | `search mail` | Focuses the search field (then say or type what to find) |
+| Mail | `attach a file` | Opens the Attach Files sheet |
+| Mail | `close message` | Closes the message window (a draft shows Mail's own save sheet) |
 
 The global `new tab`, `close tab`, `close window`, `next tab`, `previous tab`, `find`, `page up` and `page down` also work in Terminal. Closing a tab or window with a running command shows Terminal's own confirm, which NoHands does not answer (say `enter` or `escape`). `stop` never interrupts a shell command; say `interrupt`.
+
+In Mail, read, flag, junk and the mailbox list are toggles. `go to sent` needs Sent in the Favorites bar. `next message` and `previous message` move the selection while the message list has focus. The global `delete`, `undo`, `find`, `up` and `down` keep their meaning while writing a message.
