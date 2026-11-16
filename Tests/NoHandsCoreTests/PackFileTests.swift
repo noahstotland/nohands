@@ -107,3 +107,10 @@ private func commands(_ list: [Doc]) -> (inout Doc) -> Void { { $0["commands"] =
         #expect(grammar.parse(phrase, frontmost: app) == expected, "\(phrase) in \(app ?? "no app")")
     }
 }
+
+@Test func packMenuStatus() {
+    for (phrases, shadowed, invalid, line) in [(12, 1, nil, "12 phrases, 1 shadowed"), (1, 0, nil, "1 phrase"),
+                                               (0, 0, "unknown action kind", "invalid: unknown action kind")] as [(Int, Int, String?, String)] {
+        #expect(PackMenu.status(phrases: phrases, shadowed: shadowed, invalidReason: invalid) == line)
+    }
+}

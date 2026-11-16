@@ -28,6 +28,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private static let statusBarDefaultsKey = "statusBarPosition"
     private let backendItem = NSMenuItem(title: "Model", action: nil, keyEquivalent: "")
     private let backendMenu = NSMenu(title: "Model")
+    private let packsItem = NSMenuItem(title: "Packs", action: nil, keyEquivalent: "")
+    private let packsMenu = NSMenu(title: "Packs")
+    private let packStore = PackStore()
     private let claudeKeyItem = NSMenuItem(title: "Set Claude API key…", action: #selector(setClaudeKey), keyEquivalent: "")
     private let openConfigItem = NSMenuItem(title: "Open config.json…", action: #selector(openConfig), keyEquivalent: "")
     /// agent-desktop, when found and permitted (see `HarnessStatus`); re-probed when the menu opens.
@@ -67,11 +70,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var launchedOllama = false
     private var lastWarm: ContinuousClock.Instant?
     private var warming = false
+    private var packsObserver: (any NSObjectProtocol)?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         overlay.statusBarPosition = StatusBarPosition.stored(UserDefaults.standard.string(forKey: Self.statusBarDefaultsKey))
         commandLog.onChange = { [weak self] in self?.logWindow?.reload() }
         buildMenu()
+        // The CLI installs packs; it tells the app through this local notification (no payload), and the menu re-reads on open.
+        packsObserver = DistributedNotificationCenter.default().addObserver(
+            forName: PackStore.changedNotification, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.reloadPacks() }
+        }
         Task { await bootstrap() }
     }
 
@@ -127,6 +136,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             statusBarMenu.addItem(item)
         }
         statusBarItem.submenu = statusBarMenu
+        packsItem.submenu = packsMenu
+        reloadPacks()
         refreshStatusBarMenu()
         let quit = NSMenuItem(title: "Quit NoHands", action: #selector(quit), keyEquivalent: "q")
         quit.target = self
@@ -134,7 +145,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         recentItem.submenu = recentMenu
         rebuildRecentMenu()
         for item in [stateItem, configItem, NSMenuItem.separator(), transcriptItem, recentItem, viewLogsItem, localModelItem, harnessItem, claudeItem, claudeUsageItem, checkClaudeItem, NSMenuItem.separator(),
-                     pauseItem, retryItem, accessibilityItem, screenRecordingItem, micItem, NSMenuItem.separator(), loginItem, statusBarItem, backendItem, claudeKeyItem, openConfigItem,
+                     pauseItem, retryItem, accessibilityItem, screenRecordingItem, micItem, NSMenuItem.separator(), loginItem, statusBarItem, packsItem, backendItem, claudeKeyItem, openConfigItem,
                      NSMenuItem.separator(), quit] {
             menu.addItem(item)
         }
@@ -423,6 +434,79 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
+    // MARK: - app packs
+
+    /// Built-in packs plus the enabled installed ones, as of the last reload.
+    private var packSet = PackSet.builtIns
+
+    /// Re-reads the installed packs (on the CLI's notification, on menu open and after a toggle or remove), hands the
+    /// pipeline the new set and rebuilds the Packs submenu. A pack that fails to load is shown as invalid and skipped.
+    private func reloadPacks() {
+        let entries: [PackStore.Entry]
+        do { entries = try packStore.list() } catch {
+            PipelineLog.warning("couldn't read installed packs", detail: "\(error)")
+            entries = []
+        }
+        packSet = PackSet(installed: entries.compactMap { $0.enabled ? $0.pack : nil })
+        pipeline?.setPacks(packSet)
+        packsMenu.removeAllItems()
+        guard !entries.isEmpty else {
+            let none = NSMenuItem(title: "No packs installed", action: nil, keyEquivalent: "")
+            none.isEnabled = false
+            packsMenu.addItem(none)
+            return
+        }
+        for entry in entries {
+            let status = PackMenu.status(phrases: entry.pack?.phrases.count ?? 0,
+                                         shadowed: packSet.shadowed.filter { $0.packID == entry.id }.count,
+                                         invalidReason: entry.invalidReason)
+            let line = NSMenuItem(title: status, action: nil, keyEquivalent: "")
+            line.isEnabled = false
+            let on = NSMenuItem(title: "On", action: #selector(packToggled(_:)), keyEquivalent: "")
+            on.state = entry.enabled ? .on : .off
+            let remove = NSMenuItem(title: "Remove…", action: #selector(packRemoveClicked(_:)), keyEquivalent: "")
+            let submenu = NSMenu(title: entry.id)
+            for item in [line, on, remove] {
+                item.target = self
+                item.representedObject = entry.id
+                submenu.addItem(item)
+            }
+            let item = NSMenuItem(title: entry.pack.map { "\($0.name) \($0.version)" } ?? entry.id, action: nil, keyEquivalent: "")
+            item.submenu = submenu
+            packsMenu.addItem(item)
+        }
+    }
+
+    @objc private func packToggled(_ sender: NSMenuItem) {
+        guard let id = sender.representedObject as? String else { return }
+        do { try packStore.setEnabled(id, sender.state != .on) } catch {
+            PipelineLog.warning("couldn't change pack", detail: "\(error)")
+            overlay.showHUD("couldn't change the pack: check ~/.config/nohands/packs", duration: .seconds(4))
+        }
+        reloadPacks()
+    }
+
+    @objc private func packRemoveClicked(_ sender: NSMenuItem) {
+        guard let id = sender.representedObject as? String else { return }
+        NSApp.activate(ignoringOtherApps: true)
+        let alert = NSAlert()
+        alert.messageText = "Remove this pack?"
+        alert.informativeText = "Its voice commands stop working. You can add the pack again with nohands-cli."
+        alert.addButton(withTitle: "Cancel")
+        alert.addButton(withTitle: "Remove").hasDestructiveAction = true
+        // Listening stays off while the alert is open, so a spoken "press return" can't answer it.
+        let pausedForAlert = pipeline != nil && !userPaused && !axPaused
+        if pausedForAlert { togglePause() }
+        let response = alert.runModal()
+        if pausedForAlert { togglePause() }
+        guard response == .alertSecondButtonReturn else { return }
+        do { try packStore.remove(id) } catch {
+            PipelineLog.warning("couldn't remove pack", detail: "\(error)")
+            overlay.showHUD("couldn't remove the pack: check ~/.config/nohands/packs", duration: .seconds(4))
+        }
+        reloadPacks()
+    }
+
     // MARK: - desktop harness
 
     /// The harness kind the pipeline runs with (native until it starts): what the local model is warmed for.
@@ -442,6 +526,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         refreshClaudeItems()
         refreshLoginItem()
         rebuildRecentMenu()
+        reloadPacks()
         guard !harnessProbeInFlight else { return }
         Task { _ = await probeHarness() }
     }
@@ -732,6 +817,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                                       executor: executor, overlay: overlay, ax: ax, observer: observer, harness: harness,
                                       commandLog: commandLog)
                 p.resolverKind = Self.logResolver(builtBackend)
+                p.setPacks(packSet)
                 p.onStatus = { [weak self] mode, transcript in self?.apply(mode: mode, transcript: transcript) }
                 p.onNotice = { PipelineLog.info("notice: \($0)") }
                 p.onError = { [weak self] message in self?.errorText = message; self?.refresh() }

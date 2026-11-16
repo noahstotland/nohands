@@ -78,3 +78,12 @@ public struct PackSet: Sendable, ExpressibleByArrayLiteral {
     /// The merged phrase table for an app, nil when no pack covers it.
     func phrases(for bundleID: String) -> [String: [Action]]? { byApp[bundleID] }
 }
+
+/// The one-line status under a pack in the menu bar and in `nohands-cli pack list`.
+public enum PackMenu {
+    /// "12 phrases, 1 shadowed", or "invalid: unknown action kind" when the pack failed validation.
+    public static func status(phrases: Int, shadowed: Int, invalidReason: String? = nil) -> String {
+        if let invalidReason { return "invalid: \(invalidReason)" }
+        return "\(phrases) \(phrases == 1 ? "phrase" : "phrases")" + (shadowed > 0 ? ", \(shadowed) shadowed" : "")
+    }
+}

@@ -29,7 +29,11 @@ func usage() -> Never {
       nohands-cli observe            (waits 3 s, prints the task-loop observation of the frontmost app)
       nohands-cli parse "<text>" [--app <bundle id>]
                                      (dry run: prints the grammar's actions, or "no match -> LLM"; executes nothing;
-                                      --app parses with that app in front, so its pack applies)
+                                      --app parses with that app in front, so its pack, built in or installed, applies)
+      nohands-cli pack add <file>    (checks the pack file, shows what it does, and installs it only if you answer y)
+      nohands-cli pack list          (installed packs: id, version, on or off, phrases, notes)
+      nohands-cli pack remove <id>   (removes an installed pack)
+      nohands-cli pack builtin <id>  (prints a built-in pack as a pack file, as a template)
       nohands-cli menu "<words>"     (waits 2 s, then prints the frontmost app's menu item those words name and presses it)
       nohands-cli menu --list        (waits 3 s, prints the frontmost app's menu items, without the Apple menu)
       nohands-cli run "<phrase>"...  (waits 2 s, executes each phrase in order, 0.8 s apart)
@@ -330,13 +334,16 @@ var exitStatus: Int32 = 0
         case "parse":
             guard rest.count == 1 || (rest.count == 3 && rest[1] == "--app") else { usage() }
             let bundleID: String? = rest.count == 3 ? rest[2] : nil
-            if let actions = CommandGrammar().parse(rest[0], frontmost: bundleID) {
+            let grammar = CommandGrammar(packs: PackSet(installed: (try? PackStore().loadEnabled()) ?? []))
+            if let actions = grammar.parse(rest[0], frontmost: bundleID) {
                 print("\(actions)")
-            } else if let message = CommandGrammar().rejection(rest[0]) {
+            } else if let message = grammar.rejection(rest[0]) {
                 print("rejected: \(message)")
             } else {
                 print("no match -> LLM")
             }
+        case "pack":
+            packCommand(rest)
         case "menu":
             guard rest.count == 1 else { usage() }
             guard Permissions.accessibilityGranted(prompt: false) else {

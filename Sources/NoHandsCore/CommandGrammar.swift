@@ -16,6 +16,9 @@ public struct CommandGrammar: Sendable {
         self.packs = packs
     }
 
+    /// The same grammar looking pack phrases up in `packs`.
+    public func with(packs: PackSet) -> CommandGrammar { CommandGrammar(config: config, packs: packs) }
+
     /// Lowercases, strips ASR punctuation (.,!?), collapses whitespace, splits on spaces.
     public static func normalize(_ transcript: String) -> [String] {
         let stripped = transcript.lowercased().filter { !".,!?".contains($0) }

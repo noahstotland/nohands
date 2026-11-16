@@ -76,3 +76,5 @@ An app can have phrases that work only while it is in front and win on a shared 
 | Terminal | `interrupt`, `cancel command` | Sends control-C to the running command |
 
 The global `new tab`, `close tab`, `close window`, `next tab`, `previous tab`, `find`, `page up` and `page down` also work in Terminal. Closing a tab or window with a running command shows Terminal's own confirm, which NoHands does not answer (say `enter` or `escape`). `stop` never interrupts a shell command; say `interrupt`.
+
+More apps: install a pack file with `nohands-cli pack add`; see [App packs](app-packs.md).

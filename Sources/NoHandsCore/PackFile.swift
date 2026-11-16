@@ -9,7 +9,9 @@ public struct PackError: Error, Equatable, Sendable {
 /// The installable pack format (version 1): parsed and checked here, so a pack file is data and nothing else.
 /// Limits and rejections are in `docs/superpowers/specs/2026-11-15-nh-80-installable-packs-design.md`.
 public enum PackFile {
-    static let maxBytes = 64 * 1024, maxCommands = 200, maxPhrases = 500, maxActions = 8, maxBundleIDs = 16
+    /// The most bytes a pack file may hold.
+    public static let maxBytes = 64 * 1024
+    static let maxCommands = 200, maxPhrases = 500, maxActions = 8, maxBundleIDs = 16
 
     /// The pack id pattern `^[a-z0-9][a-z0-9-]{1,39}$`; also the check before a pack folder is touched.
     public static func isValidID(_ id: String) -> Bool {
