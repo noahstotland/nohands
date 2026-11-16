@@ -365,3 +365,21 @@ import Foundation
     #expect(!ClaudeRequestBuilder.userMessage(request: request(nil)).contains("Last time"))
     #expect(!ClaudeRequestBuilder.userMessage(request: request(saved), playbooks: false).contains("Last time"))
 }
+
+@Test func openFileDecodesWordsAKindOrAFolderAndNeverAPath() throws {
+    func decode(_ fields: String) throws -> [Action] { try IntentDecoder.actions(fromPayloadText: #"{"actions":[{"kind":"open_file",\#(fields)}]}"#) }
+    let table: [(String, [Action])] = [
+        (#""text":"budget""#, [.openFile(.named("budget", kind: .file))]),
+        (#""text":"budget","option":"Spreadsheet","value":"","target_kind":"label","target_number":0"#, [.openFile(.named("budget", kind: .spreadsheet))]),
+        ("\"option\":\"keynote\",\"text\":\"\"", [.openFile(.recent(.keynote))]),
+        (#""value":"downloads""#, [.openFile(.folder(.downloads))]),
+        // Rejected: a path or url field, path characters, a long name, unknown values and mixes.
+        (#""text":"budget","path":"/etc/passwd""#, []), (#""text":"budget","url":"https://a.com""#, []),
+        (#""text":"../etc/passwd""#, []), (#""text":"~/secrets""#, []), (#""text":"a:b""#, []), (#""text":"a\u0007b""#, []),
+        (#""text":"\#(String(repeating: "a", count: 101))""#, []), (#""option":"folder""#, []), (#""option":"movie""#, []),
+        (#""value":"library""#, []), (#""value":"downloads","text":"budget""#, []), (#""value":"downloads","option":"pdf""#, []), ("\"text\":\" \",\"option\":\"\"", []),
+    ]
+    for (fields, want) in table { #expect(try decode(fields) == want, "\(fields)") }
+    #expect(IntentSchema.kinds.contains("open_file") && IntentSchema.systemPrompt.contains("- open_file:"))
+    #expect(RouteMemory.describe(.openFile(.named("secret plans", kind: .pdf)), names: [:]) == "open_file kind pdf")
+}
