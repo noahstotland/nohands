@@ -2,7 +2,7 @@
 
 Back to the [README](../README.md).
 
-An app pack adds voice commands for one app, or a few. Its phrases work only while one of its apps is in front, and a pack wins over a built-in phrase there. NoHands ships built-in packs for several apps, such as Terminal and Chrome ([Voice commands](voice-commands.md#per-app-commands) lists them); you can install more from a file or from a pack registry.
+An app pack adds voice commands for one app, or a few. Its phrases work only while one of its apps is in front, and a pack wins over a built-in phrase there. NoHands ships packs for Terminal, VS Code, Mail, Messages, Safari and Chrome ([Voice commands](voice-commands.md#per-app-commands)); you can install more from a file or from a pack registry.
 
 A pack is data, never code. Installing or loading one cannot run anything, reach the network or act outside its own apps. Each phrase presses a key chord, picks a menu item, opens an app or opens an `https` page, and nothing else.
 
@@ -124,7 +124,7 @@ Every key is required unless marked optional, and an unknown key anywhere reject
 | Key | Meaning |
 |---|---|
 | `format` | Always `1` |
-| `id` | Names the folder: lowercase letters, digits and `-`, 2 to 40 characters, starting with a letter or digit. Not a built-in pack's id (`terminal`, `vscode`, `mail`, `messages`, `chrome`, ...; `pack builtin` with an unknown id lists them) |
+| `id` | Names the folder: lowercase letters, digits and `-`, 2 to 40 characters, starting with a letter or digit. Not a built-in pack's id: `terminal`, `vs-code`, `mail`, `messages`, `safari` or `chrome` |
 | `name`, `version`, `author` | Shown at install and in the menu. Up to 60, 20 and 60 characters; `author` may be empty |
 | `bundleIDs` | The apps the pack works in, 1 to 16, letters, digits, `.` and `-`. Find one with `osascript -e 'id of app "Notes"'` |
 | `commands` | Each has `phrases` (what you say) and `actions` (what happens, in order) |
@@ -200,7 +200,7 @@ This writes the private key to `registry.key` (mode 600; it refuses a file that 
 | `url` | Where the pack file is: `https`, public host, no user or password, up to 2048 characters |
 | `sha256` | The SHA-256 of the pack file, 64 lowercase hex characters. `shasum -a 256 notes-extras-1.2.0.json` prints it |
 
-Up to 1,000 packs, no repeated `id`, and no built-in pack's id (such as `terminal`). One bad entry rejects the whole list.
+Up to 1,000 packs, no repeated `id`, and no built-in pack id (`terminal`, `vs-code`, `mail`, `messages`, `safari`, `chrome`). One bad entry rejects the whole list.
 
 **3. Sign it.**
 
