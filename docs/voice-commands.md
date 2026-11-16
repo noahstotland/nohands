@@ -143,10 +143,21 @@ An app can have phrases that work only while it is in front and win on a shared 
 | Messages | `tapback`, `react` | Opens the tapback picker |
 | Messages | `close window` | Closes the Messages window (command-W) |
 | Messages | `delete conversation` | Opens Messages' own delete confirm |
+| Chrome | `new window`, `new incognito window`, `incognito` | Opens a window or a private window |
+| Chrome | `reopen closed tab`, `duplicate tab`, `pin tab`, `unpin tab`, `move tab to new window` | Restores, duplicates, pins or moves the tab |
+| Chrome | `search tabs`, `hard reload`, `home page`, `find next`, `find previous` | Opens tab search, reloads without cache, goes home, steps through find matches |
+| Chrome | `view source`, `developer tools`, `javascript console` | Opens the page source, DevTools or the console |
+| Chrome | `print page`, `save page` | Opens the print or save dialog |
+| Chrome | `bookmark this page`, `bookmark all tabs`, `bookmarks bar`, `bookmark manager` | Adds bookmarks, toggles the bar, opens the manager |
+| Chrome | `history`, `downloads`, `extensions`, `settings` | Opens that Chrome page |
+| Chrome | `delete browsing data` | Opens Chrome's delete dialog (Delete Browsing Data… menu item) |
+| Chrome | `address bar`, `focus address bar` | Focuses the address bar (command-L) |
 
 The global `new tab`, `close tab`, `close window`, `next tab`, `previous tab`, `find`, `page up` and `page down` also work in Terminal. Closing a tab or window with a running command shows Terminal's own confirm, which NoHands does not answer (say `enter` or `escape`). `stop` never interrupts a shell command; say `interrupt`. `top of page` and `bottom of page` press command-up and command-down in Terminal too; its own `scroll to top` and `scroll to bottom` still win there.
 
 The global `find`, `next tab`, `previous tab` and `search for <name>` also work in Messages. `delete conversation` asks first, and NoHands does not answer that question for you (say `enter` or `escape`). Sending stays `enter` (or `press return`), so there is no `send` phrase. Pin and unpin are not phrases yet: say them as a request and the model handles them.
+
+In Chrome the global `new tab`, `close tab`, `close window`, `next tab`, `previous tab`, `reload`, `go back`, `go forward`, `find`, `zoom in`, `zoom out` and `full screen` work as elsewhere, and every phrase above also works with a leading `open` and `a` or `the` (`open a new window`). Say `escape` to stop a page load (there is no spoken stop). `open settings` opens Chrome's settings while it is in front (`open system settings` still opens System Settings). `delete browsing data` only opens the dialog; NoHands does not press anything in it. There is no translate or reading mode phrase because Chrome has no menu-bar item for either.
 
 In Mail, read, flag, junk and the mailbox list are toggles. `go to inbox` and `go to sent` open the first Favorites mailbox and the Sent favorite, so they need Inbox and Sent in the Favorites bar. `next message` and `previous message` move the selection while the message list has focus. The global `delete`, `undo`, `find`, `up` and `down` keep their meaning while writing a message.
 
