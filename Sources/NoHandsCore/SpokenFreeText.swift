@@ -20,6 +20,7 @@ extension Action {
         case .goToTab(let target):
             if case .named = target { return true }
             return false
+        case .editText(let edit, _): return edit.targetsPhrase
         // Open-ended leads: "play ... bohemian rhapsody", "skip ahead ... thirty seconds", "volume up ... three".
         case .media(let command):
             if case .play = command { return true }

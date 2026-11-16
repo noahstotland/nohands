@@ -30,7 +30,6 @@ let g = CommandGrammar()
     #expect(g.parse("switch app") == [.pressKey(KeyChord(.tab, [.command]))])
     #expect(g.parse("spotlight") == [.pressKey(KeyChord(.space, [.command]))])
     #expect(g.parse("delete word") == [.pressKey(KeyChord(.delete, [.option]))])
-    #expect(g.parse("delete line") == [.pressKey(KeyChord(.delete, [.command]))])
 }
 
 @Test func mouseCommands() {
@@ -236,6 +235,79 @@ let g = CommandGrammar()
         ("open chrome and go to the youtube tab", nil), ("open the other tab", [.openApp("the other tab")]),
     ]
     for (spoken, want) in cases { #expect(g.parse(spoken) == want, "\(spoken)") }
+}
+
+@Test func textEditingPhrases() {
+    func edit(_ e: TextEdit) -> [Action] { [.editText(e, otherwise: nil)] }
+    let cmdDelete = [Action.pressKey(KeyChord(.delete))]
+    // (spoken, with a text field focused, without one)
+    let table: [(String, [Action]?, [Action]?)] = [
+        // Units and "last" work with or without a field: the run says "no text field" when there is none.
+        ("select word", edit(.select(.word, last: false)), edit(.select(.word, last: false))),
+        ("Select the sentence.", edit(.select(.sentence, last: false)), edit(.select(.sentence, last: false))),
+        ("select paragraph", edit(.select(.paragraph, last: false)), edit(.select(.paragraph, last: false))),
+        ("select the line", edit(.select(.line, last: false)), edit(.select(.line, last: false))),
+        ("select the last word", edit(.select(.word, last: true)), edit(.select(.word, last: true))),
+        ("select last sentence", edit(.select(.sentence, last: true)), edit(.select(.sentence, last: true))),
+        ("delete line", edit(.delete(.line, last: false)), edit(.delete(.line, last: false))),
+        ("delete this line", edit(.delete(.line, last: false)), edit(.delete(.line, last: false))),
+        ("delete that line", edit(.delete(.line, last: false)), edit(.delete(.line, last: false))),
+        ("delete the current line", edit(.delete(.line, last: false)), edit(.delete(.line, last: false))),
+        ("delete this word", edit(.delete(.word, last: false)), edit(.delete(.word, last: false))),
+        ("delete that word", edit(.delete(.word, last: false)), edit(.delete(.word, last: false))),
+        ("select this line", edit(.select(.line, last: false)), edit(.select(.line, last: false))),
+        ("select the current word", edit(.select(.word, last: false)), edit(.select(.word, last: false))),
+        ("select that paragraph", edit(.select(.paragraph, last: false)), edit(.select(.paragraph, last: false))),
+        ("delete the sentence", edit(.delete(.sentence, last: false)), edit(.delete(.sentence, last: false))),
+        ("delete the paragraph", edit(.delete(.paragraph, last: false)), edit(.delete(.paragraph, last: false))),
+        ("delete last word", edit(.delete(.word, last: true)), edit(.delete(.word, last: true))),
+        ("delete the last sentence.", edit(.delete(.sentence, last: true)), edit(.delete(.sentence, last: true))),
+        ("go to the end of the line", edit(.caret(.lineEnd)), edit(.caret(.lineEnd))),
+        ("go to end of line", edit(.caret(.lineEnd)), edit(.caret(.lineEnd))),
+        ("go to the start of the line", edit(.caret(.lineStart)), edit(.caret(.lineStart))),
+        ("go to beginning of line", edit(.caret(.lineStart)), edit(.caret(.lineStart))),
+        ("go to the end of the document", edit(.caret(.documentEnd)), edit(.caret(.documentEnd))),
+        ("go to the bottom of the document", edit(.caret(.documentEnd)), edit(.caret(.documentEnd))),
+        ("go to the start of the document", edit(.caret(.documentStart)), edit(.caret(.documentStart))),
+        ("go to the top of the document", edit(.caret(.documentStart)), edit(.caret(.documentStart))),
+        ("capitalize that", edit(.changeCase(.capitalize)), edit(.changeCase(.capitalize))),
+        ("Uppercase that.", edit(.changeCase(.upper)), edit(.changeCase(.upper))),
+        ("lowercase that", edit(.changeCase(.lower)), edit(.changeCase(.lower))),
+        // Phrases need a focused field, and keep the speaker's casing and words.
+        ("select Project Alpha", edit(.selectPhrase("Project Alpha")), nil),
+        ("select the old files.", edit(.selectPhrase("the old files")), nil),
+        ("delete meeting", edit(.deletePhrase("meeting")), nil),
+        ("replace meeting with call", edit(.replace("meeting", with: "call")), nil),
+        ("Replace Bob with Alice.", edit(.replace("Bob", with: "Alice")), nil),
+        ("replace coffee with tea with milk", edit(.replace("coffee", with: "tea with milk")), nil),   // the first "with" splits
+        ("replace the filter with a new one", edit(.replace("the filter", with: "a new one")), nil),
+        ("go before the budget", edit(.caretBefore("the budget")), nil),
+        ("go after Thanks", edit(.caretAfter("Thanks")), nil),
+        // Never an edit: today's rules keep these phrases.
+        ("select all", [.pressKey(KeyChord(.a, [.command]))], [.pressKey(KeyChord(.a, [.command]))]),
+        ("delete", cmdDelete, cmdDelete), ("delete that", cmdDelete, cmdDelete), ("delete this", cmdDelete, cmdDelete),
+        ("delete word", [.pressKey(KeyChord(.delete, [.option]))], [.pressKey(KeyChord(.delete, [.option]))]),
+        ("select that", nil, nil), ("select it", nil, nil), ("select", nil, nil), ("delete the", cmdDelete, cmdDelete),   // the filler table, as today
+       
+        ("replace", nil, nil), ("replace x", nil, nil), ("replace x with", nil, nil), ("replace with y", nil, nil),
+        ("replace that with x", nil, nil), ("go before", nil, nil), ("go after the", nil, nil),
+        ("select one two three four five six seven eight nine ten eleven twelve thirteen", nil, nil),   // over 12 words
+        ("go to the end", [.pressKey(KeyChord(.l, [.command])), .typeText("the end"), .pressKey(KeyChord(.return))],
+         [.pressKey(KeyChord(.l, [.command])), .typeText("the end"), .pressKey(KeyChord(.return))]),
+        ("go to the end of the page", [.pressKey(KeyChord(.l, [.command])), .typeText("the end of the page"), .pressKey(KeyChord(.return))],
+         [.pressKey(KeyChord(.l, [.command])), .typeText("the end of the page"), .pressKey(KeyChord(.return))]),
+        ("go to youtube", [.openURL(URL(string: "https://www.youtube.com")!, app: nil)], [.openURL(URL(string: "https://www.youtube.com")!, app: nil)]),
+        ("home", [.pressKey(KeyChord(.home))], [.pressKey(KeyChord(.home))]), ("end", [.pressKey(KeyChord(.end))], [.pressKey(KeyChord(.end))]),
+        ("copy", [.pressKey(KeyChord(.c, [.command]))], [.pressKey(KeyChord(.c, [.command]))]),
+        ("capitalize it", nil, nil), ("capitalize", nil, nil),
+    ]
+    for (spoken, focused, unfocused) in table {
+        #expect(g.parse(spoken, textFocused: true) == focused, "\(spoken) (text field focused)")
+        #expect(g.parse(spoken) == unfocused, "\(spoken) (no text field)")
+    }
+    // The model can never produce an edit: it is the grammar's own.
+    #expect(Action.editText(.select(.word, last: false), otherwise: nil).carriesSpokenText == false)
+    #expect(Action.editText(.replace("a", with: "b"), otherwise: nil).carriesSpokenText)
 }
 
 @Test func mediaAndVolumePhrases() {

@@ -43,6 +43,7 @@ private let reloadButton = UIElementInfo(id: 1, frame: CGRect(x: 100, y: 100, wi
 }
 
 @MainActor private func rig(withResolver: Bool = true, attentionWord: String = "",
+                            commandLog: CommandLogStore? = nil,
                             sleep: @escaping @Sendable (Duration) async -> Void = { _ in }) -> Rig {
     let input = FakeInput(), ax = FakeElements(), overlay = FakeOverlay()
     let executor = ActionExecutor(input: input, ax: ax, overlay: overlay, config: AppConfig(), frontTimeout: .milliseconds(100))
@@ -54,7 +55,8 @@ private let reloadButton = UIElementInfo(id: 1, frame: CGRect(x: 100, y: 100, wi
         TaskRunner(config: config, resolver: $0, executor: executor, observer: observer, overlay: overlay, sleep: sleep)
     }
     let p = VoicePipeline(config: config, transcriber: NullTranscriber(), resolver: resolver,
-                          executor: executor, overlay: overlay, ax: ax, observer: observer, taskRunner: runner)
+                          executor: executor, overlay: overlay, ax: ax, observer: observer, taskRunner: runner,
+                          commandLog: commandLog)
     return Rig(pipeline: p, input: input, ax: ax, overlay: overlay, resolver: resolver, executor: executor, observer: observer, runner: runner)
 }
 
@@ -252,6 +254,24 @@ private func step(_ intent: String, _ status: StepStatus, _ actions: [Action] = 
         #expect(r.resolver?.requests.dropFirst().first?.history.first?.userAnswer == answer)
         #expect(r.pipeline.lastTaskOutcome == .done("type a"))
     }
+}
+
+@MainActor @Test func dictationTypedByAFailedEditIsNotLoggedAsACommand() async {
+    let url = FileManager.default.temporaryDirectory.appendingPathComponent("nohands-log-\(UUID().uuidString).json")
+    defer { try? FileManager.default.removeItem(at: url) }
+    let log = CommandLogStore(url: url)
+    let r = rig(commandLog: log)
+    r.ax.fieldFocused = true
+    r.ax.field = FocusedText(value: "Meeting at noon.", selection: TextSpan(location: 16, length: 0), line: nil, rangeSettable: true)
+    await r.pipeline.handle(transcript: "start dictating", trace: trace())
+    let before = log.log.entries.count
+    // (spoken, in the text, so it ran as an edit)
+    for (spoken, found) in [("delete the old files", false), ("delete noon", true)] {
+        let n = log.log.entries.count
+        await r.pipeline.handle(transcript: spoken, trace: trace())
+        #expect(log.log.entries.count == n + (found ? 1 : 0), "\(spoken)")
+    }
+    #expect(r.typed.count == 1 && log.log.entries.count == before + 1)
 }
 
 @MainActor @Test func grammarCommandsUnaffected() async {

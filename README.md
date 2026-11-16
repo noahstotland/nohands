@@ -105,6 +105,10 @@ The script installs Ollama with Homebrew if needed, starts it, pulls the model a
 | `press command shift s` | Presses a key chord |
 | `enter`, `tab`, `escape`, `delete`, arrow names | Presses that key |
 | `undo`, `redo`, `copy`, `paste`, `cut`, `select all`, `save`, `find` | Standard shortcuts |
+| `select word`, `select line`, `select sentence`, `select paragraph`, `select the last word`, `select the last sentence` | Selects that unit at the caret in the focused text field (the last whole word or sentence that ends before the caret). The same with `delete` removes it (`delete the last sentence`, `delete line` takes the whole line and its newline). Without a text field the row says `no text field: click into one first` |
+| `select <words>`, `delete <words>`, `replace <words> with <words>`, `go before <words>`, `go after <words>` | Finds the words in the focused text field (case does not matter, whole words only, a leading `the`, `a`, `an` or `my` is optional) and selects, deletes, replaces or puts the caret next to them. The nearest match before the caret wins, else the nearest after it (with a selection, a match inside it does not count as after); no guess at near matches: a miss says `no "<words>" in the text`. `replace coffee with tea` splits at the first `with`; a replacement keeps a capital the old words started with. The words must be in a text field you have focused, so `select the second option` in a list still goes to the model |
+| `go to the end of the line`, `go to the start of the line` (`beginning`), `go to the end of the document`, `go to the start of the document` (`top`, `bottom`) | Moves the caret with the arrow keys, in any text field, with no read |
+| `capitalize that`, `uppercase that`, `lowercase that` | Changes the case of the selection, or of the word before the caret when nothing is selected (`capitalize` raises each word's first letter) |
 | `new tab`, `close tab`, `close window`, `quit app`, `switch app`, `spotlight` | App and window shortcuts; filler words are ignored, so `close the current tab` and `close this window` work too |
 | `minimize`, `full screen`, `hide app`, `reload` / `refresh` | Window and app shortcuts |
 | `left half`, `right half`, `snap left`, `top left`, `maximize`, `center window` | Moves and resizes the frontmost window on its screen (halves, quarters, thirds); richer phrasing such as `make the window half width and snap to the left side of the screen` goes through the model |
@@ -140,6 +144,7 @@ The script installs Ollama with Homebrew if needed, starts it, pulls the model a
 | `start dictating` / `stop dictating` | Switch between command and dictation mode |
 | `scratch that` (dictation) | Deletes what your last dictated phrase typed |
 | `delete word` (dictation) | Deletes the previous word |
+| `delete that` | Presses Delete (it removes what is selected) |
 | `go to sleep` / `wake up` | Pause and resume listening |
 | `menu <words>` | Presses the menu item of the front app that the words name, such as `menu bookmark this tab` or `menu save as`, through Accessibility; the menu does not open on screen. An exact title wins, else a title that starts with the words, else one that holds every word; a mishearing finds nothing and the row says `no menu item called <words>`. A greyed-out item says `menu item <title> is disabled`. The Apple menu is never searched (no `menu shut down`) |
 
@@ -147,7 +152,9 @@ With `attentionWord` set (see Configuration), start each command with it: `compu
 
 In a browser, number badges and `click <name>` cover the page's links, buttons and fields as well as the toolbar; `show numbers` and `click <name>` can take up to about half a second longer in a browser than in other apps, and the first one in a Chromium browser such as Chrome (once per launch of the browser) about a second longer while the page's accessibility tree is built.
 
-In dictation mode, say `period`, `comma`, `question mark`, `new line`, `new paragraph`, `open quote` and similar to insert punctuation.
+In dictation mode, say `period`, `comma`, `question mark`, `new line`, `new paragraph`, `open quote` and similar to insert punctuation. The text-editing commands above work while you dictate too, and `scratch that` forgets what it can no longer undo after one. A phrase command (`delete the old files`, `replace meeting with call`) edits only when those words are in the field; when they are not, the words you said are typed like any other dictation.
+
+**How text editing works.** The app reads the focused field through Accessibility (the field's text stays on the Mac and is never logged), works out the range, selects it and types the replacement or presses Delete, so the app's own undo (`undo`) takes the edit back. Reading the field takes at most half a second, and a field over 200,000 characters counts as unreadable, as do password fields. Where the field cannot be read or will not take a selection (some web editors, Google Docs), `select`/`delete` of a word, line or paragraph use keyboard shortcuts instead; sentences, `<words>` and case changes need a readable field and say `can't read the text here: select it by hand or say "select line"`. `go to the end of the line` and the other caret moves always use keyboard shortcuts.
 
 ### Per-app commands
 
