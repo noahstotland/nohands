@@ -53,3 +53,16 @@ private let entries = [
     let closed = MenuMatch.firstMatch("close tab", in: entries).map { entries[$0] }
     #expect(closed?.enabled == false)
 }
+
+@Test func exactOnlyNeverPicksALongerTitleAndLookalikesNeverMatch() {
+    let sends = [item("Send Again"), item("Again")]
+    #expect(MenuMatch.firstMatch("Again", in: [item("Send Again")], exactOnly: true) == nil)
+    #expect(MenuMatch.firstMatch("Again", in: sends, exactOnly: true) == 1)
+    #expect(MenuMatch.firstMatch("Save", in: [item("S\u{0430}ve")]) == nil)   // Cyrillic а
+    // (title, lookalike): an ASCII title in disguise is one; a real non-English title is not.
+    let cases: [(String, Bool)] = [
+        ("S\u{0430}ve", true), ("\u{FF31}\u{FF55}\u{FF49}\u{FF54}", true), ("\u{1D412}end", true), ("Save…", false), ("Emoji & Symbols", false),
+        ("Enregistrer sous…", false), ("Envoyer \u{00E0} nouveau", false), ("Закрыть Safari", false), ("Safari を終了", false),
+    ]
+    for (title, expected) in cases { #expect(MenuMatch.isLookalike(title) == expected, Comment(rawValue: title)) }
+}
