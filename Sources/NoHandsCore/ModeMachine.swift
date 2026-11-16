@@ -67,6 +67,12 @@ public struct ModeMachine: Sendable {
         CommandGrammar.parseEdit(addressed(transcript, attention: attention), textFocused: true) != nil
     }
 
+    /// True when the words are a rewrite of the selection, which works only in a focused text field (so the caller asks
+    /// the front app whether there is one). Not a dictation command: dictation types these words.
+    public static func namesRewrite(_ transcript: String, attention: AttentionGate = .off) -> Bool {
+        CommandGrammar.parseRewrite(addressed(transcript, attention: attention), textFocused: true) != nil
+    }
+
     /// Drops the "scratch that" record. The pipeline calls it on pause: what was routed may never have been typed,
     /// and the user may edit by hand before resuming, so the record no longer matches the screen.
     public mutating func forgetDictationRecord() { session.forgetLast() }

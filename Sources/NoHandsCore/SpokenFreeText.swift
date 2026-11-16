@@ -21,6 +21,10 @@ extension Action {
             if case .named = target { return true }
             return false
         case .editText(let edit, _): return edit.targetsPhrase
+        // A language or the speaker's own words may still be coming; a preset is complete.
+        case .rewriteText(let how):
+            if case .style = how { return false }
+            return true
         // Open-ended leads: "play ... bohemian rhapsody", "skip ahead ... thirty seconds", "volume up ... three".
         case .media(let command):
             if case .play = command { return true }

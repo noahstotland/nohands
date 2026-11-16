@@ -175,6 +175,7 @@ public struct CommandGrammar: Sendable {
         }
         if let hit = Self.parseTab(tokens, transcript: transcript) { return hit }
         if let edit = Self.parseEdit(transcript, textFocused: textFocused) { return [.editText(edit, otherwise: nil)] }
+        if let how = Self.parseRewrite(transcript, textFocused: textFocused) { return [.rewriteText(how)] }
         if let hit = Self.parseMedia(tokens) { return hit }
         if let hit = parsePattern(tokens, transcript: transcript) { return hit }
         return Self.strippedExactMatch(tokens)
@@ -286,6 +287,56 @@ public struct CommandGrammar: Sendable {
         default:
             guard tokens.count == 2, tokens[1] == "that", let change = caseWords[tokens[0]] else { return nil }
             return .changeCase(change)
+        }
+    }
+
+    private static let rewriteSubjects: Set<String> = ["that", "this", "it"]
+    private static let makeStyles: [String: RewriteStyle] = [
+        "shorter": .shorter, "longer": .longer, "clearer": .clearer, "simpler": .simpler, "friendlier": .friendly,
+        "more concise": .concise, "more formal": .formal, "more casual": .casual, "more polite": .polite,
+        "more professional": .professional,
+    ]
+    private static let sayStyles: [String: RewriteStyle] = [
+        "politely": .polite, "formally": .formal, "casually": .casual, "clearly": .clearer, "simply": .simpler,
+        "concisely": .concise, "professionally": .professional,
+    ]
+    private static let maxRewriteWords = 20
+
+    /// Rewrites of the selected text, only when a text field is focused (else nil, so the words go to the model as
+    /// before): "make that shorter", "say it more politely", "fix the grammar", "proofread that", "translate that to
+    /// French", "rewrite that" and "rewrite that as a list". The subject is always that, this or it. nil for anything
+    /// else ("make it bigger", "make the window wider"). Command mode only: dictation types these words.
+    public static func parseRewrite(_ transcript: String, textFocused: Bool) -> RewriteInstruction? {
+        guard textFocused else { return nil }
+        let tokens = normalize(transcript)
+        guard tokens.count >= 2 else { return nil }
+        let subjectAt = { (i: Int) in i < tokens.count && rewriteSubjects.contains(tokens[i]) }
+        let tail = { (from: Int) in tokens.dropFirst(from).joined(separator: " ") }
+        switch tokens[0] {
+        case "make":
+            guard subjectAt(1), let style = makeStyles[tail(2)] else { return nil }
+            return .style(style)
+        case "say":
+            guard subjectAt(1), tokens.count == 4, tokens[2] == "more", let style = sayStyles[tokens[3]] else { return nil }
+            return .style(style)
+        case "fix":
+            guard tokens[1] == "the", tokens.count >= 3, tokens[2] == "grammar" || tokens[2] == "spelling",
+                  tokens.count == 3 || (tokens.count == 5 && tokens[3] == "in" && subjectAt(4)) else { return nil }
+            return .style(.grammar)
+        case "proofread":
+            return tokens.count == 2 && subjectAt(1) ? .style(.grammar) : nil
+        case "translate":
+            guard subjectAt(1), tokens.count >= 4, tokens[2] == "to" || tokens[2] == "into", tokens.count - 3 <= 3,
+                  tokens.dropFirst(3).allSatisfy({ $0.allSatisfy(\.isLetter) }) else { return nil }
+            let words = rawWords(transcript, matching: tokens) ?? tokens
+            return .translate(language: words.dropFirst(3).joined(separator: " "))
+        case "rewrite":
+            guard subjectAt(1) else { return nil }
+            if tokens.count == 2 { return .style(.clearer) }
+            guard tokens.count - 2 <= maxRewriteWords, let words = rawWords(transcript, matching: tokens) else { return nil }
+            return .custom(words.dropFirst(2).joined(separator: " "))
+        default:
+            return nil
         }
     }
 
