@@ -759,9 +759,15 @@ import NoHandsCore
             if modeMachine.mode != .command { result = .failed(at(n, "changed mode")); break }
         }
         overlay.report(id, text: text, status: result)
+        let kind: String
+        switch result {
+        case .done: kind = "done"
+        case .stopped: kind = "stopped"
+        default: kind = "failed"
+        }
         var trace = pending.trace
         trace.actionsDone = .now
-        PipelineLog.utterance(trace: trace, transcript: text, outcome: "macro(\(result.text))", detail: "macro(\(result.text))")
+        PipelineLog.utterance(trace: trace, transcript: text, outcome: "macro(\(kind))", detail: "macro(\(result.text))")
         publishStatus()
     }
 
