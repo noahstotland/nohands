@@ -76,6 +76,17 @@ public struct PackFetcher: Sendable {
         }
     }
 
+    /// The state shown beside a registry entry in a list: empty when it isn't installed.
+    public static func stateLabel(_ decision: Decision, entry: RegistryEntry) -> String {
+        switch decision {
+        case .install: ""
+        case .update: "update to \(PackSummary.printable(entry.version))"
+        case .alreadyInstalled: "installed"
+        case .older: "installed (newer than the registry's)"
+        case .cannotCompare: "installed from a file"
+        }
+    }
+
     public static func decision(entry: RegistryEntry, installedVersion: String?) -> Decision {
         guard let installedVersion else { return .install }
         guard let new = PackVersion(entry.version), let old = PackVersion(installedVersion) else { return .cannotCompare }

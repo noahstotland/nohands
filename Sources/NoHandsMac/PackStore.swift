@@ -101,6 +101,19 @@ public struct PackStore: Sendable {
         announce()
     }
 
+    /// What went wrong, in words the user can act on, for the CLI and the app's alerts.
+    public static func message(for error: any Error) -> String {
+        switch error {
+        case let e as PackError: "not a valid pack: \(PackSummary.printable(e.reason))"
+        case StoreError.badID: "bad pack id (lowercase letters, digits and -)"
+        case StoreError.notInstalled: "no such installed pack"
+        case StoreError.tooManyPacks: "too many packs installed (\(maxPacks)); remove one first"
+        case ConfigFile.SaveError.symlink: "a pack folder is a symlink: replace it with a folder"
+        case ConfigFile.SaveError.writeFailed(let code): "write failed (\(code)); check ~/.config/nohands/packs"
+        default: "\(error)"
+        }
+    }
+
     /// The valid, enabled packs in install order: what the grammar loads.
     public func loadEnabled() throws -> [AppPack] {
         try list().compactMap { $0.enabled ? $0.pack : nil }
