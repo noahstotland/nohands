@@ -9,3 +9,8 @@
 - The spec keeps the earlier screen as one `endedOn` line; `EarlierTask` stores app, window and URL as separate fields (same line in the request).
 - The "Ended … on:" screen is the last screen the task read before its final step, not a read at the end.
 - A backend switch while a task runs clears the memory at once, but that task sets it again when it finishes.
+- A lone opener ("no", "actually", "also") is not a follow-up: at least one more word must follow. The spec's phrase list only said the words start the request.
+- A follow-up that ends `ignored` or `failed` keeps the earlier memory, so a retry still works.
+- The earlier goal counts for the "done only when playing" check unless the new words ask to pause, stop or mute.
+- The kept steps include the final `done` step, and the kept screen is the last one read after the final settle.
+- Menu Pause also clears the memory, and a chained goal over 300 characters cuts its older part, not the new words.
