@@ -14,14 +14,21 @@ extension ActionExecutor {
             case .lockScreen:
                 try input.press(KeyChord(.q, [.control, .command]))
             case .screenshot(let kind):
+                // A crosshair left over from an earlier screenshot makes the process look started at once.
+                let wasRunning = kind == .window && system.isScreenCaptureUIRunning()
                 try input.press(KeyChord(kind == .screen ? .three : .four, [.command, .shift]))
                 if kind == .window {
                     // Space turns the crosshair into the window camera only once the screenshot tool has put it up.
-                    let deadline = ContinuousClock.now.advanced(by: .seconds(1))
-                    while !system.isScreenCaptureUIRunning() {
-                        if Task.isCancelled { return Self.cancelled }
-                        if ContinuousClock.now >= deadline { return "the screenshot tool did not start" }
-                        try? await Task.sleep(for: .milliseconds(25))
+                    if wasRunning {
+                        try? await Task.sleep(for: .milliseconds(300))
+                    } else {
+                        let deadline = ContinuousClock.now.advanced(by: .seconds(1))
+                        while !system.isScreenCaptureUIRunning() {
+                            if Task.isCancelled { return Self.cancelled }
+                            if ContinuousClock.now >= deadline { return "the screenshot tool did not start" }
+                            try? await Task.sleep(for: .milliseconds(25))
+                        }
+                        try? await Task.sleep(for: .milliseconds(100))
                     }
                     if Task.isCancelled { return Self.cancelled }
                     try input.press(KeyChord(.space))

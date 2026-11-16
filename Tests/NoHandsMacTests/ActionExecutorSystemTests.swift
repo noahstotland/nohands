@@ -9,12 +9,15 @@ private final class FakeSystem: SystemControlling {
     let clock: Bool
     let opens: Bool
     let captureUI: Bool
+    /// Whether the screenshot tool was already up at the first look, before the chord was pressed.
+    let captureUIBefore: Bool
+    let looks = OSAllocatedUnfairLock(initialState: 0)
     let calls = OSAllocatedUnfairLock<[String]>(initialState: [])
-    init(warns: Bool? = nil, clock: Bool = true, opens: Bool = true, captureUI: Bool = true) {
-        self.warns = warns; self.clock = clock; self.opens = opens; self.captureUI = captureUI
+    init(warns: Bool? = nil, clock: Bool = true, opens: Bool = true, captureUI: Bool = true, before: Bool = false) {
+        self.warns = warns; self.clock = clock; self.opens = opens; self.captureUI = captureUI; self.captureUIBefore = before
     }
     func openMissionControl(showDesktop: Bool) async -> Bool { calls.withLock { $0.append(showDesktop ? "desktop" : "mission") }; return opens }
-    func isScreenCaptureUIRunning() -> Bool { captureUI }
+    func isScreenCaptureUIRunning() -> Bool { looks.withLock { $0 += 1; return $0 == 1 ? captureUIBefore : captureUI } }
     func pressMenuBarClock() -> Bool { calls.withLock { $0.append("clock") }; return clock }
     func finderWarnsOnEmptyTrash() -> Bool? { warns }
 }
@@ -48,6 +51,11 @@ private final class FakeSystem: SystemControlling {
     let (y, yi, _, _) = system(FakeSystem(captureUI: false))
     #expect(await y.execute([.system(.screenshot(.window))]) == "the screenshot tool did not start")
     #expect(yi.chords == [KeyChord(.four, [.command, .shift])])
+    // A crosshair already up: the first look says nothing about the new one, so it waits a beat and presses space without polling.
+    let already = FakeSystem(captureUI: false, before: true)
+    let (z, zi, _, _) = system(already)
+    #expect(await z.execute([.system(.screenshot(.window))]) == nil)
+    #expect(zi.chords == [KeyChord(.four, [.command, .shift]), KeyChord(.space)] && already.looks.withLock { $0 } == 1)
     #expect(await system(FakeSystem(opens: false)).0.execute([.system(.missionControl)]) == "couldn't open Mission Control")
     #expect(await x.execute([.system(.openSettings(.bluetooth))]) == nil)
     #expect(e.opened.map(\.url) == [SettingsPane.bluetooth.url] && e.opened.map(\.app) == [ActionExecutor.systemSettings])
