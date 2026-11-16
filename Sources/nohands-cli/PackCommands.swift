@@ -2,7 +2,7 @@ import Foundation
 import NoHandsCore
 import NoHandsMac
 
-/// `nohands-cli pack add|list|remove|builtin`. A pack is data; `add` shows what it can do and installs only on a
+/// `nohands-cli pack add|list|remove|builtin|new`. A pack is data; `add` shows what it can do and installs only on a
 /// typed yes. There is no flag to skip the question.
 func packCommand(_ args: [String]) {
     let store = PackStore()
@@ -11,6 +11,7 @@ func packCommand(_ args: [String]) {
     case ("list", 1): listPacks(store)
     case ("remove", 2): removePack(args[1], store: store)
     case ("builtin", 2): printBuiltIn(args[1])
+    case ("new", _): newPack(Array(args.dropFirst()))
     default: usage()
     }
 }
