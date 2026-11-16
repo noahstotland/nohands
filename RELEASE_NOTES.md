@@ -1,5 +1,11 @@
 # Release notes
 
+## 2026-11-16 open files, folders and recent documents by voice (NH-58) (#165)
+
+Merged 2026-11-16 6:16 pm UTC.
+
+You can now say "open the downloads folder", "open the budget spreadsheet" or "open my last Keynote". If several files match, NoHands lists up to six and you say the number. Apps, scripts and hidden or library files never open this way.
+
 ## 2026-11-16 rewrite the selection with the model (NH-55) (#160)
 
 Merged 2026-11-16 4:38 pm UTC.
