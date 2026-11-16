@@ -1,0 +1,31 @@
+# CLI tools
+
+Back to the [README](../README.md).
+
+`nohands-cli` exercises the pieces without the menu-bar app (`swift run nohands-cli <subcommand>`). Subcommands acting on other apps need Accessibility for your terminal and wait a few seconds so you can focus the target.
+
+| Subcommand | Does |
+|---|---|
+| `type "<text>"` | Waits 2 s, then types |
+| `key "<chord>"` | Presses a chord, e.g. `"command shift s"` |
+| `click-at <x> <y>` | Clicks at screen coordinates |
+| `move <x> <y>` | Moves the pointer |
+| `transcribe <wav>` | Transcribes a file, prints timings |
+| `vad-test <wav>` | Prints voice-activity events |
+| `endpoint-test <wav>…` | Replays files through VAD, early close and recognizer; prints early and full text and timing |
+| `bench <dir>` | Dry-run latency benchmark over each `.wav`: p50 and p95 per stage; no model backend. Phrases: `Tests/Fixtures/audio/README.md` |
+| `elements` | Lists the frontmost app's actionable elements |
+| `click "<name>"` | Clicks the named element |
+| `grid` | Shows the 10×8 grid, zooms into cell 35 |
+| `labels` | Shows numbered badges |
+| `parse "<text>" [--app <bundle id>]` | Dry run: the grammar's actions, "no match -> LLM", or "rejected: ..." |
+| `menu "<words>"` / `menu --list` | After 2 s (3 s for `--list`) presses the frontmost app's named menu item, or lists them |
+| `run "<phrase>"...` | Executes grammar phrases in order |
+| `observe` | Prints what the task loop sends the model: title, URL, `Media:` line, numbered elements |
+| `resolve "<text>"` | Dry run: sends text and labels to the backend, prints the step (`intent`, `status`, actions); spends API credit |
+| `task "<goal>"` | Waits 3 s, runs the goal as a task for real, printing each step. Ctrl-C stops it, a second quits (130); exits 2 when stuck, failed or stopped |
+| `scenarios [file] [--only name]` | Waits 3 s, runs each goal in `scripts/task-scenarios.json` for real, scored against a fresh screen check: `pass`, `false-done`, `unclaimed`, `fail`, `stopped`, `start-failed`, `not-run`. Exits 0 only when all pass, 2 otherwise (1 for a bad file or name). Takes over screen, mouse and keyboard. Ctrl-C stops; a second quits (130). Details: `docs/superpowers/specs/2026-11-09-nh-49-task-scenarios-design.md` |
+| `listen` | Microphone to recognition, printing transcripts |
+| `claude-check` | One-token request with your key; prints connected, key rejected, model not found, request rejected, rate limited, unavailable, timed out, no network, or no key. The key is never shown. Exit 0 only when connected |
+| `desktop-status` | Where agent-desktop was found, version, Accessibility, harness in use |
+| `snapshot [app]` | Waits 3 s, prints the task-loop observation as agent-desktop sees it |
