@@ -67,7 +67,7 @@ public enum PackFile {
         }.map(\.actions)
         var confirms = Set<String>()
         for (index, cmd) in parsed.enumerated() {
-            let forced = forcedActions.contains(cmd.actions)
+            let forced = forcedActions.contains { holdsRun(cmd.actions, $0) }
             if forced, cmd.confirm == false {
                 throw PackError("command \(index + 1): confirm false on an irreversible command (it names send, delete or another guarded verb)")
             }
@@ -82,25 +82,26 @@ public enum PackFile {
         let confirm: Bool?
     }
 
-    /// Whether a phrase must ask for a spoken yes: its words name a guarded verb (or "trash"; "undo" frees nothing,
-    /// since a chord or URL cannot be checked for what it undoes), or its actions contain a marked built-in command's
-    /// actions (in a row, ignoring the function modifier) for an app both packs cover.
-    static func forcesConfirm(phrase: String, actions: [Action], bundleIDs: Set<String>) -> Bool {
-        if IrreversibleGuard.namesVerb(CommandGrammar.normalize(phrase)) { return true }
+    /// Whether `actions` hold `marked` as a run of steps, ignoring the function modifier on key chords.
+    private static func holdsRun(_ actions: [Action], _ marked: [Action]) -> Bool {
         func plain(_ list: [Action]) -> [Action] {
             list.map { action in
                 guard case .pressKey(let chord) = action else { return action }
                 return .pressKey(KeyChord(chord.key, chord.modifiers.subtracting([.function])))
             }
         }
-        let have = plain(actions)
-        func contains(_ marked: [Action]) -> Bool {
-            let marked = plain(marked)
-            guard !marked.isEmpty, have.count >= marked.count else { return false }
-            return (0...(have.count - marked.count)).contains { Array(have[$0..<($0 + marked.count)]) == marked }
-        }
+        let have = plain(actions), run = plain(marked)
+        guard !run.isEmpty, have.count >= run.count else { return false }
+        return (0...(have.count - run.count)).contains { Array(have[$0..<($0 + run.count)]) == run }
+    }
+
+    /// Whether a phrase must ask for a spoken yes: its words name a guarded verb (or "trash"; "undo" frees nothing,
+    /// since a chord or URL cannot be checked for what it undoes), or its actions contain a marked built-in command's
+    /// actions (in a row, ignoring the function modifier) for an app both packs cover.
+    static func forcesConfirm(phrase: String, actions: [Action], bundleIDs: Set<String>) -> Bool {
+        if IrreversibleGuard.namesVerb(CommandGrammar.normalize(phrase)) { return true }
         return AppPacks.all.contains { pack in
-            !pack.bundleIDs.isDisjoint(with: bundleIDs) && pack.confirms.contains { pack.phrases[$0].map(contains) ?? false }
+            !pack.bundleIDs.isDisjoint(with: bundleIDs) && pack.confirms.contains { pack.phrases[$0].map { holdsRun(actions, $0) } ?? false }
         }
     }
 

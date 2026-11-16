@@ -151,9 +151,9 @@ A command may carry `"confirm": true` or `"confirm": false` (any other value is 
 
 Some commands are **forced** to ask, whatever the file says:
 
-- a phrase has a word NoHands guards (send, delete, remove, discard, pay, buy, purchase, checkout, confirm, submit, publish, post, unsubscribe, transfer, place order, empty trash, and the word trash; `undo` does not free it: `undo send` in a pack asks too, while Mail's built-in `undo send` does not);
+- a phrase has a word NoHands guards, in any form but the past (send, sends, sending, delete, ...; `sent` and `deleted` are not guarded, so `go to sent` is fine), with punctuation splitting words (`send-it`) (send, delete, remove, discard, pay, buy, purchase, checkout, confirm, submit, publish, post, unsubscribe, transfer, place order, empty trash, and the word trash; `undo` does not free it: `undo send` in a pack asks too, while Mail's built-in `undo send` does not);
 - its actions contain the actions of a built-in command that asks first, in an app both cover, with or without other steps, and whether or not the function key is held (so `zap` bound to command-shift-D in Mail asks, like `send message`);
-- its actions are the same as another forced command in the same pack.
+- its actions contain the actions of another forced command in the same pack.
 
 `"confirm": false` on a forced command rejects the pack: `confirm false on an irreversible command (it names send, delete or another guarded verb)`. A forced command with no `confirm` key is stored as asking, so a pack you installed earlier keeps loading and gains the yes. You can set `true` on any other command. A key chord that sends or deletes behind a phrase with none of these words, in an app with no built-in pack, cannot be told apart from any other chord, so it does not ask unless you mark it. The `pack add`, `pack install` and `pack update` summaries and the Browse alert show `(asks first)` on each such phrase, and an update's changes list `phrase "x" now asks first` or `no longer asks first`.
 

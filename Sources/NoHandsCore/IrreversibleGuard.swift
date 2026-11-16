@@ -37,12 +37,20 @@ public enum IrreversibleGuard {
              allowedBy: [["empty", "empties", "emptying", "emptied"], ["trash", "bin"]]),
     ]
 
-    /// Whether the words of a spoken phrase name a guarded verb ("send", "place order", "empty trash") or the word
-    /// "trash", as whole words. Used to force the spoken yes on a pack phrase.
+    /// Whether the words of a spoken phrase name a guarded verb ("send", "sending", "place order") or the word
+    /// "trash", as whole words once punctuation splits them ("send-it" is "send it"). Used to force the spoken yes on
+    /// a pack phrase.
     static func namesVerb(_ phraseWords: [String]) -> Bool {
-        let words = mergeCheckOut(phraseWords)
-        return (verbs.map(\.name) + ["trash"]).contains { contains(words, mergeCheckOut($0.split(separator: " ").map(String.init))) }
+        let tokens = words(phraseWords.joined(separator: " "))
+        if tokens.contains("trash") { return true }
+        return verbs.contains { verb in
+            let name = mergeCheckOut(verb.name.split(separator: " ").map(String.init))
+            // Past forms ("sent", "deleted") name something already done: "go to sent" is not a send.
+            return name.count == 1 ? tokens.contains { verb.allowedBy[0].contains($0) && !isPast($0) } : contains(tokens, name)
+        }
     }
+
+    private static func isPast(_ word: String) -> Bool { word.hasSuffix("ed") || ["sent", "paid", "bought"].contains(word) }
 
     /// Letters and digits only, so "Send…" and "File > Send" split into words; "check out" is one word, "checkout".
     private static func words(_ text: String) -> [String] {

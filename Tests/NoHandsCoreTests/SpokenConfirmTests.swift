@@ -64,6 +64,9 @@ private func steps(_ phrases: [String], _ actions: [[String: Any]]) -> [String: 
         ([steps(["ship it"], [send, escape])], mail, ["ship it"]),                              // a marked built-in's actions, plus more
         ([steps(["undo and delete"], [deleteItem])], "com.example.app", ["undo and delete"]),   // "undo" never frees an irreversible step
         ([cmd(["zap"], "d", ["command", "shift", "function"])], mail, ["zap"]),                // the function modifier changes nothing
+        ([steps(["sending now", "send-it"], [escape])], "com.example.app", ["sending now", "send-it"]),   // other forms of a guarded verb
+        ([cmd(["send reply"], "return", ["control"]), steps(["go"], [escape, ["kind": "press_key", "key": "return", "modifiers": ["control"]]])],
+         "com.example.app", ["send reply", "go"]),                                              // a longer command that holds a forced one
         ([cmd(["zap"], "d", ["command", "shift"])], "com.example.app", []),                     // other app: no match
         ([cmd(["delete it"]), cmd(["tidy up"])], "com.example.app", ["delete it", "tidy up"]),  // same actions as a forced one
         ([cmd(["tidy up"], confirm: true), cmd(["fine"], "m", confirm: false)], "com.example.app", ["tidy up"]),
