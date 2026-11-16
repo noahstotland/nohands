@@ -1,7 +1,8 @@
 # NH-7: Fix the deferred minors from the PR #2 harness review: Design
 
 **Date:** 2026-11-16  **Ticket:** [NH-7](https://github.com/noahstotland/nohands/issues/7)
-**Status:** Draft
+**Status:** Shipped
+**Shipped:** in PR #147, as specified
 
 ## Intent
 
