@@ -45,8 +45,7 @@ public enum PackFile {
         }
         var bundleIDs = Set<String>()
         for raw in ids {
-            guard let bundle = raw as? String, !bundle.isEmpty, bundle.count <= 255,
-                  bundle.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "." || $0 == "-") }) else {
+            guard let bundle = raw as? String, isValidBundleID(bundle) else {
                 throw PackError("bad bundle ID (letters, digits, . and - only)")
             }
             bundleIDs.insert(bundle)
@@ -173,6 +172,31 @@ public enum PackFile {
         return last.allSatisfy(\.isNumber) || last.hasPrefix("0x")
     }
 
+    enum HTTPSCheck { case ok(URL), badShape, badHost }
+
+    /// The `open_url` rule: `https` with a host, no user or password, and a public host name.
+    static func checkHTTPS(_ spoken: String) -> HTTPSCheck {
+        guard !spoken.contains(where: \.isWhitespace), let parts = URLComponents(string: spoken), parts.scheme?.lowercased() == "https",
+              parts.host?.isEmpty == false, parts.user == nil, parts.password == nil, let url = URL(string: spoken) else { return .badShape }
+        // The raw host must not hide characters behind percent escapes. The host is checked as `URL.host` gives it
+        // (punycode for a unicode name), and again as URLComponents does when that is plain ASCII.
+        let rawHost = spoken.dropFirst("https://".count).prefix { !"/?#".contains($0) }
+        let seen = [url.host ?? ""] + [parts.host ?? ""].filter { $0.allSatisfy(\.isASCII) }
+        guard !rawHost.contains("%"), !seen.contains(where: isLocalHost) else { return .badHost }
+        return .ok(url)
+    }
+
+    /// Whether `spoken` is an `https` URL with a public host, no user or password, up to 2048 characters (the pack
+    /// `open_url` rule, shared with the registry's pack URLs).
+    static func isPublicHTTPSURL(_ spoken: String) -> Bool {
+        guard spoken.count <= 2048, case .ok = checkHTTPS(spoken) else { return false }
+        return true
+    }
+
+    static func isValidBundleID(_ bundle: String) -> Bool {
+        !bundle.isEmpty && bundle.count <= 255 && bundle.allSatisfy { $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "." || $0 == "-") }
+    }
+
     private static func parseAction(_ raw: Any) throws(PackError) -> Action {
         guard let o = raw as? [String: Any], let kind = o["kind"] as? String else { throw PackError("action has no kind") }
         switch kind {
@@ -204,31 +228,25 @@ public enum PackFile {
         case "open_url":
             try expectKeys(o, required: ["kind", "url"], in: kind)
             let spoken = try text(o["url"], "url", max: 2048)
-            guard !spoken.contains(where: \.isWhitespace), let parts = URLComponents(string: spoken), parts.scheme?.lowercased() == "https",
-                  parts.host?.isEmpty == false, parts.user == nil, parts.password == nil, let url = URL(string: spoken) else {
-                throw PackError("bad url (https with a host, no user or password)")
-            }
-            // The raw host must not hide characters behind percent escapes. The host is checked as `URL.host` gives it
-            // (punycode for a unicode name), and again as URLComponents does when that is plain ASCII.
-            let rawHost = spoken.dropFirst("https://".count).prefix { !"/?#".contains($0) }
-            let seen = [url.host ?? ""] + [parts.host ?? ""].filter { $0.allSatisfy(\.isASCII) }
-            guard !rawHost.contains("%"), !seen.contains(where: isLocalHost) else {
+            switch checkHTTPS(spoken) {
+            case .ok(let url): return .openURL(url, app: nil)
+            case .badShape: throw PackError("bad url (https with a host, no user or password)")
+            case .badHost:
                 throw PackError("bad url (host must be a public name: ASCII letters, digits, . and - only; no IP address, localhost, .local, .lan, .internal, .home.arpa, empty label or name without a dot)")
             }
-            return .openURL(url, app: nil)
         default:
             throw PackError("unknown action kind")
         }
     }
 
-    private static func expectKeys(_ o: [String: Any], required: Set<String>, optional: Set<String> = [],
+    static func expectKeys(_ o: [String: Any], required: Set<String>, optional: Set<String> = [],
                                    in place: String) throws(PackError) {
         guard required.isSubset(of: o.keys) else { throw PackError("missing key in \(place)") }
         guard Set(o.keys).isSubset(of: required.union(optional)) else { throw PackError("unknown key in \(place)") }
     }
 
     /// A string within `max` characters and free of control, format and line-break characters.
-    private static func text(_ value: Any?, _ field: String, max: Int, allowEmpty: Bool = false) throws(PackError) -> String {
+    static func text(_ value: Any?, _ field: String, max: Int, allowEmpty: Bool = false) throws(PackError) -> String {
         guard let s = value as? String else { throw PackError("\(field) is not text") }
         guard allowEmpty || !s.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw PackError("\(field) is empty") }
         guard s.count <= max else { throw PackError("\(field) too long (over \(max))") }
