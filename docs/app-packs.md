@@ -96,7 +96,7 @@ The quickest start is to let NoHands read the app's menus. Bring the app forward
 
 Edit the draft, then install it with `pack add` like any other file. `pack new` never installs.
 
-`swift run nohands-cli pack builtin terminal` prints the Terminal pack in this format as a starting point (any built-in id works, such as `chrome`). A pack is one JSON file, up to 64 KiB:
+`swift run nohands-cli pack builtin terminal` prints the Terminal pack in this format as a starting point (any built-in id works; they are listed in the `id` row below). A pack is one JSON file, up to 64 KiB:
 
 ```json
 {
