@@ -24,6 +24,11 @@ Back to the [README](../README.md).
 | `pack remove <id>` | Removes an installed pack, no prompt |
 | `pack builtin <id>` | Prints a built-in pack (`terminal`) as a pack file, as a template |
 | `pack new [--app <name or bundle id>] [--out <file>]` | Reads the app's top-level menu items (the app in front after 3 s, or a running app by name or bundle ID) and writes a draft pack file, listing the items it left out and why. Never overwrites a file and never installs; edit it, then `pack add`. Needs Accessibility. See [App packs](app-packs.md) |
+| `pack search [words]` | Fetches the pack registry's signed list and prints each pack whose id, name or description contains all the words (all packs with no words): id, version, name, apps, and `installed` or `update to <version>`. Reaches the network, only because you ran it. See [App packs](app-packs.md#get-packs-from-a-registry) |
+| `pack install <id>` | Fetches that pack from the registry, checks it, shows its summary and installs only if you answer `y` or `yes` at `Install? [y/N]`. No `--yes`. If the pack is already installed it tells you to use `pack update` |
+| `pack update [<id>]` | For the named pack, or each installed pack, with a newer registry version: fetches it, shows what changed and updates only on `y` or `yes` at `Update? [y/N]`. Prints `all packs are up to date` when there is nothing to do |
+| `registry keygen <path>` | For registry publishers: writes a new signing key to `<path>` (mode 600, refuses an existing file) and prints the public key and its key id. No network. See [Publish a registry](app-packs.md#publish-a-registry) |
+| `registry sign <index.json> --key <path> [--packs <dir>]` | For registry publishers: checks the index, and with `--packs` each pack file in `<dir>` against its hash and the pack rules, then prints the signed file. Refuses to sign if a file is wrong. No network |
 | `menu "<words>"` / `menu --list` | After 2 s (3 s for `--list`) presses the frontmost app's named menu item, or lists them |
 | `run "<phrase>"...` | Executes grammar phrases in order |
 | `observe` | Prints what the task loop sends the model: title, URL, `Media:` line, numbered elements |

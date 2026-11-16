@@ -76,6 +76,10 @@ public struct AppConfig: Codable, Equatable, Sendable {
     /// Remember the steps of tasks that ended `done` and hint them to the model when a similar goal comes in (NH-46).
     /// Off, nothing is matched or saved and an existing routes file is left as it is.
     public var routeMemory: Bool = true
+    /// The pack registry URL (NH-85): nil is the default (none set yet), `""` turns the registry off. Read through `packRegistry`.
+    public var packRegistryURL: String?
+    /// Base64 of the registry's 32-byte Ed25519 public key; required for any URL other than the default.
+    public var packRegistryKey: String?
     /// The user's own words: misheard spellings swapped for the right ones in every transcript (see `Vocabulary`).
     public private(set) var vocabulary = Vocabulary()
     /// The user's named step sequences, run by saying the name (see `Macros`).
@@ -94,6 +98,7 @@ public struct AppConfig: Codable, Equatable, Sendable {
         case localLlmDeadlineMs, localMaxObservedElements
         case desktopHarness, agentDesktopPath, agentDesktopTimeoutMs, agentDesktopSnapshotMs, agentDesktopHeadedFallback, agentDesktopTrace
         case echoCancellation, speakFeedback, attentionWord, visionFallback, vocabulary, macros, followUpWindowMs, routeMemory
+        case packRegistryURL, packRegistryKey
     }
 
     public init(from decoder: Decoder) throws {
@@ -134,6 +139,8 @@ public struct AppConfig: Codable, Equatable, Sendable {
         d.attentionWord = try c.decodeIfPresent(String.self, forKey: .attentionWord) ?? d.attentionWord
         d.visionFallback = try c.decodeIfPresent(Bool.self, forKey: .visionFallback) ?? d.visionFallback
         d.followUpWindowMs = try c.decodeIfPresent(Int.self, forKey: .followUpWindowMs) ?? d.followUpWindowMs
+        d.packRegistryURL = try c.decodeIfPresent(String.self, forKey: .packRegistryURL)
+        d.packRegistryKey = try c.decodeIfPresent(String.self, forKey: .packRegistryKey)
         // Lenient: a value that is not a bool keeps the default.
         d.routeMemory = (try? c.decodeIfPresent(Bool.self, forKey: .routeMemory)) ?? d.routeMemory
         // Lenient: a `vocabulary` that is not a list is ignored and counted as one skipped entry; each bad entry is skipped inside `Vocabulary`.
@@ -187,6 +194,19 @@ public struct AppConfig: Codable, Equatable, Sendable {
         g.moveStepPx = moveStepPx
         g.scrollStepLines = scrollStepLines
         return g
+    }
+
+    /// The configured pack registry: none set, off, a checked https URL, or why the URL was refused.
+    public var packRegistry: PackRegistry.Setting { PackRegistry.setting(urlString: packRegistryURL) }
+
+    /// The keys that may vouch for the configured registry: the built-in keys for the default, the user's key for a
+    /// custom URL (none when it is missing or malformed), and none when the registry is off or refused.
+    public var packRegistryTrustedKeys: [PackRegistry.TrustedKey] {
+        switch packRegistry {
+        case .none: return PackRegistry.defaultKeys
+        case .url(let url): return PackRegistry.trustedKeys(url: url, customKey: packRegistryKey)
+        case .off, .invalid: return []
+        }
     }
 
     public var attentionGate: AttentionGate { AttentionGate(configured: attentionWord) }

@@ -33,6 +33,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let packsItem = NSMenuItem(title: "Packs", action: nil, keyEquivalent: "")
     private let packsMenu = NSMenu(title: "Packs")
     private let packStore = PackStore()
+    /// Created on first use, so nothing is built (or fetched) until the user opens Browse or checks for updates.
+    private var packBrowser: PackBrowserController?
     private let claudeKeyItem = NSMenuItem(title: "Set Claude API key…", action: #selector(setClaudeKey), keyEquivalent: "")
     private let openConfigItem = NSMenuItem(title: "Open config.json…", action: #selector(openConfig), keyEquivalent: "")
     /// agent-desktop, when found and permitted (see `HarnessStatus`); re-probed when the menu opens.
@@ -498,6 +500,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         packSet = PackSet(installed: entries.compactMap { $0.enabled ? $0.pack : nil })
         pipeline?.setPacks(packSet)
         packsMenu.removeAllItems()
+        addRegistryItems()
         guard !entries.isEmpty else {
             let none = NSMenuItem(title: "No packs installed", action: nil, keyEquivalent: "")
             none.isEnabled = false
@@ -523,6 +526,42 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             item.submenu = submenu
             packsMenu.addItem(item)
         }
+    }
+
+    /// The registry line and the two items that reach it. Choosing one is the only way the app contacts the registry:
+    /// it opens the Browse window, which fetches the list once.
+    private func addRegistryItems() {
+        let line = NSMenuItem(title: RegistryStatus(config: config).menuLine, action: nil, keyEquivalent: "")
+        line.isEnabled = false
+        packsMenu.addItem(line)
+        for (title, action) in [("Browse…", #selector(packBrowseClicked)), ("Check for pack updates", #selector(packCheckUpdatesClicked))] {
+            let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
+            item.target = self
+            packsMenu.addItem(item)
+        }
+        packsMenu.addItem(.separator())
+    }
+
+    @objc private func packBrowseClicked() { showPackBrowser(.browse) }
+
+    @objc private func packCheckUpdatesClicked() { showPackBrowser(.updates) }
+
+    private func showPackBrowser(_ mode: PackBrowserController.Mode) {
+        let browser = packBrowser ?? PackBrowserController(store: packStore) { [weak self] alert in
+            self?.runPausedAlert(alert) ?? alert.runModal()
+        }
+        packBrowser = browser
+        browser.show(mode, config: config)
+    }
+
+    /// Runs `alert` with listening off, so a spoken "press return" can't answer it. If the user had already paused, it stays paused.
+    private func runPausedAlert(_ alert: NSAlert) -> NSApplication.ModalResponse {
+        NSApp.activate(ignoringOtherApps: true)
+        let pausedForAlert = pipeline != nil && !userPaused && !axPaused
+        if pausedForAlert { togglePause() }
+        let response = alert.runModal()
+        if pausedForAlert { togglePause() }
+        return response
     }
 
     @objc private func packToggled(_ sender: NSMenuItem) {

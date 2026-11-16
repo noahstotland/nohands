@@ -76,6 +76,7 @@ Optional file `~/.config/nohands/config.json`. Every key may be omitted, and cha
 - Only commands the grammar can't match go to Claude (or the local model, which stays on your Mac), as text. The rewrite commands (`make that shorter`, `fix the grammar`) also send the text you selected, and, only with `visionFallback` on, a screenshot of the focused window goes to Claude.
 - Without an API key nothing is sent off the Mac. The local backend talks only to Ollama on `127.0.0.1`.
 - Finished tasks are remembered as routes (your goal, the site and the names of what was clicked; typed text and answers are cut from the saved steps) in `~/.config/nohands/routes.json`, mode 600 on this Mac; say "forget all routes" to clear it.
+- Packs use the network only when you open Packs > Browse…, check for pack updates or run `nohands-cli pack search`, `install` or `update`. The request carries only the registry's or pack's address and fixed headers, the registry host sees your IP address, nothing is fetched in the background, and installed packs work with the network off.
 - There is no wake-word model, so other people or loud playback can be acted on. Say "go to sleep" before leaving the desk or during calls.
 
 The full list of what is sent is in [Privacy](docs/privacy.md).
@@ -85,7 +86,7 @@ The full list of what is sent is in [Privacy](docs/privacy.md).
 - [Voice commands](docs/voice-commands.md): every phrase
 - [Using NoHands](docs/using-nohands.md): panels, permissions, signing, logs
 - [Configuration](docs/configuration.md): config keys and the local model
-- [App packs](docs/app-packs.md): add voice commands for more apps from a pack file
+- [App packs](docs/app-packs.md): add voice commands for more apps from a pack file or a signed pack registry, and publish your own registry
 - [Tasks](docs/tasks.md): how multi-step requests run, guards, the agent-desktop harness
 - [CLI tools](docs/cli.md): `nohands-cli` subcommands for trying each piece by hand
 - [Privacy](docs/privacy.md)
