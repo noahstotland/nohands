@@ -1,5 +1,11 @@
 # Release notes
 
+## 2026-11-16 remember routes that worked (NH-46) (#162)
+
+Merged 2026-11-16 4:28 pm UTC.
+
+NoHands now remembers how a finished task went and offers those steps to the model the next time you say a similar goal. They are kept in `~/.config/nohands/routes.json` (only you can read it). Say "forget that route" or "forget all routes" to clear them, or set `routeMemory` to `false` to turn it off.
+
 ## 2026-11-16 voice macros (NH-57) (#159)
 
 Merged 2026-11-16 3:39 pm UTC.
