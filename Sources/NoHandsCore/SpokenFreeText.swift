@@ -25,6 +25,10 @@ extension Action {
             if case .named = target { return true }
             return false
         case .editText(let edit, _): return edit.targetsPhrase
+        // A language or the speaker's own words may still be coming; a preset is complete.
+        case .rewriteText(let how):
+            if case .style = how { return false }
+            return true
         // Open-ended leads: "play ... bohemian rhapsody", "skip ahead ... thirty seconds", "volume up ... three".
         case .media(let command):
             if case .play = command { return true }
@@ -36,10 +40,16 @@ extension Action {
         case .pressKey, .pressMouse, .releaseMouse, .scroll, .showGrid, .zoomGrid, .showLabels, .hideOverlay, .setMode,
              .moveWindow, .wait, .checkMedia, .ignore, .clearField, .setChecked, .setExpanded, .focusElement, .scrollTo,
              .scrollIn, .drag, .readClipboard, .readPage, .readValue, .readNotifications, .dismissNotifications, .waitFor,
-             .closeTab, .closeWindow, .selectTab, .closeOtherTabs, .listTabs, .look:
+             .closeTab, .closeWindow, .selectTab, .closeOtherTabs, .listTabs, .look, .system:
             return false
         }
     }
+}
+
+extension CommandGrammar {
+    /// True when the utterance opens with "rewrite": "rewrite that" may be followed, after a pause, by the speaker's own
+    /// instruction ("as a formal email"), so it counts as open-ended even though the preset it parses to is complete.
+    public static func opensRewrite(_ transcript: String) -> Bool { normalize(transcript).first == "rewrite" }
 }
 
 extension Sequence where Element == Action {

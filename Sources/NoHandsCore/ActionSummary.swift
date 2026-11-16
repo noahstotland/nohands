@@ -59,8 +59,10 @@ public enum ActionSummary {
         case .closeOtherTabs: "closeOtherTabs"
         case .listTabs: "listTabs"
         case .editText: "editText"
+        case .rewriteText: "rewriteText"
         case .media: "media"
         case .volume: "volume"
+        case .system: "system"
         case .look: "look"
         }
     }
@@ -93,8 +95,10 @@ public enum ActionSummary {
         case .closeOtherTabs: "closing tabs"
         case .listTabs: "listing tabs"
         case .editText: "editing text"
+        case .rewriteText: "rewriting text"
         case .media: "controlling media"
         case .volume: "changing the volume"
+        case .system: "using a system control"
         case .clipboardSet, .readClipboard: "using the clipboard"
         case .readValue, .readNotifications, .dismissNotifications, .checkMedia, .look, .readPage: "reading the screen"
         case .wait, .waitFor, .ignore: "waiting"

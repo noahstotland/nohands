@@ -162,6 +162,7 @@ extension OverlayController: OverlayPresenting {
     private let audio: any AudioOutputProbing
     private let mediaPoll: Duration
     private let volume: any VolumeControlling
+    let system: any SystemControlling
     /// How long a window gets to leave full screen after Escape before the window chord is pressed.
     private let fullScreenSettle: Duration
     /// The accessibility layer the media walk uses: one with a larger budget than `ax`, which does not reach a
@@ -190,6 +191,13 @@ extension OverlayController: OverlayPresenting {
     var fileContext = FileContext.model
     /// The ranked hits a spoken "open file" found when several matched, until `takeFileOffer()`.
     var fileOffer: [FileHit]?
+    /// Rewrites ask this; nil when the model is off (the failure text then says what to do). See `useRewriter`.
+    var rewriter: (any TextRewriting)?
+    var rewriteUnavailable = ActionExecutor.rewriteNeedsModel
+    /// Called when a rewrite's request goes out, so the pipeline can show "rewriting…".
+    var onRewriteStart: (() -> Void)?
+    /// What the last rewrite changed, until `takeRewrite()`.
+    var rewriteReport: RewriteReport?
 
     public init(input: any InputSynthesizing, ax: any ElementProviding, overlay: any OverlayPresenting,
                 config: AppConfig, frontTimeout: Duration = .seconds(1.5), windowTimeout: Duration = .seconds(6),
@@ -197,8 +205,9 @@ extension OverlayController: OverlayPresenting {
                 audio: any AudioOutputProbing = AudioOutputProbe(), mediaPoll: Duration = .milliseconds(500),
                 mediaAX: (any ElementProviding)? = nil, exposureSettle: Duration = .milliseconds(600),
                 menus: any MenuReading = AXMenuReader(), volume: any VolumeControlling = CoreAudioVolume(),
-                fullScreenSettle: Duration = .milliseconds(800), files: any FileSource = SpotlightFileSource(),
-                fileOpener: any FileOpening = WorkspaceFileOpener()) {
+                fullScreenSettle: Duration = .milliseconds(800), system: any SystemControlling = MacSystemControl(),
+                files: any FileSource = SpotlightFileSource(), fileOpener: any FileOpening = WorkspaceFileOpener()) {
+        self.system = system
         self.files = files
         self.fileOpener = fileOpener
         self.fullScreenSettle = fullScreenSettle
@@ -414,11 +423,16 @@ extension OverlayController: OverlayPresenting {
                 if let failure = await listTabs() { return failure }
             case .editText(let edit, let otherwise):
                 if let failure = try await editText(edit, otherwise: otherwise) { return failure }
+            case .rewriteText(let how):
+                if let failure = try await rewriteText(how) { return failure }
             case .media(let command):
                 if let failure = try await runMedia(command) { return failure }
                 hideStaleOverlay()
             case .volume(let change):
                 if let failure = changeVolume(change) { return failure }
+            case .system(let command):
+                if let failure = await runSystem(command) { return failure }
+                hideStaleOverlay()
             case .setValue, .typeInto, .clearField, .selectOption, .setChecked, .setExpanded, .focusElement, .scrollTo,
                  .scrollIn, .drag, .clickIn, .menuItem, .closeApp, .windowAction, .clipboardSet, .readClipboard,
                  .readValue, .readNotifications, .dismissNotifications, .waitFor:

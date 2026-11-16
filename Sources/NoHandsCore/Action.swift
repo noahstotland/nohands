@@ -130,9 +130,14 @@ public enum Action: Equatable, Codable, Sendable {
     /// like the tab commands: the model has no kind for it. `otherwise` is dictation's own words, typed when the edit
     /// names a phrase that is not in the field ("Delete the old files." still dictates); nil in command mode.
     case editText(TextEdit, otherwise: String?)
+    /// Rewrite the selected text (else the last sentence before the caret) with the model and type the answer over it
+    /// ("make that shorter", "translate that to French"). Grammar only: the model has no kind for it.
+    case rewriteText(RewriteInstruction)
     // Voice commands for what is playing and the system volume. Grammar only; the model has no kind for them.
     case media(MediaCommand)
     case volume(VolumeChange)
+    /// A system chore ("lock screen", "next space", "open bluetooth settings"). Grammar only; the model has no kind for it.
+    case system(SystemCommand)
 
     /// Ask for a picture of the focused window on the next step. Only the task loop gives it meaning; anywhere
     /// else the executor runs it as a successful no-op.

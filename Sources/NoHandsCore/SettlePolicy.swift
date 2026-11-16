@@ -26,7 +26,7 @@ public enum SettlePolicy: Int, Comparable, Sendable {
             // A newline in typed text is a real Return press (TextSegmenter), so it can submit and load a page.
             return text.contains(where: \.isNewline) ? .full : .oneLook
         case .setValue, .clearField, .scroll, .scrollIn, .scrollTo, .focusElement, .moveCursor,
-             .moveWindow, .setChecked, .waitFor, .findOnPage, .media, .editText:
+             .moveWindow, .setChecked, .waitFor, .findOnPage, .media, .editText, .rewriteText:
             return .oneLook
         case .pressKey(let chord):
             // Return submits; Command, Control and Option chords can switch tabs, reload or go back.
@@ -34,7 +34,7 @@ public enum SettlePolicy: Int, Comparable, Sendable {
             return loads ? .full : .oneLook
         case .openURL, .openApp, .openFile, .click, .search, .searchSite, .menuItem, .clickIn, .windowAction, .selectOption,
              .setExpanded, .drag, .closeApp, .closeTab, .closeWindow, .selectTab, .goToTab, .closeOtherTabs, .pressMouse, .releaseMouse,
-             .showGrid, .zoomGrid, .showLabels, .hideOverlay, .setMode, .dismissNotifications:
+             .showGrid, .zoomGrid, .showLabels, .hideOverlay, .setMode, .dismissNotifications, .system:
             return .full
         }
     }
