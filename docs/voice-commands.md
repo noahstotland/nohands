@@ -48,6 +48,13 @@ Everything NoHands understands without a model. Anything else goes to Claude or 
 | `grid`, `zoom 35`, `show numbers`, `hide` | Targeting overlays |
 | `open safari` | Opens or focuses an app |
 | `open youtube`, `open youtube.com`, `open reddit in safari` | Website in the default or named browser (any `name.com` works) |
+| `open the downloads folder`, `open my documents folder` | Opens a standard folder in Finder: Desktop, Documents, Downloads, Pictures, Music, Movies, Home (`home folder`), Applications (`apps folder`) or Trash; singular or plural |
+| `open the trash`, `open trash` | Opens the Trash in Finder. No other folder has a bare form: `open music`, `open home` and `open photos` stay apps |
+| `open the reports folder` | Finds a folder whose name has every word (Spotlight, in your home folder) |
+| `open file budget`, `open the budget file` | Finds files (not folders) whose name has every word |
+| `open the budget document`, `… spreadsheet`, `… presentation`, `… pdf` (`the` or `my` needed) | The same, of that kind |
+| `open my last keynote`, `open the last pdf`, `open my latest spreadsheet`, `open my most recent word document` | Opens the file of that kind you used last, with no list; kinds: `file`, `document`, `spreadsheet`, `presentation`, `pdf`, `keynote`, `pages`, `numbers`, `word`, `excel`, `powerpoint`; none: `no recent <kind>` |
+| `1` to `6`, `number 2`, `open 2`, `first` to `sixth` (while a list shows) | Opens that file. Several matches show up to six rows (name and folder) under the prompt, ranked by exact name, then last used; the row says `say 1 to 6, or cancel` (and `more: say more words` when there were more). A number out of range asks again; `cancel` or `stop` closes the list; any other command closes it and runs; 30 s of silence closes it (`no pick: say it again`). Zero matches: `no file called <words>` |
 | `start dictating` / `stop dictating` | Switch between command and dictation mode |
 | `scratch that` (dictation) | Deletes what your last dictated phrase typed |
 | `delete word` (dictation) | Deletes the previous word |
@@ -56,7 +63,9 @@ Everything NoHands understands without a model. Anything else goes to Claude or 
 | `menu <words>` | Presses the front app's menu item through Accessibility, e.g. `menu bookmark this tab`, `menu save as`; none: `no menu item called <words>`; greyed: `menu item <title> is disabled`; the Apple menu is never searched (no `menu shut down`) |
 | `<macro name>` (from `macros` in config) | Runs its steps in order on one row (`step 2 of 4 · go to …`); a failure or a stop ends it at that step |
 
-Details: `docs/superpowers/specs/2026-11-05-nh-10-spell-command-design.md`, `docs/superpowers/specs/2026-11-15-nh-53-browser-tabs-design.md`, `docs/superpowers/specs/2026-11-05-nh-15-search-on-site-design.md`, `docs/superpowers/specs/2026-11-15-nh-93-ordinal-click-target-design.md`, `docs/superpowers/specs/2026-11-15-nh-44-find-on-page-design.md`.
+Files open only from inside your home folder (not `~/Library`, dot folders or anything a link points out of home) and never programs: apps, scripts, installers and files with an execute bit are refused (`won't open <name>: it can run as a program`). Words are matched against the name as you said them; a compound phrase (`open the budget and print it`) goes to the model.
+
+Details: `docs/superpowers/specs/2026-11-16-nh-58-open-files-design.md`, `docs/superpowers/specs/2026-11-05-nh-10-spell-command-design.md`, `docs/superpowers/specs/2026-11-15-nh-53-browser-tabs-design.md`, `docs/superpowers/specs/2026-11-05-nh-15-search-on-site-design.md`, `docs/superpowers/specs/2026-11-15-nh-93-ordinal-click-target-design.md`, `docs/superpowers/specs/2026-11-15-nh-44-find-on-page-design.md`.
 
 - With `attentionWord` set, start each command with it: `computer, new tab`.
 - In a browser `show numbers` and `click <name>` can take about half a second longer (a second on the first per launch in Chromium).
