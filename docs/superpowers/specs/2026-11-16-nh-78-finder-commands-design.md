@@ -1,7 +1,8 @@
 # NH-78: Finder voice commands: Design
 
 **Date:** 2026-11-16  **Ticket:** [NH-78](https://github.com/noahstotland/nohands/issues/78)
-**Status:** Draft
+**Status:** Shipped
+**Shipped:** in PR #169, as specified
 
 ## Intent
 
