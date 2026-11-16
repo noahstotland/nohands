@@ -1,8 +1,9 @@
 # NH-152: Reject control characters in a vocabulary "say" and cap the spellings per entry
 
 **Date:** 2026-11-16
-**Status:** Draft
+**Status:** Shipped
 **Ticket:** [NH-152](https://github.com/noahstotland/nohands/issues/152)
+**Shipped:** in PR #177, as specified
 
 ## Goal
 
