@@ -11,7 +11,7 @@ final class PackDraftTests: XCTestCase {
         let table: [(entry: MenuEntry, kept: Action?, reason: String?)] = [
             (item("Save As…", key: KeyChord(.s, [.command, .shift])), .pressKey(KeyChord(.s, [.command, .shift])), nil),
             (item("Export as PDF…"), .menuItem("File > Export as PDF…"), nil),
-            (item("Zoom In (+)", "View"), .menuItem("View > Zoom In (+)"), nil),
+            (item("Zoom Text (+)", "View"), .menuItem("View > Zoom Text (+)"), nil),
             (item("Don’t Save", key: KeyChord(.d, cmd)), .pressKey(KeyChord(.d, cmd)), nil),
             (item("Close Document", key: KeyChord(.w, cmd)), .pressKey(KeyChord(.w, cmd)), nil),
             (item("Print…", enabled: false), nil, "disabled"),

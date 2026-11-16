@@ -87,7 +87,7 @@ Per `AGENTS.md` § Testing, one table per rule:
 
 None need the microphone, Accessibility or a model. `swift test` and `swift build` pass.
 
-Manual (in the PR): `pack new` with Safari in front; `pack add` the draft; say one of its phrases with Safari in front. Also `pack new --app Finder` and check Empty Trash is listed as `irreversible`.
+Manual (in the PR): `pack new` with Safari in front; `pack add` the draft; say one of its phrases with Safari in front. Also `pack new --app Finder` and check Empty Trash is left out (as `already a NoHands phrase`, since that check comes first; `Send` and `Delete…` items show as `irreversible`).
 
 ## Docs
 
