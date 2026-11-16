@@ -56,6 +56,17 @@ private func route(_ goal: String, host: String? = nil, at seconds: Double = 0, 
     #expect(!String(decoding: try JSONEncoder().encode(steps), as: UTF8.self).contains("hunter2"))
 }
 
+@Test func intentsNeverCarryTypedTextAnswersOrLabelNumbers() {
+    let history = [
+        StepRecord(intent: "Type the text \"Hunter2\" and press Return", actions: [.typeText("hunter2")]),
+        StepRecord(intent: "Search for 'cats on a wall' now", actions: [.search("cats on a wall")]),
+        StepRecord(intent: "Which stream?", actions: [], userAnswer: "Sky Sports"),
+        StepRecord(intent: "Click the sky sports stream, visible element 6.", actions: [.click(.label(6), button: .left, count: 1)]),
+    ]
+    let intents = RouteMemory.steps(from: history, names: [[:], [:], [:], [6: "Stream"]]).map(\.intent)
+    #expect(intents == ["Type the text … and press Return", "Search for … now", "Which stream?", "Click the … stream, visible the element."])
+}
+
 @Test func theFileRoundTripsAndABadOneIsEmptyNotAnError() throws {
     let a = route("open raptors game", host: "espn.com", steps: [RouteStep(intent: "go", actions: ["click \"x\""], asked: true)])
     #expect(RouteMemory.decode(try RouteMemory.encoded([a])) == [a])

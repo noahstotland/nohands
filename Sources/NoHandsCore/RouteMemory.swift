@@ -47,14 +47,43 @@ public enum RouteMemory {
     /// title each label number had on step i's screen, so a click is saved by name, not by a number that means nothing later.
     public static func steps(from history: [StepRecord], names: [[Int: String]]) -> [RouteStep] {
         var kept: [RouteStep] = []
+        // The user's answers are words they said, not the route's: they are cut out of every intent, as is any text a step typed.
+        let answers = history.compactMap(\.userAnswer).filter { $0.count >= 3 }
         for (i, record) in history.enumerated() where record.failure == nil {
             let titles = i < names.count ? names[i] : [:]
             let asked = record.userAnswer != nil
             guard asked || !record.actions.isEmpty else { continue }
-            kept.append(RouteStep(intent: ClaudeRequestBuilder.sanitize(record.intent, limit: intentLimit),
+            kept.append(RouteStep(intent: intent(record.intent, typed: record.actions.flatMap(typedText), answers: answers),
                                   actions: record.actions.map { describe($0, names: titles) }, asked: asked))
         }
         return Array(kept.prefix(maxSteps))
+    }
+
+    /// The intent as saved: the model often quotes what it typed or what the user answered, and the file must hold neither.
+    /// Every text the step's actions carry and every answer is cut out (any case), a step that typed or searched loses its
+    /// quoted spans too, and a mention of a label number ("element 6") goes, since a number means nothing on a later screen.
+    static func intent(_ text: String, typed: [String], answers: [String]) -> String {
+        var s = text
+        for secret in (typed + answers).filter({ !$0.isEmpty }).sorted(by: { $0.count > $1.count }) {
+            s = s.replacingOccurrences(of: secret, with: "…", options: .caseInsensitive)
+        }
+        if !typed.isEmpty { s = s.replacingOccurrences(of: #"["“'‘][^"”'’]*["”'’]"#, with: "…", options: .regularExpression) }
+        s = s.replacingOccurrences(of: #"(?i)\b(element|label|number|badge)\s*#?\d+"#, with: "the element", options: .regularExpression)
+        return ClaudeRequestBuilder.sanitize(s, limit: intentLimit)
+    }
+
+    /// The words an action types, searches for, sets or looks up: the text `describe` leaves out.
+    static func typedText(_ action: Action) -> [String] {
+        switch action {
+        case .typeText(let t), .search(let t), .clipboardSet(let t), .typeInto(_, let t), .setValue(_, let t), .findOnPage(let t, _): [t]
+        case .searchSite(let q, _): [q]
+        case .editText(let e, let other):
+            [other].compactMap { $0 } + ({ switch e {
+                case .selectPhrase(let p), .deletePhrase(let p), .caretBefore(let p), .caretAfter(let p): [p]
+                case .replace(let a, let b): [a, b]
+                default: [] } })()
+        default: []
+        }
     }
 
     /// The route to save for a task that ended `done`, or nil when fewer than `minSteps` clean steps ran (a one-step
