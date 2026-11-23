@@ -104,6 +104,19 @@ private func el(_ id: Int, _ title: String, role: String = "AXButton", states: [
     }
 }
 
+@Test func aPressOnAGuardedTitleNeedsTheGoalOrAYes() {
+    // (title, goal, confirmed, the verb refused or nil)
+    let table: [(String?, String, Set<String>, String?)] = [
+        ("Send", "reply to Anna", [], "send"), ("Send", "send the reply", [], nil), ("Send", "reply to Anna", ["send"], nil),
+        ("Send", "reply to Anna", ["delete"], "send"), ("Place order", "buy a lamp", ["buy"], "place order"),
+        ("Reload", "reply to Anna", [], nil), ("Sender", "reply to Anna", [], nil), (nil, "reply to Anna", [], nil),
+    ]
+    for (title, goal, confirmed, expected) in table {
+        #expect(IrreversibleGuard.unconfirmed(title: title, guard: PressGuard(goal: goal, confirmed: confirmed)) == expected,
+                "\(String(describing: title)) / \(goal) / \(confirmed)")
+    }
+}
+
 @Test func onlyAPlainYesConfirms() {
     let gate = AttentionGate(configured: "computer")
     let table: [(String, Bool)] = [

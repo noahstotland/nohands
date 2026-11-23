@@ -1,5 +1,17 @@
 import Foundation
 
+/// What the executor checks just before it presses something in a model step: the goal, and the verbs the user
+/// already said yes to for this step.
+public struct PressGuard: Sendable, Equatable {
+    public var goal: String
+    public var confirmed: Set<String>
+
+    public init(goal: String, confirmed: Set<String> = []) {
+        self.goal = goal
+        self.confirmed = confirmed
+    }
+}
+
 /// Finds a step that is about to press an irreversible button (Send, Delete, Place order, ...) the user's goal did
 /// not name. The task runner pauses such a step for a spoken yes (`ConfirmAnswer`) instead of running it on a guess.
 /// Words are matched whole ("Sender", "Sent" and "Posts" are not buttons to ask about), and each verb is allowed
@@ -123,6 +135,17 @@ public enum IrreversibleGuard {
             }
         }
         return asked.isEmpty ? nil : asked.joined(separator: " and ")
+    }
+
+    /// The guarded verb in the title of what is about to be pressed that neither the goal allows nor the user confirmed,
+    /// else nil. An unknown title (nil) is not held: the before-step check still applied.
+    public static func unconfirmed(title: String?, guard press: PressGuard) -> String? {
+        guard let title else { return nil }
+        let goalWords = goalVerbs(press.goal)
+        let titleWords = words(title)
+        return verbs.first { verb in
+            contains(titleWords, words(verb.name)) && !press.confirmed.contains(verb.name) && !allows(verb, goalWords)
+        }?.name
     }
 
     /// The smallest observed element whose frame holds `point`; nil when none does.
