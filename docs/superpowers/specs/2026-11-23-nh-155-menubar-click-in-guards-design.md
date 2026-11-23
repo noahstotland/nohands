@@ -1,7 +1,8 @@
 # NH-155: Apply the quit, close and Apple menu guards to click_in on the menu bar: Design
 
 **Date:** 2026-11-23  **Ticket:** [NH-155](https://github.com/noahstotland/nohands/issues/155)
-**Status:** Draft
+**Status:** Shipped
+**Shipped:** in PR #183, as specified
 
 ## Intent
 
