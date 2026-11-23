@@ -1,5 +1,19 @@
 # Release notes
 
+## 2026-11-23 point agent docs at docs/ pages instead of the README (NH-148) (#178)
+
+Merged 2026-11-23 11:05 pm UTC.
+
+Agent docs now send readers to `docs/voice-commands.md`, `docs/cli.md` and `docs/configuration.md` instead of the README. Nothing to do.
+
+## 2026-11-23 set up the agent team (#179)
+
+Merged 2026-11-23 10:55 pm UTC.
+
+Agent-team config refreshed for the latest collective-wisdom; no app change.
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
 ## 2026-11-16 reject control characters in a vocabulary say and cap spellings per entry (NH-152) (#177)
 
 Merged 2026-11-16 11:36 pm UTC.
