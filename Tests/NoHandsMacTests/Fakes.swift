@@ -119,6 +119,11 @@ final class FakeElements: ElementProviding, @unchecked Sendable {
     func focusedWindowIsFullScreen() -> Bool? { defer { fullScreenAfterFirstRead.map { fullScreen = $0 } }; return fullScreen }
     func focusedElementIsTextInput() -> Bool { textFocused }
     func focusedWindowTitle() -> String? { windowTitle }
+    /// Live titles for the press-time check: the control under the pointer (nil: unknown) and the focused button.
+    var titleAtPoint: String?
+    var focusedTitle: String?
+    func elementTitle(at point: CGPoint) -> String? { titleAtPoint }
+    func focusedElementTitle() -> String? { focusedTitle }
     func webURL() -> String? { url }
     func frontmostAppName() -> String? { front }
     func actionableElements() -> [UIElementInfo] { walk(screens: nil) }

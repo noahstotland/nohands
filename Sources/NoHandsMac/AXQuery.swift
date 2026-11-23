@@ -131,6 +131,36 @@ public final class AXQuery: @unchecked Sendable {
             || Self.string(element, kAXSubroleAttribute) == "AXSearchField"
     }
 
+    /// Roles whose title never names a control to press: climbing stops here.
+    private static let containerRoles: Set<String> = ["AXWindow", "AXApplication", "AXSheet", "AXWebArea", "AXDrawer", "AXScrollArea"]
+
+    public func elementTitle(at point: CGPoint) -> String? {
+        let system = AXUIElementCreateSystemWide()
+        AXUIElementSetMessagingTimeout(system, 0.05)
+        var hit: AXUIElement?
+        guard AXUIElementCopyElementAtPosition(system, Float(point.x), Float(point.y), &hit) == .success, var element = hit else { return nil }
+        for _ in 0..<4 {
+            AXUIElementSetMessagingTimeout(element, 0.05)
+            let role = Self.string(element, kAXRoleAttribute) ?? ""
+            if Self.containerRoles.contains(role) { return nil }
+            if let title = Self.string(element, kAXTitleAttribute) ?? Self.string(element, kAXDescriptionAttribute)
+                ?? (role == "AXStaticText" ? Self.string(element, kAXValueAttribute) : nil) { return title }
+            guard let parent = Self.element(element, kAXParentAttribute) else { return nil }
+            element = parent
+        }
+        return nil
+    }
+
+    public func focusedElementTitle() -> String? {
+        guard let app = NSWorkspace.shared.frontmostApplication else { return nil }
+        let appEl = AXUIElementCreateApplication(app.processIdentifier)
+        AXUIElementSetMessagingTimeout(appEl, 0.05)
+        guard let element = Self.element(appEl, kAXFocusedUIElementAttribute) else { return nil }
+        AXUIElementSetMessagingTimeout(element, 0.05)
+        guard ["AXButton", "AXPopUpButton", "AXMenuButton", "AXLink"].contains(Self.string(element, kAXRoleAttribute)) else { return nil }
+        return Self.string(element, kAXTitleAttribute) ?? Self.string(element, kAXDescriptionAttribute)
+    }
+
     public func frontmostAppName() -> String? {
         NSWorkspace.shared.frontmostApplication?.localizedName
     }
