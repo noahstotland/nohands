@@ -56,3 +56,13 @@ private func click(_ t: ClickTarget) -> [Action] { [.click(t, button: .left, cou
     ]
     for c in cases { #expect(bound(c.actions, goal: c.goal) == c.expected, "\(c.actions) \(c.goal)") }
 }
+
+@Test func menuBarClickInIsBlockedForATopLevelMenuTheGoalDoesNotAllow() {
+    func run(_ name: String, goal: String, badges: Bool = false) -> Bool {
+        MenuBarGuard.blocked([.clickIn(.menubar, name: name)], labels: screen, menuBarTitles: bar, goal: goal, badgesShowing: badges) != nil
+    }
+    #expect(run("History", goal: "open the latest video"))
+    #expect(run("History", goal: "open the latest video", badges: true))
+    #expect(!run("History", goal: "open the history menu"))
+    #expect(!run("Save", goal: "open the latest video"))   // not a top-level title
+}
