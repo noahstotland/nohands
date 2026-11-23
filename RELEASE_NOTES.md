@@ -1,5 +1,11 @@
 # Release notes
 
+## 2026-11-23 clear and off switch for the command log, saturating token sums (NH-156) (#182)
+
+Merged 2026-11-23 11:25 pm UTC.
+
+You can now clear the command log and turn it off from the Recent commands menu (or with `commandLog` set to `false` in config.json); turning it off keeps existing entries until you clear them. A very large token count can no longer crash the app.
+
 ## 2026-11-23 remove the never-written droppedJobs from VoicePipeline (NH-157) (#180)
 
 Merged 2026-11-23 11:19 pm UTC.
