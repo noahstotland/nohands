@@ -353,8 +353,13 @@ public enum TaskOutcome: Equatable, Sendable {
                                         badgesShowing: observation.overlay == "labels") { failure = blocked }
             else {
                 // An irreversible button the request did not name waits for a spoken yes; anything else, silence or
-                // a stop ends the task before the step runs.
-                if let verb = IrreversibleGuard.held(actions, labels: labels, goal: goal) {
+                // a stop ends the task before the step runs. The screen can change during the wait, so after a yes it
+                // is read again: the step runs on the fresh labels only when the ones it uses are unchanged.
+                var runLabels = labels
+                var confirmed = Set<String>()
+                var changed = false
+                let pointer = executor.input.currentMouseLocation()
+                if let verb = IrreversibleGuard.held(actions, labels: labels, goal: goal, overlay: overlay.state, cursor: pointer) {
                     onStatus?(.running("step \(n) · say yes to \(verb)"))
                     onPrompt?(.confirm(verb: verb))
                     let reply = await awaitAnswer(.confirm, timeout: Self.answerTimeout)
@@ -362,18 +367,36 @@ public enum TaskOutcome: Equatable, Sendable {
                     guard let reply, ConfirmAnswer.isYes(reply, attention: config.attentionGate) else {
                         return await finish(.stopped, hud: "stopped: \(verb) not confirmed")
                     }
+                    confirmed = Set(verb.components(separatedBy: " and "))
                     onStatus?(.running("step \(n) · \(step.intent)"))
+                    let fresh = await observeTimed(mode: mode).result.labels
+                    if isCancelled { return await finish(.stopped) }
+                    // Only the verbs just confirmed may be on the new screen's buttons; a new one is asked about next step.
+                    let again = IrreversibleGuard.held(actions, labels: fresh, goal: goal, overlay: overlay.state, cursor: pointer)
+                    let asked = Set((again ?? "").components(separatedBy: " and ")).subtracting([""])
+                    if Self.sameLabels(actions, old: labels, fresh: fresh, overlay: overlay.state), asked.isSubset(of: confirmed) {
+                        runLabels = fresh
+                    } else {
+                        changed = true
+                    }
                 }
-                let shown = overlay.state
-                if actions.contains(where: \.readsText) { readText = true }
-                failure = await executeCancellable(actions, labels: labels, tabs: observation.tabs)
-                // Only a step that ran clean left the task's page in front; a failed one may not have navigated.
-                if failure == nil, step.actions.contains(where: Self.navigates) { markTaskTab = true }
-                // Badges or a grid are only valid for the screen they were drawn on: once a step has acted, hide
-                // them so the next observation walks the screen afresh (a `.label` click leaves them up, and the
-                // badge map would otherwise be reused). One this step just drew (e.g. "show numbers") stays, and a step
-                // with no actions (or only `look`) changed nothing.
-                if !step.actions.isEmpty && !step.actions.allSatisfy({ $0 == .look }) && shown != .none && overlay.state == shown { overlay.hide() }
+                if changed {
+                    failure = ActionExecutor.elementChanged
+                } else {
+                    let shown = overlay.state
+                    if actions.contains(where: \.readsText) { readText = true }
+                    // Each press reads the live title of what it lands on and refuses a guarded one nobody confirmed.
+                    executor.pressGuard = PressGuard(goal: goal, confirmed: confirmed)
+                    failure = await executeCancellable(actions, labels: runLabels, tabs: observation.tabs)
+                    executor.pressGuard = nil
+                    // Only a step that ran clean left the task's page in front; a failed one may not have navigated.
+                    if failure == nil, step.actions.contains(where: Self.navigates) { markTaskTab = true }
+                    // Badges or a grid are only valid for the screen they were drawn on: once a step has acted, hide
+                    // them so the next observation walks the screen afresh (a `.label` click leaves them up, and the
+                    // badge map would otherwise be reused). One this step just drew (e.g. "show numbers") stays, and a step
+                    // with no actions (or only `look`) changed nothing.
+                    if !step.actions.isEmpty && !step.actions.allSatisfy({ $0 == .look }) && shown != .none && overlay.state == shown { overlay.hide() }
+                }
             }
             stepsRun = n
             // A step cut short by stop stays running, so the panel shows it as stopped, not failed.
@@ -420,6 +443,37 @@ public enum TaskOutcome: Equatable, Sendable {
             }
         }
         return await finish(.stuck(Self.stepLimit))
+    }
+
+    /// Whether every label number `actions` use still has the same title and role on `fresh` as on `old`. A grid cell
+    /// (`numbered` while a grid is shown) names a place, not a label.
+    static func sameLabels(_ actions: [Action], old: [Int: UIElementInfo], fresh: [Int: UIElementInfo], overlay: OverlayState) -> Bool {
+        var used = Set<Int>()
+        func add(_ n: Int) { used.insert(n) }
+        func target(_ t: MoveTarget) {
+            switch t {
+            case .label(let n): add(n)
+            case .numbered(let n): if case .grid = overlay {} else { add(n) }
+            default: break
+            }
+        }
+        func element(_ t: ElementTarget) { if case .label(let n) = t { add(n) } }
+        for action in actions {
+            switch action {
+            case .click(.label(let n), _, _): add(n)
+            case .click(.numbered(let n), _, _): target(.numbered(n))
+            case .moveCursor(let t): target(t)
+            case .drag(let a, let b): target(a); target(b)
+            case .setValue(let t, _), .typeInto(let t, _), .clearField(let t), .selectOption(let t, _), .setChecked(let t, _),
+                 .setExpanded(let t, _), .focusElement(let t), .scrollTo(let t), .scrollIn(let t, _, _), .readValue(let t): element(t)
+            case .waitFor(.element(let t, _), _): element(t)
+            default: break
+            }
+        }
+        return used.allSatisfy { n in
+            guard let a = old[n], let b = fresh[n] else { return old[n] == nil && fresh[n] == nil }
+            return a.title == b.title && a.role == b.role
+        }
     }
 
     /// Adds a step to `history`; `names` are the label titles on its screen (see `stepNames`).
