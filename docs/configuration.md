@@ -34,6 +34,7 @@ Optional file `~/.config/nohands/config.json`; every key may be omitted. Changes
 | `visionFallback` | `false` | |
 | `followUpWindowMs` | `30000` | 0 to 120000; `0` turns follow-ups off |
 | `routeMemory` | `true` | `false` stops saving and using routes for finished tasks (an existing `routes.json` is left as is); see [Tasks](tasks.md#multi-step-tasks) |
+| `commandLog` | `true` | `false` records no new commands; entries already in the log stay until you choose Clear Log. The menu's Recent commands > Keep Command Log changes it live and saves it here; see [Privacy](privacy.md) |
 | `vocabulary` | `[]` | up to 200 entries; see Vocabulary |
 | `macros` | `{}` | up to 50 macros of 20 steps; see Macros |
 | `packRegistryURL` | none set | an `https` address with a public host and no user or password; `""` turns the registry off; see the Pack registry note below |
