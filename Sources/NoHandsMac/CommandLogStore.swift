@@ -12,6 +12,8 @@ import NoHandsCore
     public private(set) var log: CommandLog
     /// Called after each append, so the menu and an open window can refresh.
     public var onChange: (() -> Void)?
+    /// False turns recording off: `append` does nothing. Entries already in the log stay until `clear()`.
+    public var isRecording = true
 
     private let url: URL
     /// The write in flight. Writes run one after another, in order, so an older log never lands over a newer one.
@@ -30,6 +32,7 @@ import NoHandsCore
 
     /// Adds the entry and writes the file from a background task; the caller never waits for the write.
     public func append(_ entry: CommandLogEntry) {
+        guard isRecording else { return }
         log.append(entry)
         onChange?()
         let data: Data
@@ -42,6 +45,21 @@ import NoHandsCore
             await previous?.value
             do { try ConfigFile.writePrivateFile(data, at: url) } catch {
                 PipelineLog.warning("command log: could not write the log file", detail: "\(error)")
+            }
+        }
+    }
+
+    /// Empties the log at once and deletes the file after any write already queued, so old entries never reappear.
+    public func clear() {
+        log = CommandLog()
+        onChange?()
+        let url = self.url, previous = lastWrite
+        lastWrite = Task.detached {
+            await previous?.value
+            do { try FileManager.default.removeItem(at: url) } catch let error as CocoaError where error.code == .fileNoSuchFile {
+                // Already gone: nothing to clear.
+            } catch {
+                PipelineLog.warning("command log: could not delete the log file", detail: "\(error)")
             }
         }
     }
