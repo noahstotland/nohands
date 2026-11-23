@@ -40,9 +40,11 @@ Still fails for a real bug: if settle ignores `settleMs` it polls past 4 (or nev
 
 The buffer releases held text from a `Task.sleep` timer (80 ms window, 200 ms unfinished window). The tests sleep a fixed 200–250 ms and then expect the text; on a loaded machine the timer task wakes later than that.
 
-Fix: a small test helper `released(_ sink:, equals:)` polls every 10 ms until the sink holds the expected text, for at most 5 s, and returns whether it did. Every check that waits for a release uses it: `nonGrammarPhraseWaitsForTheWindow`, `speechResumingInsideTheWindowMergesBothHalves`, `abandonedSpeechResumesTheWindow`, `addressedSpellWaitsOutThePauseBetweenLetters`.
+Fix: a small test helper `waitForOutput(_:_:)` polls every 10 ms until the sink holds the expected text, for at most 5 s; the test's own `#expect` then checks the result. Every check that waits for a release uses it: `nonGrammarPhraseWaitsForTheWindow`, `speechResumingInsideTheWindowMergesBothHalves`, `abandonedSpeechResumesTheWindow`, `addressedSpellWaitsOutThePauseBetweenLetters`.
 
 Still fails for a real bug: 5 s is well under the buffer's 20 s safety timeout, so a buffer that stops resuming the window after abandoned speech (and only flushes on the safety timeout) still fails `abandonedSpeechResumesTheWindow`; one that never releases fails every one.
+
+`speechResumingInsideTheWindowMergesBothHalves` widens its unfinished window from 200 to 1000 ms (room for a slow wake-up before `speechStarted`) and still sleeps 1300 ms past it, so it keeps proving that speech in progress holds the text past its window. `addressedSpellWaitsOutThePauseBetweenLetters` widens from 400 to 1500 ms.
 
 The checks that something is **not** released yet (`#expect(sink.out.isEmpty)` after a short sleep inside a window) keep their fixed sleeps. A slow wake can only make them fail if the test oversleeps the whole window; `attentionWordAloneWaitsForTheRestOfTheCommand` sleeps 150 ms inside a 400 ms window, so its unfinished window widens to 5000 ms (the next transcript releases at once, so the test is no slower). The others are checks that text never fires (reset, stop), which a slow wake cannot break.
 
@@ -50,7 +52,7 @@ The checks that something is **not** released yet (`#expect(sink.out.isEmpty)` a
 
 The fake tab read sleeps 200 ms on its thread; the test cancels after a 50 ms sleep. If the test wakes after the read has finished, the tab is pressed and the test fails.
 
-Fix: the fake read blocks on a semaphore. The test waits (off the main actor, at most 5 s) until the read has started, cancels, then releases the read. The cancel always lands mid-read, which is the case the test is about.
+Fix: the fake read spins on a lock-protected flag (no semaphore: `wait` is unavailable in async code). The test polls (at most 5 s) until the read has started, cancels, then releases the read. The cancel always lands mid-read, which is the case the test is about.
 
 Still fails for a real bug: if `goToTab` stops checking cancellation after the read, the tab is pressed.
 

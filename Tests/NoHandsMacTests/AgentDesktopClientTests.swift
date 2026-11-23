@@ -83,6 +83,7 @@ private func script(_ body: String) -> URL {
 }
 
 @Test func runReturnsWhenTheChildExitsEvenIfAGrandchildHoldsStdout() async {
+    // The grandchild outlives the test on purpose: it must hold stdout well past the 8 s bound.
     let c = AgentDesktopClient(binary: script(#"(sleep 20 &); printf '{"version":"2.6","ok":true,"command":"status","data":{}}'"#), defaultDeadline: .seconds(10))
     let t = ContinuousClock.now
     let e = await c.run(["status"], isObservation: true)

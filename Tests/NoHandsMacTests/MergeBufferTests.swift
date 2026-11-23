@@ -50,11 +50,11 @@ private func make(_ sink: Sink, window: Int = 80, unfinished: Int = 200, attenti
 
 @Test func speechResumingInsideTheWindowMergesBothHalves() async throws {
     let sink = Sink()
-    let b = make(sink, unfinished: 5000)   // far past the test's own pauses; speech in progress holds it anyway
+    let b = make(sink, unfinished: 1000)   // room for a slow wake-up before speechStarted, still short enough to sleep past
     await b.transcript("click the", trace: LatencyTrace())
     try await Task.sleep(for: .milliseconds(100))
     await b.speechStarted()
-    try await Task.sleep(for: .milliseconds(300))      // speech in progress: still waiting for ASR
+    try await Task.sleep(for: .milliseconds(1300))     // past the unfinished window: still waiting for ASR
     #expect(sink.out.isEmpty)
     await b.transcript("back button", trace: LatencyTrace())
     await waitForOutput(sink, ["click the back button"])
