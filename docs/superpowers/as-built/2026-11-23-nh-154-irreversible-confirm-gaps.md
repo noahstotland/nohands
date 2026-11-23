@@ -1,6 +1,6 @@
 # As-built: Close the gaps left in the confirm for irreversible task steps
 
-**Shipped:** in PR #PRNUM
+**Shipped:** in PR #184
 **Ticket:** NH-154
 **Spec:** [2026-11-23-nh-154-irreversible-confirm-gaps-design.md](../specs/2026-11-23-nh-154-irreversible-confirm-gaps-design.md)
 

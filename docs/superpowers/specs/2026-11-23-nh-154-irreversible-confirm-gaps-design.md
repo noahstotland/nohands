@@ -3,7 +3,7 @@
 **Date:** 2026-11-23
 **Status:** Shipped
 **Ticket:** [NH-154](https://github.com/noahstotland/nohands/issues/154)
-**Shipped:** in PR #PRNUM, with differences: [as-built](../as-built/2026-11-23-nh-154-irreversible-confirm-gaps.md)
+**Shipped:** in PR #184, with differences: [as-built](../as-built/2026-11-23-nh-154-irreversible-confirm-gaps.md)
 **Builds on:** [NH-61 spec](2026-11-15-nh-61-confirm-irreversible-design.md), [as-built](../as-built/2026-11-15-nh-61-confirm-irreversible.md)
 
 ## Goal
