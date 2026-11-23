@@ -1,5 +1,11 @@
 # Release notes
 
+## 2026-11-23 apply quit, close and Apple menu guards to menu bar click_in (NH-155) (#183)
+
+Merged 2026-11-23 11:26 pm UTC.
+
+A model step that clicks the menu bar by name can no longer press Quit, Close, Shut Down or other Apple menu items unless you asked for it.
+
 ## 2026-11-23 make the timing tests reliable in a parallel run (NH-153) (#181)
 
 Merged 2026-11-23 11:26 pm UTC.
