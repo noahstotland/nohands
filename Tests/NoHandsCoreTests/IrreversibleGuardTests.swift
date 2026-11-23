@@ -69,6 +69,41 @@ private func el(_ id: Int, _ title: String, role: String = "AXButton", states: [
     }
 }
 
+@Test func everyRouteToAButtonIsHeld() {
+    let reload = el(1, "Reload"), send = el(2, "Send"), back = el(3, "Back"), field = el(4, "Body", role: "AXTextArea")
+    let labels = [1: reload, 2: send, 3: back, 4: field]
+    let atSend = CGPoint(x: 40, y: 95)   // inside Send (y 80...110), not Reload (40...70)
+    let grid = OverlayState.grid(GridModel(bounds: CGRect(x: 0, y: 0, width: 80, height: 400), columns: 1, rows: 10))
+    func click(_ t: ClickTarget) -> [Action] { [.click(t, button: .left, count: 1)] }
+    let focused = ["focused"]
+    let focusedSend = [1: reload, 2: el(2, "Send", states: focused)]
+    // (actions, overlay, real pointer, labels, the verb asked about or nil)
+    let table: [([Action], OverlayState, CGPoint?, [Int: UIElementInfo], String?)] = [
+        // a grid cell is the element under its centre, not label n (cell 3 is over Send, cell 2 over Reload)
+        (click(.numbered(3)), grid, nil, labels, "send"), (click(.numbered(2)), grid, nil, labels, nil),
+        (click(.numbered(1)), .labels([1: send]), nil, labels, "send"), (click(.numbered(2)), .none, nil, labels, "send"),
+        // the cursor: moved in this step, already there, moved away, released over the button
+        ([.moveCursor(.point(atSend)), click(.cursor)[0]], .none, nil, labels, "send"),
+        ([.moveCursor(.relative(dx: 0, dy: 50)), click(.cursor)[0]], .none, CGPoint(x: 40, y: 45), labels, "send"),
+        (click(.cursor), .none, atSend, labels, "send"), (click(.cursor), .none, nil, labels, nil),
+        ([.moveCursor(.point(CGPoint(x: 900, y: 900))), click(.cursor)[0]], .none, atSend, labels, nil),
+        ([.releaseMouse(.left)], .none, atSend, labels, "send"), (click(.point(atSend)), .none, nil, labels, "send"),
+        // a drag released on a button presses it
+        ([.drag(from: .point(.zero), to: .label(2))], .none, nil, labels, "send"),
+        ([.drag(from: .point(.zero), to: .point(atSend))], .none, nil, labels, "send"),
+        ([.drag(from: .label(2), to: .point(CGPoint(x: 900, y: 900)))], .none, nil, labels, nil),
+        // Space presses a focused button, but not with a modifier or in a text field
+        ([.focusElement(.label(2)), .pressKey(KeyChord(.space))], .none, nil, labels, "send"),
+        ([.pressKey(KeyChord(.space))], .none, nil, focusedSend, "send"),
+        ([.pressKey(KeyChord(.space, [.command]))], .none, nil, focusedSend, nil),
+        ([.focusElement(.label(4)), .pressKey(KeyChord(.space))], .none, nil, focusedSend, nil),
+    ]
+    for (actions, overlay, cursor, labels, expected) in table {
+        #expect(IrreversibleGuard.held(actions, labels: labels, goal: "tidy up", overlay: overlay, cursor: cursor) == expected,
+                "\(actions) / \(overlay) / \(String(describing: cursor))")
+    }
+}
+
 @Test func onlyAPlainYesConfirms() {
     let gate = AttentionGate(configured: "computer")
     let table: [(String, Bool)] = [
