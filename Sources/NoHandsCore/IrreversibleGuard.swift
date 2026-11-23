@@ -64,18 +64,31 @@ public enum IrreversibleGuard {
         return (0...(words.count - phrase.count)).contains { Array(words[$0..<($0 + phrase.count)]) == phrase }
     }
 
-    /// The goal's words, minus any word in the same clause after a negation ("don't send it", "I don't want to send
-    /// it" do not allow Send). A comma, full stop, "but" or "then" ends the clause.
+    /// Words that open a new instruction after a comma ("don't delete it, just send it").
+    private static let newInstruction: Set<String> = ["just", "instead", "rather", "now", "please"]
+
+    /// The goal's words, minus any word after a negation ("don't send it", "I don't want to send it" do not allow
+    /// Send). A full stop, "but" or "then" ends the negation. A comma ends it only when the negated part named no
+    /// guarded verb ("no, send it") or a new instruction follows ("don't delete it, just send it"); otherwise it
+    /// runs on ("don't delete, send or archive anything").
     static func goalVerbs(_ goal: String) -> Set<String> {
         let negations: Set<String> = ["not", "never", "dont", "doesnt", "didnt", "wont", "cant", "shouldnt", "wouldnt",
                                       "isnt", "cannot", "no", "nor", "without"]
         let breaks: Set<String> = ["but", "then"]
+        let verbForms = Set(verbs.flatMap { $0.allowedBy.flatMap { $0 } })
         let plain = goal.replacingOccurrences(of: "\u{2019}", with: "").replacingOccurrences(of: "'", with: "")
         var out = Set<String>()
-        for clause in plain.split(whereSeparator: { ",.;!?".contains($0) }) {
+        for clause in plain.split(whereSeparator: { ".;!?".contains($0) }) {
             var negated = false
-            for word in words(String(clause)) {
-                if breaks.contains(word) { negated = false } else if negations.contains(word) { negated = true } else if !negated { out.insert(word) }
+            var namedVerb = false
+            for (i, part) in clause.split(separator: ",", omittingEmptySubsequences: false).enumerated() {
+                let tokens = words(String(part))
+                if i > 0, negated, !namedVerb || tokens.first.map(newInstruction.contains) == true { negated = false }
+                for word in tokens {
+                    if breaks.contains(word) { negated = false } else if negations.contains(word) { negated = true; namedVerb = false }
+                    else if negated { if verbForms.contains(word) { namedVerb = true } }
+                    else { out.insert(word) }
+                }
             }
         }
         return out
