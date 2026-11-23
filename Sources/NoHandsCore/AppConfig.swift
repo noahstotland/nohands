@@ -76,6 +76,8 @@ public struct AppConfig: Codable, Equatable, Sendable {
     /// Remember the steps of tasks that ended `done` and hint them to the model when a similar goal comes in (NH-46).
     /// Off, nothing is matched or saved and an existing routes file is left as it is.
     public var routeMemory: Bool = true
+    /// Record each command in the command log (NH-156). Off, nothing new is recorded; existing entries stay until cleared.
+    public var commandLog: Bool = true
     /// The pack registry URL (NH-85): nil is the default (none set yet), `""` turns the registry off. Read through `packRegistry`.
     public var packRegistryURL: String?
     /// Base64 of the registry's 32-byte Ed25519 public key; required for any URL other than the default.
@@ -97,7 +99,7 @@ public struct AppConfig: Codable, Equatable, Sendable {
         case maxTaskSteps, maxMediaTaskSteps, llmDeadlineMs, settleMs, maxObservedElements
         case localLlmDeadlineMs, localMaxObservedElements
         case desktopHarness, agentDesktopPath, agentDesktopTimeoutMs, agentDesktopSnapshotMs, agentDesktopHeadedFallback, agentDesktopTrace
-        case echoCancellation, speakFeedback, attentionWord, visionFallback, vocabulary, macros, followUpWindowMs, routeMemory
+        case echoCancellation, speakFeedback, attentionWord, visionFallback, vocabulary, macros, followUpWindowMs, routeMemory, commandLog
         case packRegistryURL, packRegistryKey
     }
 
@@ -143,6 +145,7 @@ public struct AppConfig: Codable, Equatable, Sendable {
         d.packRegistryKey = try c.decodeIfPresent(String.self, forKey: .packRegistryKey)
         // Lenient: a value that is not a bool keeps the default.
         d.routeMemory = (try? c.decodeIfPresent(Bool.self, forKey: .routeMemory)) ?? d.routeMemory
+        d.commandLog = (try? c.decodeIfPresent(Bool.self, forKey: .commandLog)) ?? d.commandLog
         // Lenient: a `vocabulary` that is not a list is ignored and counted as one skipped entry; each bad entry is skipped inside `Vocabulary`.
         if c.contains(.vocabulary) {
             d.vocabulary = (try? c.decode(Vocabulary.self, forKey: .vocabulary)) ?? Vocabulary(skipped: 1)

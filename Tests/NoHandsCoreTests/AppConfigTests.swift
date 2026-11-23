@@ -209,6 +209,17 @@ import Foundation
     }
 }
 
+@Test func commandLogIsOnUnlessTheConfigSaysFalse() throws {
+    let table: [(String?, Bool)] = [(nil, true), (#"{"commandLog":false}"#, false), (#"{"commandLog":true}"#, true),
+                                    (#"{"commandLog":"no"}"#, true), (#"{"commandLog":1}"#, true), (#"{"commandLog":null}"#, true)]
+    for (json, expected) in table {
+        #expect(try AppConfig.load(from: json.map { Data($0.utf8) }, environment: [:]).commandLog == expected, "\(json ?? "nil")")
+    }
+    #expect(try AppConfig.load(from: Data(#"{"commandLog":"no","silenceMs":500}"#.utf8), environment: [:]).silenceMs == 500)
+    let patched = try AppConfig.load(from: CommandLogMenu.merged(existing: Data(#"{"silenceMs":500}"#.utf8), on: false), environment: [:])
+    #expect(patched.silenceMs == 500 && !patched.commandLog)
+}
+
 @Test func packRegistryConfig() throws {
     let key = Data(repeating: 7, count: 32).base64EncodedString(), url = URL(string: "https://packs.example.org/i.json")!
     let table: [(String, PackRegistry.Setting, Int)] = [
