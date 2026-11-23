@@ -29,6 +29,14 @@ public struct ClaudeUsage: Equatable, Sendable {
     }
 }
 
+extension Int {
+    /// `self + other`, clamped to `Int.max` or `Int.min` instead of trapping on overflow.
+    func saturatingAdd(_ other: Int) -> Int {
+        let (sum, overflow) = addingReportingOverflow(other)
+        return overflow ? (other > 0 ? .max : .min) : sum
+    }
+}
+
 /// Running sum of the Claude calls made in one app session. Counts only; no text ever reaches it.
 public struct ClaudeUsageTotal: Equatable, Sendable {
     public private(set) var calls = 0
@@ -42,10 +50,10 @@ public struct ClaudeUsageTotal: Equatable, Sendable {
     /// Adds one call. A call with no `usage` object (nil) still counts as a call, with zero tokens.
     public func adding(_ usage: ClaudeUsage?) -> ClaudeUsageTotal {
         var t = self
-        t.calls += 1
+        t.calls = t.calls.saturatingAdd(1)
         if let u = usage {
-            t.input += u.inputTokens; t.cacheRead += u.cacheReadTokens
-            t.cacheWrite += u.cacheWriteTokens; t.output += u.outputTokens
+            t.input = t.input.saturatingAdd(u.inputTokens); t.cacheRead = t.cacheRead.saturatingAdd(u.cacheReadTokens)
+            t.cacheWrite = t.cacheWrite.saturatingAdd(u.cacheWriteTokens); t.output = t.output.saturatingAdd(u.outputTokens)
         }
         return t
     }
@@ -54,7 +62,7 @@ public struct ClaudeUsageTotal: Equatable, Sendable {
     /// "in" is uncached input plus cache writes (both billed as fresh input); "cached" is cache reads.
     public var menuLine: String? {
         guard calls > 0 else { return nil }
-        return "Claude this session: \(calls) \(calls == 1 ? "call" : "calls"), \(Self.short(input + cacheWrite)) in, "
+        return "Claude this session: \(calls) \(calls == 1 ? "call" : "calls"), \(Self.short(input.saturatingAdd(cacheWrite))) in, "
             + "\(Self.short(cacheRead)) cached, \(Self.short(output)) out"
     }
 
@@ -67,7 +75,7 @@ public struct ClaudeUsageTotal: Equatable, Sendable {
     /// Rounds down, so a figure never reads higher than it is (and 9,999 is not `10.0k`).
     static func short(_ n: Int) -> String {
         func tenths(_ n: Int, per unit: Int) -> String {
-            let t = n * 10 / unit
+            let t = n / (unit / 10)
             return t % 10 == 0 ? "\(t / 10)" : "\(t / 10).\(t % 10)"
         }
         switch n {

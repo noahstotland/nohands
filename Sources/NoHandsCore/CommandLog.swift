@@ -35,9 +35,9 @@ public struct CommandLogEntry: Codable, Equatable, Sendable {
         /// nil for an empty list (no Claude call was made).
         public static func sum(_ calls: [ClaudeUsage]) -> Usage? {
             guard !calls.isEmpty else { return nil }
-            return Usage(calls: calls.count, inputTokens: calls.reduce(0) { $0 + $1.inputTokens },
-                         cacheReadTokens: calls.reduce(0) { $0 + $1.cacheReadTokens },
-                         cacheWriteTokens: calls.reduce(0) { $0 + $1.cacheWriteTokens })
+            return Usage(calls: calls.count, inputTokens: calls.reduce(0) { $0.saturatingAdd($1.inputTokens) },
+                         cacheReadTokens: calls.reduce(0) { $0.saturatingAdd($1.cacheReadTokens) },
+                         cacheWriteTokens: calls.reduce(0) { $0.saturatingAdd($1.cacheWriteTokens) })
         }
     }
 
