@@ -108,8 +108,6 @@ import NoHandsCore
     private var activeTask: Task<Void, Never>?
     /// The newest utterance heard while a task ran; handled after the task ends.
     private var heldJob: Job?
-    /// Held jobs a stop phrase discarded; reported ("dropped") once the stopped task has unwound.
-    private var droppedJobs: [Job] = []
     /// A held job is replayed after the task only if it was spoken within this window.
     static let heldJobMaxAge: Duration = .seconds(60)
     /// Prompt rows are numbered in the order heard.
@@ -521,9 +519,8 @@ import NoHandsCore
         for t in tasks { t.cancel() }
         tasks = []
         executor.releaseAll()   // release a held mouse button and drop any grid/labels overlay
-        for job in [heldJob].compactMap({ $0 }) + droppedJobs { reportDropped(job, log: false) }
+        if let heldJob { reportDropped(heldJob, log: false) }
         heldJob = nil
-        droppedJobs = []
         modeMachine.forgetDictationRecord()   // "scratch that" after a pause must not delete text it never typed
         runner?.cancel()
         activeTask?.cancel()    // also covers a cancel() that lands before run() starts (run() clears its flag)
@@ -801,10 +798,9 @@ import NoHandsCore
                 }
             }
             // Still held here means the task was stopped: it must never run (e.g. in the next task).
-            let lost = [heldJob].compactMap { $0 } + droppedJobs
+            let lost = heldJob
             heldJob = nil
-            droppedJobs = []
-            if !stopped { for job in lost { reportDropped(job) } }
+            if let lost, !stopped { reportDropped(lost) }
             applyPendingRunner()
             activeTask = nil
         }

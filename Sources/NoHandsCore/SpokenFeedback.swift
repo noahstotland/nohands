@@ -11,6 +11,14 @@ public enum SpeakMenu {
     }
 }
 
+/// Logic behind the Keep Command Log menu item: the config patch.
+public enum CommandLogMenu {
+    /// `existing` (nil means no file, treated as `{}`) with `commandLog` set to the JSON bool `on` and nothing else changed.
+    public static func merged(existing: Data?, on: Bool) throws -> Data {
+        try ConfigPatch.merged(existing: existing, key: "commandLog", value: on)
+    }
+}
+
 /// What the pipeline asks NoHands to say. Questions and confirms are `.running` strings on the board, and whether a
 /// line holds private text is not in the status, so the speech function takes this instead of a bare `PromptStatus`.
 public enum FeedbackCue: Equatable, Sendable {

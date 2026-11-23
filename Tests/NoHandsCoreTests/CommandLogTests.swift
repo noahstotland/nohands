@@ -106,3 +106,13 @@ private func entry(_ n: Int = 0, outcome: CommandLogEntry.Outcome = .done, resol
     #expect(CommandLogText.detail(long, locale: gb, timeZone: utc).contains("Ignored: hint"))
 }
 
+
+@Test func tokenSumsSaturateInsteadOfTrapping() {
+    let big = ClaudeUsage(inputTokens: .max, cacheReadTokens: .max, cacheWriteTokens: .max, outputTokens: .max)
+    let one = ClaudeUsage(inputTokens: 1, cacheReadTokens: 1, cacheWriteTokens: 1, outputTokens: 1)
+    #expect(CommandLogEntry.Usage.sum([big, one]) == .init(calls: 2, inputTokens: .max, cacheReadTokens: .max, cacheWriteTokens: .max))
+    let total = ClaudeUsageTotal().adding(big).adding(big).adding(one)
+    #expect(total.input == .max && total.output == .max)
+    #expect(total.menuLine != nil)
+    #expect(ClaudeUsageTotal().adding(one).adding(one).input == 2, "small counts still add exactly")
+}

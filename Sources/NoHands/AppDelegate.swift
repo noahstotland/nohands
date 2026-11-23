@@ -622,11 +622,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func rebuildRecentMenu() {
         recentMenu.removeAllItems()
         let entries = commandLog.log.entries
-        guard !entries.isEmpty else {
-            let none = NSMenuItem(title: "No commands yet", action: nil, keyEquivalent: "")
+        if entries.isEmpty {
+            let none = NSMenuItem(title: config.commandLog ? "No commands yet" : "Command log is off", action: nil, keyEquivalent: "")
             none.isEnabled = false
             recentMenu.addItem(none)
-            return
         }
         for entry in entries {
             let item = NSMenuItem(title: CommandLogText.menuLine(entry), action: #selector(recentCommandChosen(_:)), keyEquivalent: "")
@@ -634,6 +633,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             item.representedObject = entry.id.uuidString
             recentMenu.addItem(item)
         }
+        recentMenu.addItem(.separator())
+        let clear = NSMenuItem(title: "Clear Log", action: #selector(clearLog), keyEquivalent: "")
+        clear.target = self
+        clear.isEnabled = !entries.isEmpty
+        recentMenu.addItem(clear)
+        let keep = NSMenuItem(title: "Keep Command Log", action: #selector(toggleCommandLog), keyEquivalent: "")
+        keep.target = self
+        keep.state = config.commandLog ? .on : .off
+        recentMenu.addItem(keep)
+    }
+
+    @objc private func clearLog() { commandLog.clear() }
+
+    /// Flips `commandLog`, applies it at once and saves it to config.json. If the file cannot be written the change
+    /// still applies for this session.
+    @objc private func toggleCommandLog() {
+        config.commandLog.toggle()
+        commandLog.isRecording = config.commandLog
+        do {
+            try ConfigFile.saveCommandLog(config.commandLog, at: ConfigFile.defaultURL)
+        } catch {
+            PipelineLog.warning("couldn't save command log setting", detail: "\(error)")
+            overlay.showHUD("couldn't save the log setting: check config.json", duration: .seconds(4))
+        }
+        PipelineLog.info("command log: \(config.commandLog ? "on" : "off")")
     }
 
     @objc private func recentCommandChosen(_ sender: NSMenuItem) {
@@ -835,6 +859,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func bootstrap() async {
         loadConfig()
+        commandLog.isRecording = config.commandLog
         micGranted = await Permissions.requestMicrophone()
         _ = Permissions.accessibilityGranted(prompt: true)
         // Shown after the permission prompts so it is not buried; it also stays in the menu.

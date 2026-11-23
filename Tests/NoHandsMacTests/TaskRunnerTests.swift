@@ -54,6 +54,7 @@ private func el(_ id: Int, _ title: String, x: CGFloat = 100) -> UIElementInfo {
 
 @MainActor private func rig(_ resolver: FakeResolver, maxSteps: Int = 12, settleMs: Int = 3000,
                             vision: FakeScreenshots? = nil, visionFlag: Bool = true, routes: FakeRouteStore? = nil, routeMemory: Bool = true,
+                            clock: FakeClock = FakeClock(),
                             sleep: @escaping @Sendable (Duration) async -> Void = { _ in }) -> Rig {
     let input = FakeInput(), ax = FakeElements(), overlay = FakeOverlay(), audio = FakeAudio()
     ax.front = "Safari"
@@ -68,7 +69,7 @@ private func el(_ id: Int, _ title: String, x: CGFloat = 100) -> UIElementInfo {
     let executor = ActionExecutor(input: input, ax: ax, overlay: overlay, config: config, frontTimeout: .milliseconds(100), audio: audio)
     let runner = TaskRunner(config: config, resolver: resolver, executor: executor,
                             observer: ScreenObserver(ax: ax, maxElements: config.maxObservedElements, audio: audio),
-                            overlay: overlay, sleep: sleep, screenshots: vision, routes: routes)
+                            overlay: overlay, sleep: sleep, now: { clock.now() }, screenshots: vision, routes: routes)
     let log = StatusLog()
     runner.onStatus = { log.texts.append($0.text) }
     runner.onTrail = { log.trails.append($0) }
@@ -281,13 +282,15 @@ private func step(_ intent: String, _ status: StepStatus, _ actions: [Action] = 
 @MainActor @Test func settleWaitsForTwoEqualObservations() async {
     let ax = FakeElements()
     ax.front = "Chrome"
+    let clock = FakeClock()
     let counter = SleepCounter()
     var config = AppConfig(); config.settleMs = 3000
     let overlay = FakeOverlay()
     let executor = ActionExecutor(input: FakeInput(), ax: ax, overlay: overlay, config: config)
     let runner = TaskRunner(config: config, resolver: FakeResolver([step("", .done)]), executor: executor,
                             observer: ScreenObserver(ax: ax, maxElements: 120), overlay: overlay,
-                            sleep: { _ in await counter.tick { n in if n == 1 { ax.elements = [el(1, "Page")] } } })
+                            sleep: { _ in await counter.tick { n in if n == 1 { ax.elements = [el(1, "Page")] } } },
+                            now: { clock.now() })
     let (obs, _) = await runner.settle(mode: .command)
     // obs0 empty, sleep1 -> page appears, obs1 differs; sleep2 obs2 same but 500ms ≥ 300ms → stop.
     #expect(obs.elements.map(\.title) == ["Page"])
@@ -296,13 +299,15 @@ private func step(_ intent: String, _ status: StepStatus, _ actions: [Action] = 
 
 @MainActor @Test func settleStopsAtMax() async {
     let ax = FakeElements()
+    let clock = FakeClock()
     let counter = SleepCounter()
     var config = AppConfig(); config.settleMs = 1000
     let overlay = FakeOverlay()
     let executor = ActionExecutor(input: FakeInput(), ax: ax, overlay: overlay, config: config)
     let runner = TaskRunner(config: config, resolver: FakeResolver([step("", .done)]), executor: executor,
                             observer: ScreenObserver(ax: ax, maxElements: 120), overlay: overlay,
-                            sleep: { _ in await counter.tick { n in ax.elements = [el(1, "t\(n)")] } })
+                            sleep: { _ in await counter.tick { n in ax.elements = [el(1, "t\(n)")] } },
+                            now: { clock.now() })
     _ = await runner.settle(mode: .command)
     #expect(await counter.count == 4)   // 4 × 250 ms = settleMs
 }
