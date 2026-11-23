@@ -130,6 +130,13 @@ extension ActionExecutor {
             guard let harness else { return Self.needsHarness }
             let app: String? = [.dock, .menuBarExtras].contains(surface) ? nil : ax.frontmostAppName()
             guard let m = await harness.find(app: app, surface: surface, name: name) else { return "no '\(name)' in \(surface.rawValue)" }
+            // The guards checked the name the step sent; `find` may fall back to a contains match ("Safari" finding
+            // "Quit Safari"), so on the menu bar a model step presses only that title, and never an Apple menu item.
+            if surface == .menubar,
+               MenuMatch.isAppleMenuTitle(m.name) || MenuMatch.isLookalike(m.name)
+                || (labelSnapshot != nil && MenuMatch.plain(m.name) != MenuMatch.plain(MenuMatch.leaf(of: name) ?? name)) {
+                return "no '\(name)' in menubar"
+            }
             if m.disabled { return "'\(name)' is disabled" }
             return outcome(await harness.act(.click(ref: m.ref, button: .left, count: 1)))
         case .menuItem(let name, let exact):
