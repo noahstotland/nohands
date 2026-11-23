@@ -45,8 +45,9 @@ Anti-goals, which would make this a failure even if it works:
 
 - Add `Int.saturatingAdd(_:)` (internal to `NoHandsCore`, or a small `TokenMath` enum): `addingReportingOverflow`,
   clamped to `Int.max` (or `Int.min` for a negative overflow).
-- Use it in `CommandLog.Usage.sum`, `ClaudeUsageTotal.adding` (all four counts, and `calls`), and in `menuLine`'s
-  `input + cacheWrite`.
+- Use it in `CommandLog.Usage.sum`, `ClaudeUsageTotal.adding` (all four counts, and `calls`), in `menuLine`'s
+  `input + cacheWrite`. `ClaudeUsageTotal.short`'s `tenths` helper also multiplied by 10 and overflowed at
+  `Int.max`; it divides by `unit / 10` instead (same result for ordinary counts).
 
 ### Config key (core)
 

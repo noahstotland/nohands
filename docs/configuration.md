@@ -2,7 +2,7 @@
 
 Every setting, with defaults and ranges. Back to the [README](../README.md). Task behaviour is in [Tasks](tasks.md); data handling is in [Privacy](privacy.md).
 
-Optional file `~/.config/nohands/config.json`; every key may be omitted. Changes apply after a restart, except `intentBackend` set from the Model item and `speakFeedback` set from the Speak Feedback item or by voice. Invalid JSON falls back to defaults and is flagged in the menu.
+Optional file `~/.config/nohands/config.json`; every key may be omitted. Changes apply after a restart, except `intentBackend` set from the Model item and `speakFeedback` set from the Speak Feedback item or by voice, and `commandLog` set from Recent commands > Keep Command Log. Invalid JSON falls back to defaults and is flagged in the menu.
 
 | Key | Default | Range / values |
 |---|---|---|
