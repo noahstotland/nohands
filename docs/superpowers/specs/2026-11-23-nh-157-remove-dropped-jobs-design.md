@@ -1,8 +1,9 @@
 # NH-157: Remove the never-written droppedJobs from VoicePipeline
 
 **Date:** 2026-11-23
-**Status:** Spec
+**Status:** Shipped
 **Ticket:** [NH-157](https://github.com/noahstotland/nohands/issues/157)
+**Shipped:** in PR #180, as specified
 
 ## Goal
 
