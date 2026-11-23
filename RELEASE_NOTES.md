@@ -1,5 +1,11 @@
 # Release notes
 
+## 2026-11-23 make the timing tests reliable in a parallel run (NH-153) (#181)
+
+Merged 2026-11-23 11:26 pm UTC.
+
+Test-only change: the parallel `swift test` run no longer fails random timing tests. Nothing changes for users of the app.
+
 ## 2026-11-23 clear and off switch for the command log, saturating token sums (NH-156) (#182)
 
 Merged 2026-11-23 11:25 pm UTC.
