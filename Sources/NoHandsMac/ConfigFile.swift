@@ -61,6 +61,12 @@ public enum ConfigFile {
         try save(at: url, keepMode: true) { try SpeakMenu.merged(existing: $0, level: level) }
     }
 
+    /// Sets `commandLog` in the file at `url`, keeping every other key (see `CommandLogMenu.merged`). Same steps and
+    /// refusals as `saveIntentBackend`.
+    public static func saveCommandLog(_ on: Bool, at url: URL) throws {
+        try save(at: url, keepMode: true) { try CommandLogMenu.merged(existing: $0, on: on) }
+    }
+
     private static func save(at url: URL, keepMode: Bool, merge: (Data?) throws -> Data) throws {
         let dir = url.deletingLastPathComponent()
         do {
