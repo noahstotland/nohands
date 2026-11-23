@@ -1,7 +1,8 @@
 # NH-156: Clear and off switch for the command log, and token sums that cannot trap: Design
 
 **Date:** 2026-11-23  **Ticket:** [NH-156](https://github.com/noahstotland/nohands/issues/156)
-**Status:** Draft
+**Status:** Shipped
+**Shipped:** in PR #182, as specified
 
 ## Intent
 
