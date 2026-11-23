@@ -65,3 +65,23 @@ import Testing
     for (actions, goal, blocked) in cases { #expect((ShortcutGuard.blocked(actions, goal: goal) != nil) == blocked, Comment(rawValue: goal)) }
     #expect(!ShortcutGuard.allowsClose(goal: "don't close the tabs") && ShortcutGuard.allowsClose(goal: "close the tabs"))
 }
+
+@Test func menuBarClickInFollowsTheMenuItemRules() {
+    let cases: [(name: String, goal: String, blocked: Bool)] = [
+        ("Quit Safari", "open the latest video", true),
+        ("Quit Safari", "don't quit Safari", true),
+        ("Quit Safari", "quit Safari", false),
+        ("File>Close Window", "open the latest video", true),
+        ("Close Window", "close this window", false),
+        ("Shut Down", "shut down the mac", true),
+        ("Force Quit", "force quit", true),
+        ("Apple > Restart", "restart", true),
+        ("Log Out Noah…", "log out", true),
+        ("Sаve", "save it", true),   // Cyrillic а
+        ("Save", "open the latest video", false),
+    ]
+    for c in cases {
+        #expect((ShortcutGuard.blocked([.clickIn(.menubar, name: c.name)], goal: c.goal) != nil) == c.blocked, "\(c.name) / \(c.goal)")
+    }
+    #expect(ShortcutGuard.blocked([.clickIn(.dock, name: "Quit")], goal: "open the latest video") == nil)
+}

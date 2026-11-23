@@ -39,17 +39,29 @@ public enum ShortcutGuard {
             case .closeApp:
                 if closeAppWords.isDisjoint(with: words) { return "blocked: close_app not allowed for this request" }
             case .menuItem(let title, _):
-                // "Close Window", "Quit Chrome": the menu form of the guarded chords asks the same of the goal.
-                // Split like IrreversibleGuard does (every non letter or digit is a break), so "File>Close Window"
-                // and "Close…" are seen. "Exit Full Screen" and "Reopen Closed Tab" are not close or quit commands.
-                let titleWords = Set(title.lowercased().map { $0.isLetter || $0.isNumber ? $0 : " " }
-                    .reduce(into: "") { $0.append($1) }.split(separator: " ").map(String.init))
-                for (key, allowed) in allowWords where !titleWordsFor[key]!.isDisjoint(with: titleWords) && allowed.isDisjoint(with: words) {
-                    return "blocked: menu item \(title) not allowed for this request"
+                if let why = menuTitleBlocked(title, words: words) { return why }
+            case .clickIn(.menubar, let name):
+                // The same menu items as `menu_item`, reached by a different step: an Apple menu item or a lookalike
+                // is refused whatever the goal says, and a quit or close title needs its goal word.
+                if MenuMatch.isAppleMenuTitle(MenuMatch.leaf(of: name) ?? name) || MenuMatch.isLookalike(name) {
+                    return "blocked: \(name) is an Apple menu item"
                 }
+                if let why = menuTitleBlocked(name, words: words) { return why }
             default:
                 continue
             }
+        }
+        return nil
+    }
+
+    /// "Close Window", "Quit Chrome": the menu form of the guarded chords asks the same of the goal. Split like
+    /// IrreversibleGuard does (every non letter or digit is a break), so "File>Close Window" and "Close…" are seen.
+    /// "Exit Full Screen" and "Reopen Closed Tab" are not close or quit commands.
+    private static func menuTitleBlocked(_ title: String, words: Set<String>) -> String? {
+        let titleWords = Set(title.lowercased().map { $0.isLetter || $0.isNumber ? $0 : " " }
+            .reduce(into: "") { $0.append($1) }.split(separator: " ").map(String.init))
+        for (key, allowed) in allowWords where !titleWordsFor[key]!.isDisjoint(with: titleWords) && allowed.isDisjoint(with: words) {
+            return "blocked: menu item \(title) not allowed for this request"
         }
         return nil
     }
