@@ -134,21 +134,30 @@ public final class AXQuery: @unchecked Sendable {
     /// Roles whose title never names a control to press: climbing stops here.
     private static let containerRoles: Set<String> = ["AXWindow", "AXApplication", "AXSheet", "AXWebArea", "AXDrawer", "AXScrollArea"]
 
+    private static let pressRoles: Set<String> = ["AXButton", "AXPopUpButton", "AXMenuButton", "AXLink", "AXMenuItem", "AXCheckBox", "AXRadioButton"]
+
     public func elementTitle(at point: CGPoint) -> String? {
         let system = AXUIElementCreateSystemWide()
         AXUIElementSetMessagingTimeout(system, 0.05)
         var hit: AXUIElement?
         guard AXUIElementCopyElementAtPosition(system, Float(point.x), Float(point.y), &hit) == .success, var element = hit else { return nil }
+        // The first title seen is kept as a fallback; a button, link or menu item above it names the press better
+        // (an icon or label inside "Send" must not hide it).
+        var first: String?
         for _ in 0..<4 {
             AXUIElementSetMessagingTimeout(element, 0.05)
             let role = Self.string(element, kAXRoleAttribute) ?? ""
-            if Self.containerRoles.contains(role) { return nil }
-            if let title = Self.string(element, kAXTitleAttribute) ?? Self.string(element, kAXDescriptionAttribute)
-                ?? (role == "AXStaticText" ? Self.string(element, kAXValueAttribute) : nil) { return title }
-            guard let parent = Self.element(element, kAXParentAttribute) else { return nil }
+            if Self.containerRoles.contains(role) { break }
+            let title = Self.string(element, kAXTitleAttribute) ?? Self.string(element, kAXDescriptionAttribute)
+                ?? (role == "AXStaticText" ? Self.string(element, kAXValueAttribute) : nil)
+            if let title {
+                if Self.pressRoles.contains(role) { return title }
+                first = first ?? title
+            }
+            guard let parent = Self.element(element, kAXParentAttribute) else { break }
             element = parent
         }
-        return nil
+        return first
     }
 
     public func focusedElementTitle() -> String? {
