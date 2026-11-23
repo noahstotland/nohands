@@ -1,7 +1,8 @@
 # NH-153: Make the timing tests reliable in a parallel swift test run: Design
 
 **Date:** 2026-11-23  **Ticket:** [NH-153](https://github.com/noahstotland/nohands/issues/153)
-**Status:** Draft
+**Status:** Shipped
+**Shipped:** in PR #181, as specified
 
 ## Intent
 
