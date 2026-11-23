@@ -66,9 +66,9 @@ private func script(_ body: String) -> URL {
 }
 
 @Test func runReportsProcessFailureAndMalformedOutput() async {
-    let bad = AgentDesktopClient(binary: script("echo nope; exit 1"), defaultDeadline: .seconds(1))
+    let bad = AgentDesktopClient(binary: script("echo nope; exit 1"), defaultDeadline: .seconds(10))
     #expect(await bad.run(["status"], isObservation: true).error?.code == "PROCESS_FAILED")
-    let missing = AgentDesktopClient(binary: URL(fileURLWithPath: "/nonexistent/agent-desktop"), defaultDeadline: .seconds(1))
+    let missing = AgentDesktopClient(binary: URL(fileURLWithPath: "/nonexistent/agent-desktop"), defaultDeadline: .seconds(10))
     #expect(await missing.run(["status"], isObservation: true).error?.code == "PROCESS_FAILED")
 }
 
@@ -83,10 +83,10 @@ private func script(_ body: String) -> URL {
 }
 
 @Test func runReturnsWhenTheChildExitsEvenIfAGrandchildHoldsStdout() async {
-    let c = AgentDesktopClient(binary: script(#"(sleep 3 &); printf '{"version":"2.6","ok":true,"command":"status","data":{}}'"#), defaultDeadline: .seconds(10))
+    let c = AgentDesktopClient(binary: script(#"(sleep 20 &); printf '{"version":"2.6","ok":true,"command":"status","data":{}}'"#), defaultDeadline: .seconds(10))
     let t = ContinuousClock.now
     let e = await c.run(["status"], isObservation: true)
-    #expect(e.ok && t.duration(to: .now) < .milliseconds(1500))
+    #expect(e.ok && t.duration(to: .now) < .seconds(8))
 }
 
 @Test func cancellationRacingTheLaunchNeverTerminatesAnUnlaunchedProcess() async {

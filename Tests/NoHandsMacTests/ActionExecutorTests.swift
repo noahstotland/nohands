@@ -1,6 +1,7 @@
 import Testing
 import CoreGraphics
 import Foundation
+import os
 import NoHandsCore
 @testable import NoHandsMac
 
@@ -453,9 +454,17 @@ private let reload = UIElementInfo(id: 1, frame: CGRect(x: 100, y: 100, width: 8
     let (ex, _, ax, _) = make()
     ax.isBrowser = true; ax.front = "Chrome"
     ax.browser = [BrowserWindow(id: "w1", title: "", front: true, tabs: [BrowserTab(id: "t1", title: "YouTube")])]
-    ax.onBrowserRead = { Thread.sleep(forTimeInterval: 0.2) }
+    // The read signals that it started, then blocks until the test has cancelled the task: the stop always lands mid-read.
+    let started = OSAllocatedUnfairLock(initialState: false), stopped = OSAllocatedUnfairLock(initialState: false)
+    ax.onBrowserRead = {
+        started.withLock { $0 = true }
+        let limit = ContinuousClock.now.advanced(by: .seconds(5))
+        while !stopped.withLock({ $0 }), ContinuousClock.now < limit { Thread.sleep(forTimeInterval: 0.005) }
+    }
     let task = Task { @MainActor in await ex.execute([.goToTab(.named("youtube"))]) }
-    try? await Task.sleep(for: .milliseconds(50))
+    let limit = ContinuousClock.now.advanced(by: .seconds(5))
+    while !started.withLock({ $0 }), ContinuousClock.now < limit { try? await Task.sleep(for: .milliseconds(5)) }
     task.cancel()
+    stopped.withLock { $0 = true }
     #expect(await task.value == ActionExecutor.cancelled && ax.selectedTabs.isEmpty)
 }

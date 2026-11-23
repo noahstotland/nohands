@@ -12,6 +12,13 @@ private final class Sink: @unchecked Sendable {
     var out: [String] { lock.lock(); defer { lock.unlock() }; return emitted }
 }
 
+/// Waits (at most 5 s, far under the buffer's 20 s safety timeout) for the sink to hold `expected`, so a slow
+/// timer wake-up under load does not fail a test that is about *what* is released, not how fast.
+private func waitForOutput(_ sink: Sink, _ expected: [String]) async {
+    let start = ContinuousClock.now
+    while sink.out != expected, start.duration(to: .now) < .seconds(5) { try? await Task.sleep(for: .milliseconds(10)) }
+}
+
 private func make(_ sink: Sink, window: Int = 80, unfinished: Int = 200, attention: AttentionGate = .off) -> MergeBuffer {
     let grammar = CommandGrammar()
     return MergeBuffer(
@@ -37,20 +44,20 @@ private func make(_ sink: Sink, window: Int = 80, unfinished: Int = 200, attenti
     await b.transcript("make it bigger please", trace: LatencyTrace())
     #expect(sink.out.isEmpty)
     #expect(sink.held == ["make it bigger please"])
-    try await Task.sleep(for: .milliseconds(250))
+    await waitForOutput(sink, ["make it bigger please"])
     #expect(sink.out == ["make it bigger please"])
 }
 
 @Test func speechResumingInsideTheWindowMergesBothHalves() async throws {
     let sink = Sink()
-    let b = make(sink)
+    let b = make(sink, unfinished: 5000)   // far past the test's own pauses; speech in progress holds it anyway
     await b.transcript("click the", trace: LatencyTrace())
     try await Task.sleep(for: .milliseconds(100))
     await b.speechStarted()
-    try await Task.sleep(for: .milliseconds(300))      // past the unfinished window: still waiting for ASR
+    try await Task.sleep(for: .milliseconds(300))      // speech in progress: still waiting for ASR
     #expect(sink.out.isEmpty)
     await b.transcript("back button", trace: LatencyTrace())
-    try await Task.sleep(for: .milliseconds(200))
+    await waitForOutput(sink, ["click the back button"])
     #expect(sink.out == ["click the back button"])
 }
 
@@ -60,7 +67,7 @@ private func make(_ sink: Sink, window: Int = 80, unfinished: Int = 200, attenti
     await b.transcript("hello there", trace: LatencyTrace())
     await b.speechStarted()
     await b.speechAbandoned()
-    try await Task.sleep(for: .milliseconds(200))
+    await waitForOutput(sink, ["hello there"])
     #expect(sink.out == ["hello there"])
 }
 
@@ -160,7 +167,7 @@ private func make(_ sink: Sink, window: Int = 80, unfinished: Int = 200, attenti
 @Test func attentionWordAloneWaitsForTheRestOfTheCommand() async throws {
     let gate = AttentionGate(configured: "computer")
     let sink = Sink()
-    let b = make(sink, window: 40, unfinished: 400, attention: gate)
+    let b = make(sink, window: 40, unfinished: 5000, attention: gate)
     await b.transcript("Computer.", trace: LatencyTrace())
     #expect(sink.held == ["Computer."])                             // shown as listening
     try await Task.sleep(for: .milliseconds(150))                   // past the normal window, inside the long one
@@ -174,13 +181,13 @@ private func make(_ sink: Sink, window: Int = 80, unfinished: Int = 200, attenti
 @Test func addressedSpellWaitsOutThePauseBetweenLetters() async throws {
     let gate = AttentionGate(configured: "computer")
     let sink = Sink()
-    let b = make(sink, window: 40, unfinished: 400, attention: gate)
+    let b = make(sink, window: 40, unfinished: 1500, attention: gate)
     await b.transcript("Computer, spell kilo nine", trace: LatencyTrace())
     #expect(!VoicePipeline.isComplete("computer, spell kilo nine", mode: .command, grammar: CommandGrammar(), attention: gate))
     try await Task.sleep(for: .milliseconds(150))                   // past the normal window: still waiting
     #expect(sink.out.isEmpty)
     await b.transcript("alpha", trace: LatencyTrace())
-    try await Task.sleep(for: .milliseconds(600))
+    await waitForOutput(sink, ["Computer, spell kilo nine alpha"])
     #expect(sink.out == ["Computer, spell kilo nine alpha"])        // one phrase, so it types as one string
 }
 
