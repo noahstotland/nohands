@@ -11,9 +11,11 @@ Repo-specific facts the agent-team skills read. `TODO(<owner>)` marks an undecid
 | Tracker scope (`<TEAM>`) | the GitHub repo `noahstotland/nohands` |
 | Linear team name (Linear only) | none |
 | Issue identifier prefix (`<PREFIX>`) | `NH` |
+| Retired issue prefixes (GitHub tracker only) | `none`. After a prefix rename on the GitHub tracker, one backticked list of `PREFIX<N` pairs, oldest first (for example `OLD<406`): issues numbered below N keep the old prefix, later ones use the current one. On Linear and Jira a key change renames every issue in the tracker, so keep `none` |
 | Linear project (Linear only) | none |
 | Approver | Noah Stotland (`noahstotland`). Approves specs and merges only |
 | Approval risk tolerance (`strict`, `balanced` or `permissive`) | `permissive`. Approvals taken without asking: `strict` none, `balanced` Low risk, `permissive` Low and Medium. High always waits for you |
+| Review after conflict resolution (`off` or `on`) | `off`. Whether a conflict resolution is reviewed again before it can merge. `off`: reviews from before the resolution stand, and a merge you already approved goes ahead on the resolved head without asking again. `on`: code and security review run on the resolved head, and you approve it again |
 | No Hands (`off` or `on`) | `on`. Whether you may start a No Hands run: the Chief of Staff approves specs and merges itself, at any risk level, until the Backlog is empty or a cap below is hit. Reviews, CI and merge gates still run; changes to the files that decide approvals wait for you |
 | No Hands ticket cap | `10`. Tickets one No Hands run may start |
 | No Hands cost cap (USD) | `200`. API-equivalent spend of the run's tickets, from `agent_usage.py` |
@@ -29,8 +31,10 @@ A missing `Tracker` row or a `TODO(...)` value means `linear`. Operations and ad
 
 | Key | Value |
 |---|---|
-| Branch pattern | `feat/nh-N-short-title` (`<prefix>` is the issue prefix in lower case) |
+| Branch pattern | `{feat,infra}/<prefix>-N-short-title` (`<prefix>` is the issue prefix in lower case; the heads are in braces, the first is the default for a new branch, and a plain head such as `work/<prefix>-N-short-title` means that one head) |
+| Merge target branch | `main`. The branch every PR merges into. The root checkout stays on it. Unset means `main` |
 | Repo (`<owner>/<repo>`) | `noahstotland/nohands` (<https://github.com/noahstotland/nohands>) |
+| Require teammate approval (`on` or `off`) | `off`. When on, merge_pr.py also needs an approving GitHub review on the current head from an owner, member or collaborator other than the PR author. A missing row means off |
 | Owner login (trusted review-comment author) | `noahstotland` |
 | GitHub CLI | `~/.collective-wisdom/scripts/gh.sh` only, never bare `gh`. Setup: [github-auth.md](~/.collective-wisdom/docs/agents/github-auth.md) |
 | Commits | Conventional: `feat:`, `fix:`, `docs:`, `infra:`, `chore:`; a scope in parentheses names the target (`fix(mac):`, `fix(core):`). Small, focused commits |
