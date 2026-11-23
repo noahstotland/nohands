@@ -1,5 +1,11 @@
 # Release notes
 
+## 2026-11-23 remove the never-written droppedJobs from VoicePipeline (NH-157) (#180)
+
+Merged 2026-11-23 11:19 pm UTC.
+
+No visible change: dead code removed from the voice pipeline.
+
 ## 2026-11-23 point agent docs at docs/ pages instead of the README (NH-148) (#178)
 
 Merged 2026-11-23 11:05 pm UTC.
