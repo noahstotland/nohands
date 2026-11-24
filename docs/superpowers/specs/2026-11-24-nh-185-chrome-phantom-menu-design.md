@@ -1,7 +1,8 @@
 # NH-185: Chrome task wastes steps dismissing a phantom Apple menu: Design
 
 **Date:** 2026-11-24  **Ticket:** [NH-185](https://github.com/noahstotland/nohands/issues/185)
-**Status:** Proposed
+**Status:** Shipped
+**Shipped:** in PR #188, as specified
 
 ## Intent
 
