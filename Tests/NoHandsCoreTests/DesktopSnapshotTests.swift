@@ -42,3 +42,17 @@ func fixture(_ name: String) -> [String: Any] {
     let e = UIElementInfo(id: 1, frame: .zero, title: "t", role: "AXButton")
     #expect(e.ref == nil && e.value == nil && e.states.isEmpty)
 }
+
+@Test func closedSurfaceIsOneWhoseListedItemsAreAllOffscreen() {
+    func el(_ title: String, _ states: [String]) -> UIElementInfo {
+        UIElementInfo(id: 1, frame: .zero, title: title, role: "menuitem", ref: "@s:e1", value: nil, states: states)
+    }
+    func snap(_ e: [UIElementInfo]) -> DesktopSnapshot {
+        DesktopSnapshot(app: "Chrome", snapshotID: "s", windowID: nil, windowTitle: nil, complete: true, elements: e)
+    }
+    let apple = [el("About This Mac", ["offscreen"]), el("System Settings…", ["offscreen"]), el("", ["offscreen"])]
+    #expect(snap(apple).isClosedSurface)                                                   // the phantom Apple menu
+    #expect(!snap(apple + [el("Copy", [])]).isClosedSurface)                               // a real menu is on screen
+    #expect(snap(apple + [el("", [])]).isClosedSurface)                                    // unlisted nodes don't count
+    #expect(!snap([]).isClosedSurface)                                                     // nothing to judge
+}
