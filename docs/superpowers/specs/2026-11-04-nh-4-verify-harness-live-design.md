@@ -1,6 +1,7 @@
 # Verify the agent-desktop harness live against real windows: Design
 
-**Date:** 2026-11-04  **Status:** Draft (awaiting approval)
+**Date:** 2026-11-04  **Status:** Shipped
+**Shipped:** in PR #186, with differences: [as-built](../as-built/2026-11-23-agent-desktop-harness-live.md)
 **Ticket:** [NH-4](https://github.com/noahstotland/nohands/issues/4)  **Base:** `origin/main` (ff9e08b)
 **Related:** [harness design](2026-11-04-agent-desktop-harness-design.md), PR #2, #7 (deferred minors, out of scope)
 

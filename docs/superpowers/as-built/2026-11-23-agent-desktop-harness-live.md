@@ -1,6 +1,6 @@
 # As-built: agent-desktop harness, live runs
 
-**Shipped:** in PR #PRNUM
+**Shipped:** in PR #186
 **Ticket:** NH-4
 **Spec:** [2026-11-04-nh-4-verify-harness-live-design.md](../specs/2026-11-04-nh-4-verify-harness-live-design.md)
 
