@@ -10,7 +10,7 @@ import NoHandsMac
 func loadResolver(model: String? = nil, effort: String? = nil) throws -> (config: AppConfig, resolver: any IntentResolving, model: String) {
     let cfgURL = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".config/nohands/config.json")
     var config = try AppConfig.load(from: try? Data(contentsOf: cfgURL), environment: ProcessInfo.processInfo.environment)
-    if config.effectiveBackend != .claude, model != nil || effort != nil {
+    if config.effectiveBackend == .local, model != nil || effort != nil {
         fail("error: --model and --effort apply to the Claude backend")
     }
     if let model { config.intentModel = model }

@@ -43,4 +43,5 @@ import Foundation
     #expect(line([(true, 5000), (false, 100), (true, 200)], drop: 1) == "pass=2/3 (66%) p50=100ms p95=200ms")
     // dropping can never empty the sample
     #expect(line([(true, 70)], drop: 2) == "pass=1/1 (100%) p50=70ms p95=70ms")
+    #expect(line([(true, 70)], drop: -3) == "pass=1/1 (100%) p50=70ms p95=70ms")
 }

@@ -13,10 +13,10 @@ by NH-95, for cost, before this measurement) stays. The fast-tier idea (`intentF
 
 What the numbers say, for the user's call (not acted on here):
 
-- Haiku at `low` trails the others by 7 to 19 points: 81% and 73% against 88% to 92% for Opus and 85% to 92%
+- Haiku at `low` trails the others by 4 to 19 points: 81% and 73% against 88% to 92% for Opus and 85% to 92%
   for Sonnet. Haiku at `medium` is no better on the main file (80%) and 12 points better on the disfluent file (85%).
-- Its p50 is about 40% lower than Opus (1078 ms against 1895 to 1943 ms on the main file). Its p95 is lower on the main file and mixed on the disfluent one.
-- Sonnet at `low` is 1 to 2 points under Opus at `low` and about 15% faster at p50. It is the middle option if
+- Its p50 is about 40% lower than Opus (1078 ms against 1895 to 1943 ms on the main file). Haiku at `low` also has the lowest p95 on both files.
+- Sonnet at `low` is 0 to 2 points under Opus at `low` and 6% to 18% faster at p50. It is the middle option if
   Haiku's accuracy matters more than its price.
 - Effort made no consistent difference (`low` vs `medium` within 2 points on Sonnet and Opus). Where it did
   (Haiku, disfluent file, +12 points) the sample is 42 calls.
@@ -74,7 +74,7 @@ Counts are failed calls out of 18 per case (3 runs × 6 pairs).
 | scroll way down | 7 | 3 of 6 |
 | the other 12 cases | 1 to 6 each | 1 to 2 of 6, mostly Haiku |
 
-Seven cases fail on at least 5 of 6 pairs, Opus at `medium` included. The wrong answers are mostly a right
+Six cases fail on at least 5 of 6 pairs, Opus at `medium` included. The wrong answers are mostly a right
 action with a different `status` (`continue` instead of `done`) or an empty action list for the folder phrases,
 so these point at the prompt or the fixture, not the tier. Both are out of scope here (no prompt or fixture
 edits). Opus at `medium`, the pre-NH-95 default, itself passes 88% and 92%, so "both files stay at 100% on the
@@ -98,9 +98,9 @@ the cache. Today (before #37) there is no cache to lose, only the extra call.
 
 ## Follow-up proposed
 
-- A ticket to look at the seven shared failures (`status` on one-step requests such as the folder, copy/paste,
+- A ticket to look at the six shared failures (`status` on one-step requests such as the folder, copy/paste,
   full-screen and jot-down phrases): fix the prompt or the fixture, then rerun this table.
-- A product call on whether Haiku at `low`'s 7 to 19 point gap is worth its price saving; Sonnet at `low` is the
+- A product call on whether Haiku at `low`'s 4 to 19 point gap is worth its price saving; Sonnet at `low` is the
   nearest alternative.
 
 ## Checks that ran

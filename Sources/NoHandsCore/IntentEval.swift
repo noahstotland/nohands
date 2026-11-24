@@ -116,7 +116,7 @@ public struct EvalSummary: Equatable, Sendable {
     public init(results: [(passed: Bool, ms: Int)], dropFirst: Int = 0) {
         total = results.count
         passed = results.filter(\.passed).count
-        let sorted = results.dropFirst(min(dropFirst, max(results.count - 1, 0))).map(\.ms).sorted()
+        let sorted = results.dropFirst(min(max(dropFirst, 0), max(results.count - 1, 0))).map(\.ms).sorted()
         p50Ms = Self.nearestRank(sorted, 0.50)
         p95Ms = Self.nearestRank(sorted, 0.95)
     }
