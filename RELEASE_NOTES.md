@@ -1,5 +1,13 @@
 # Release notes
 
+## 2026-11-24 task log names the harness; live harness verification (NH-4) (#186)
+
+Merged 2026-11-24 2:04 am UTC.
+
+`nohands-cli task` now prints which desktop harness it used, `harness: agent-desktop` or `harness: native (fallback: …)`, after the first step. The harness was run for real on TextEdit and Chrome, and a TextEdit task saved a file through it.
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
 ## 2026-11-24 close the gaps in the irreversible-step confirm (NH-154) (#184)
 
 Merged 2026-11-24 12:20 am UTC.
