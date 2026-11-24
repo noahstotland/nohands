@@ -106,7 +106,7 @@ Details: `docs/superpowers/specs/2026-11-16-nh-58-open-files-design.md`, `docs/s
 
 ## Per-app commands
 
-An app can have phrases that work only while it is in front and win on a shared phrase. Leading `open`, `go to` and `a` / `the` are ignored in lookup (`open a new tab`, `go to the new tab`, `new tab` are the same); where the app lacks the phrase, `open <phrase>` (two or more words) runs the global one (`open a new tab` presses command-T). Each app adds its rows below. Details: `docs/superpowers/specs/2026-11-15-nh-76-per-app-commands-design.md`.
+An app can have phrases that work only while it is in front and win on a shared phrase. Leading `open`, `go to` and `a` / `the` are ignored in lookup (`open a new tab`, `go to the new tab`, `new tab` are the same); where the app lacks the phrase, `open <phrase>` (two or more words) runs the global one (`open a new tab` presses command-T). A phrase can also start with a lead some apps define (Slack's `jump to <name>`). Each app adds its rows below. Details: `docs/superpowers/specs/2026-11-15-nh-76-per-app-commands-design.md`.
 
 | App | Say | Does |
 |---|---|---|
@@ -118,6 +118,17 @@ An app can have phrases that work only while it is in front and win on a shared 
 | Terminal | `split pane`, `close pane` | Splits the window, or closes the split pane |
 | Terminal | `bigger font`, `smaller font`, `default font size` | Changes the font size |
 | Terminal | `interrupt`, `cancel command` | Sends control-C to the running command |
+| Slack | `jump to <name>`, `quick switcher` | Opens the quick switcher (command-K) and types the name; say `enter` to go there |
+| Slack | `new message`, `compose` | Composes a new message |
+| Slack | `direct messages`, `dms` | Browses DMs |
+| Slack | `threads`, `activity`, `mentions`, `later`, `saved items`, `all unreads`, `people`, `home view` | Opens that view |
+| Slack | `browse channels`, `search`, `search this channel` | Browses channels, or searches Slack or the current conversation |
+| Slack | `previous channel`, `next channel`, `previous unread`, `next unread` | Moves between channels and DMs |
+| Slack | `mark as read`, `mark all as read` | Marks the current conversation, or everything, as read |
+| Slack | `upload a file`, `attach a file` | Opens the upload dialog |
+| Slack | `toggle sidebar`, `close panel`, `close thread` | Shows or hides the sidebar, or hides the right panel |
+| Slack | `huddle`, `start huddle`, `join huddle`, `leave huddle`, `end huddle` | Starts, joins or leaves a huddle (one toggle) |
+| Slack | `close window`, `preferences`, `send`, `send message` | Closes the Slack window (command-W), opens preferences, or presses Return to send, after asking first |
 | Mail | `new message`, `compose` | Opens a new message |
 | Mail | `reply`, `reply all`, `forward` | Replies to, replies to all on, or forwards the selected message |
 | Mail | `send`, `send message`, `send email` | Sends the open draft. Asks first |
@@ -217,5 +228,7 @@ In Mail, read, flag, junk and the mailbox list are toggles. `go to inbox` and `g
 The global `new tab`, `close tab`, `close window`, `next tab`, `previous tab`, `reload`, `go back`, `go forward`, `find`, `zoom in`, `zoom out`, `actual size` and `tab 3` work in Safari as they do elsewhere. The sidebar, bookmarks sidebar, Reading List, Reader, favorites bar and Tab Overview phrases toggle, so `hide reading list` while the list is hidden shows it. `view source` needs Safari's "Show features for web developers" setting, and `hard reload` may need it too. `reopen closed tab` reopens whatever closed last, a tab or a window. With Safari in front, `open downloads` shows Safari's downloads; `open the downloads folder` still opens the folder.
 
 In VS Code the global `save`, `find`, `close tab`, `close window`, `full screen`, `undo`, `redo`, `copy`, `paste` and `select all` work as elsewhere, and `new tab`, `next tab`, `previous tab`, `go back` and `go forward` do the VS Code thing (new file, next or previous editor, navigate back or forward). VS Code phrases that start with `find`, `go to` or `open` (`find references`, `go to line`, `open extensions`) win over the page search, the address bar and app opening while it is in front. `open settings` opens VS Code's settings while it is in front (`open system settings` still opens System Settings). Show, hide and toggle `sidebar` and `terminal` are all one toggle, so `hide sidebar` on a hidden side bar shows it. There is no spoken "stop debugging" (`stop` always halts NoHands): use the debug toolbar or `menu stop debugging`.
+
+The global `go back`, `go forward`, `find`, `escape`, `full screen` and `enter` also work in Slack. `jump to <name>` leaves the switcher open for `enter` or `down`. Any `jump to …` in Slack types into the switcher, and `open settings` or `open people` there means Slack's own view. The Later, sidebar and Home chords are unverified until checked against the Slack app.
 
 More apps: install a pack file with `nohands-cli pack add`; see [App packs](app-packs.md).

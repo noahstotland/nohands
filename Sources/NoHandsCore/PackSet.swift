@@ -95,14 +95,17 @@ public struct PackSet: Sendable, ExpressibleByArrayLiteral {
     public let shadowed: [Shadowed]
     private let byApp: [String: [String: [Action]]]
     private let confirmsByApp: [String: Set<String>]
+    private let leadsByApp: [String: [String: [Action]]]
 
     public init(_ packs: [AppPack]) {
         var owners: [String: [String: String]] = [:]
         var merged: [String: [String: [Action]]] = [:]
         var asks: [String: Set<String>] = [:]
+        var leads: [String: [String: [Action]]] = [:]
         var lost: [Shadowed] = []
         for pack in packs {
             for app in pack.bundleIDs.sorted() {
+                for (lead, actions) in pack.typingLeads where leads[app]?[lead] == nil { leads[app, default: [:]][lead] = actions }
                 for (phrase, actions) in pack.phrases.sorted(by: { $0.key < $1.key }) {
                     if let winner = owners[app]?[phrase], winner != pack.id {
                         let entry = Shadowed(packID: pack.id, phrase: phrase, winner: winner)
@@ -119,6 +122,7 @@ public struct PackSet: Sendable, ExpressibleByArrayLiteral {
         shadowed = lost
         byApp = merged
         confirmsByApp = asks
+        leadsByApp = leads
     }
 
     public init(arrayLiteral packs: AppPack...) { self.init(packs) }
@@ -131,6 +135,9 @@ public struct PackSet: Sendable, ExpressibleByArrayLiteral {
 
     /// The phrases of an app whose winning pack asks for a spoken yes first.
     func confirms(for bundleID: String) -> Set<String> { confirmsByApp[bundleID] ?? [] }
+
+    /// The typing leads of an app (the first pack to claim a lead keeps it), empty when none.
+    func typingLeads(for bundleID: String) -> [String: [Action]] { leadsByApp[bundleID] ?? [:] }
 }
 
 /// The one-line status under a pack in the menu bar and in `nohands-cli pack list`.

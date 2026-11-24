@@ -15,9 +15,14 @@ public struct AppPack: Sendable, Equatable {
     /// The phrase keys (a subset of `phrases`' keys) that wait for a spoken yes before they run.
     public let confirms: Set<String>
 
+    /// Normalized lead phrases that carry a name: "jump to general" runs the lead's actions, then types "general".
+    /// Built-in packs only: the pack-file format has no way to say one.
+    public let typingLeads: [String: [Action]]
+
     /// `id` defaults to the name in id form ("Bear Notes" is "bear-notes").
     public init(id: String? = nil, name: String, version: String = "1.0.0", author: String = "",
-                bundleIDs: Set<String>, phrases: [String: [Action]], confirms: Set<String> = []) {
+                bundleIDs: Set<String>, phrases: [String: [Action]], confirms: Set<String> = [],
+                typingLeads: [String: [Action]] = [:]) {
         self.id = id ?? name.lowercased().map { $0.isASCII && ($0.isLetter || $0.isNumber) ? $0 : "-" }
             .reduce(into: "") { $0.append($1) }
         self.name = name
@@ -26,12 +31,13 @@ public struct AppPack: Sendable, Equatable {
         self.bundleIDs = bundleIDs
         self.phrases = phrases
         self.confirms = confirms
+        self.typingLeads = typingLeads
     }
 }
 
 public enum AppPacks {
     /// The shipped packs; each app ticket adds an entry here and a row in docs/voice-commands.md.
-    public static let all: [AppPack] = [.terminal, .vscode, .mail, .messages, .safari, .finder, .chrome]
+    public static let all: [AppPack] = [.terminal, .vscode, .mail, .messages, .safari, .finder, .chrome, .slack]
 }
 
 /// The lead words the grammar drops before a phrase lookup, so "open a new tab" and "go to the downloads" reach
