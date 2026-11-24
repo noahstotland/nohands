@@ -21,7 +21,7 @@ private let labels: [Int: UIElementInfo] = [
     let i = FakeInput(), e = FakeElements(), o = FakeOverlay(), c = FakeClipboard()
     e.front = "Notes"
     let x = ActionExecutor(input: i, ax: e, overlay: o, config: AppConfig(), frontTimeout: .milliseconds(150),
-                           windowTimeout: .milliseconds(300), harness: harness, clipboard: c)
+                           windowTimeout: .milliseconds(300), harness: harness, clipboard: c, menus: FakeMenus([]))
     return (x, i, e, o, harness, c)
 }
 
@@ -102,11 +102,27 @@ private let labels: [Int: UIElementInfo] = [
     #expect(await x.execute([.menuItem("File > Save As…")]) == nil)
     #expect(h!.calls == ["find:menubar:Notes:Save As…", "act:click @s1:e5"])
     h!.findResult = DesktopFindMatch(ref: "@s1:e5", role: "menuitem", name: "Paste", path: [], disabled: true)
-    #expect(await x.execute([.menuItem("Paste")]) == "menu item is disabled")
+    #expect(await x.execute([.menuItem("Paste")]) == "menu item Paste is disabled")
     h!.findResult = nil
-    #expect(await x.execute([.menuItem("Nothing")]) == "no menu item named 'Nothing'")
+    #expect(await x.execute([.menuItem("Nothing")]) == "no menu item called Nothing")
+    // A submenu path is not widened to its last title: agent-desktop would find "Sent" under any menu.
+    h!.findResult = DesktopFindMatch(ref: "@s1:e3", role: "menuitem", name: "Sent", path: [], disabled: false)
+    h!.calls.removeAll()
+    #expect(await x.execute([.menuItem("Mailbox > Go to Favorite Mailbox > Sent")]) == "no menu item called Sent" && h!.calls.isEmpty)
+    // agent-desktop's contains fallback may not widen a model step: "trash" must not click "Empty Trash…".
+    h!.findResult = DesktopFindMatch(ref: "@s1:e9", role: "menuitem", name: "Empty Trash…", path: [], disabled: false)
+    #expect(await x.execute([.menuItem("trash")], labels: [:]) == "no menu item called trash")
+    #expect(h!.calls.last == "find:menubar:Notes:trash")
+    // The Apple menu is out of reach by name even through agent-desktop.
+    h!.findResult = DesktopFindMatch(ref: "@s1:e1", role: "menuitem", name: "Shut Down…", path: [], disabled: false)
+    #expect(await x.execute([.menuItem("shut down")]) == "no menu item called shut down")
+    // ...also when agent-desktop's contains match widens a word, or the title carries the user's name.
+    #expect(await x.execute([.menuItem("shut")]) == "no menu item called shut")
+    h!.findResult = DesktopFindMatch(ref: "@s1:e2", role: "menuitem", name: "Log Out Noah Stotland…", path: [], disabled: false)
+    #expect(await x.execute([.menuItem("Log Out Noah Stotland…")], labels: [:]) == "no menu item called Log Out Noah Stotland…")
+    #expect(h!.calls.last == "find:menubar:Notes:shut")
     let (native, _, _, _, _, _) = makeHarnessed(harness: nil)
-    #expect(await native.execute([.menuItem("Paste")]) == "needs agent-desktop")
+    #expect(await native.execute([.menuItem("Paste")]) == "no menu item called Paste")
 }
 
 @MainActor @Test func clickInDockFindsWithoutApp() async {
@@ -177,10 +193,53 @@ private let labels: [Int: UIElementInfo] = [
 @MainActor @Test func dragUsesHarnessWithRefsAndPointsOrNativeMouse() async {
     let (x, i, _, _, h, _) = makeHarnessed()
     #expect(await x.execute([.drag(from: .label(1), to: .point(CGPoint(x: 300, y: 400)))], labels: labels) == nil)
-    #expect(h!.calls == ["act:--headed drag --from @s1:e1 --to-xy 300,400"] && i.calls.isEmpty)
+    #expect(h!.calls == ["act:--headed drag --from @s1:e1 --to-xy=300,400"] && i.calls.isEmpty)
     #expect(await x.execute([.drag(from: .point(CGPoint(x: 1, y: 2)), to: .label(3))], labels: labels) == nil)
-    #expect(h!.calls.last == "act:--headed drag --from-xy 1,2 --to-xy 55,55")
+    #expect(h!.calls.last == "act:--headed drag --from-xy=1,2 --to-xy=55,55")
     let (n, ni, _, _, _, _) = makeHarnessed(harness: nil)
     #expect(await n.execute([.drag(from: .point(CGPoint(x: 1, y: 2)), to: .label(3))], labels: labels) == nil)
-    #expect(ni.calls == ["move:1,2", "down", "move:55,55", "up"])
+    // Press, ten stepped moves ending on the target, release.
+    #expect(Array(ni.calls.prefix(2)) == ["move:1,2", "down"] && ni.calls.count == 13 && Array(ni.calls.suffix(2)) == ["move:55,55", "up"])
+}
+
+@MainActor @Test func mediaPlayingWaitIsPolledByNoHandsNotTheHarness() async {
+    func executor(_ e: FakeElements, _ h: FakeHarness, _ o: FakeOverlay) -> ActionExecutor {
+        ActionExecutor(input: FakeInput(), ax: e, overlay: o, config: AppConfig(), harness: h, audio: FakeAudio(),
+                       mediaPoll: .milliseconds(5))
+    }
+    let e = FakeElements(), h = FakeHarness(), o = FakeOverlay()
+    e.front = "Safari"
+    e.elements = [UIElementInfo(id: 1, frame: .zero, title: "Play", role: "AXButton")]
+    e.onWalk = { [unowned e] in
+        if e.walks == 3 { e.elements = [UIElementInfo(id: 1, frame: .zero, title: "Pause (k)", role: "AXButton")] }
+    }
+    let x = executor(e, h, o)
+    #expect(await x.execute([.waitFor(.mediaPlaying, timeoutMs: 2000)]) == nil)
+    #expect(e.walks == 3)
+
+    e.elements = [UIElementInfo(id: 1, frame: .zero, title: "Play", role: "AXButton")]
+    e.onWalk = nil
+    #expect(await x.execute([.waitFor(.mediaPlaying, timeoutMs: 40)]) == "wait timed out")
+    #expect(await x.execute([.checkMedia]) == nil)
+    #expect(x.takeReadings() == ["Media: paused"])
+    #expect(h.calls.isEmpty)
+
+    // Cancelling a long wait ends it at once with `cancelled`, not after its timeout.
+    let waiting = Task { await x.execute([.waitFor(.mediaPlaying, timeoutMs: 30000)]) }
+    try? await Task.sleep(for: .milliseconds(30))
+    waiting.cancel()
+    #expect(await waiting.value == ActionExecutor.cancelled)
+}
+
+@MainActor @Test func ordinalNameClicksTheShownResultThroughTheHarness() async {
+    let (x, i, _, _, h, _) = makeHarnessed()
+    h!.actResults = [.delivered(verified: true)]
+    let shown: [Int: UIElementInfo] = [
+        1: UIElementInfo(id: 1, frame: CGRect(x: 0, y: 0, width: 50, height: 20), title: "Home", role: "link", ref: "@s1:e9"),
+        2: UIElementInfo(id: 2, frame: CGRect(x: 0, y: 50, width: 50, height: 20), title: "Raptors vs Celtics Full Game", role: "link", ref: "@s1:e7"),
+    ]
+    #expect(await x.execute([.click(.element(named: "first video"), button: .left, count: 1)], labels: shown) == nil)
+    #expect(i.calls.isEmpty && h!.calls == ["act:click @s1:e7"])
+    #expect(await x.execute([.click(.element(named: "tenth video"), button: .left, count: 1)], labels: shown)
+        == "no element named 'tenth video'; say its label number from the list")
 }

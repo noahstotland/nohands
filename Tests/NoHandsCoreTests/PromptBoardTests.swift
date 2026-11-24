@@ -63,10 +63,10 @@ private let t0 = ContinuousClock.now
     b.report(id: 3, text: "c", status: .running(""), now: t0)
     b.notice("loading…", for: .seconds(3), now: t0)
     #expect(b.visibleRows(now: t0).count == 3 && b.visibleNotice(now: t0) != nil)
-    #expect(b.nextChange(now: t0) == t0.advanced(by: .seconds(3)))         // the notice goes first
-    let later = t0.advanced(by: .seconds(7))
+    #expect(b.nextChange(now: t0) == t0.advanced(by: .milliseconds(1500)))  // the finished row goes first
+    let later = t0.advanced(by: .seconds(4))
     #expect(b.visibleNotice(now: later) == nil)
-    #expect(b.visibleRows(now: later).map(\.id) == [2, 3])                  // the finished row left after 6 s
+    #expect(b.visibleRows(now: later).map(\.id) == [2, 3])                  // the finished row left after 1.5 s
     #expect(b.nextChange(now: later) == t0.advanced(by: b.listeningLinger))
     b.prune(now: t0.advanced(by: .seconds(11)))
     #expect(b.rows.map(\.id) == [3])                                        // listening words that never arrived

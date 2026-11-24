@@ -30,7 +30,6 @@ let g = CommandGrammar()
     #expect(g.parse("switch app") == [.pressKey(KeyChord(.tab, [.command]))])
     #expect(g.parse("spotlight") == [.pressKey(KeyChord(.space, [.command]))])
     #expect(g.parse("delete word") == [.pressKey(KeyChord(.delete, [.option]))])
-    #expect(g.parse("delete line") == [.pressKey(KeyChord(.delete, [.command]))])
 }
 
 @Test func mouseCommands() {
@@ -198,4 +197,267 @@ let g = CommandGrammar()
     // Rich phrasing is the model's job.
     #expect(g.parse("make the window half width and snap to the left side of the screen") == nil)
     #expect(g.parse("left") == [.pressKey(KeyChord(.left))])
+}
+
+@Test func findOnPageAndScrollToWords() {
+    let table: [(String, [Action]?)] = [
+        ("find the Raptors game", [.findOnPage("the Raptors game", movePointer: true)]),
+        ("Find Outdoor Boys.", [.findOnPage("Outdoor Boys", movePointer: true)]),
+        ("scroll to the schedule", [.findOnPage("the schedule", movePointer: true)]),
+        ("scroll to top gear", [.findOnPage("top gear", movePointer: true)]),
+        ("find", [.pressKey(KeyChord(.f, [.command]))]),               // bare find stays command-F
+        ("find the", [.pressKey(KeyChord(.f, [.command]))]),
+        ("scroll to", nil), ("scroll to the down", nil), ("scroll to the left", nil),
+        ("scroll down", [.scroll(.down, amount: 5)]),
+    ]
+    for (phrase, expected) in table { #expect(g.parse(phrase) == expected, "\(phrase)") }
+}
+
+@Test func tabCommandsByNumberNameAndPosition() {
+    let cases: [(String, [Action]?)] = [
+        ("tab 3", [.goToTab(.number(3))]), ("tab three", [.goToTab(.number(3))]), ("Tab number 12.", [.goToTab(.number(12))]),
+        ("switch to tab 4", [.goToTab(.number(4))]), ("go to tab 4", [.goToTab(.number(4))]), ("open tab 99", [.goToTab(.number(99))]),
+        ("first tab", [.goToTab(.number(1))]), ("go to the first tab", [.goToTab(.number(1))]),
+        ("last tab", [.goToTab(.last)]), ("open the last tab", [.goToTab(.last)]),
+        ("switch to the YouTube tab", [.goToTab(.named("YouTube"))]),
+        ("go to the my inbox tab.", [.goToTab(.named("my inbox"))]),
+        ("open the GitHub tab", [.goToTab(.named("GitHub"))]), ("switch to youtube tab", [.goToTab(.named("youtube"))]),
+        ("close the other tabs", [.closeOtherTabs]), ("close other tabs", [.closeOtherTabs]), ("close all other tabs", [.closeOtherTabs]),
+        ("list tabs", [.listTabs]), ("list the tabs", [.listTabs]), ("list my tabs", [.listTabs]),
+        // Unchanged: other tab phrases, other rules, and what is not a tab command.
+        ("tab", [.pressKey(KeyChord(.tab))]), ("new tab", [.pressKey(KeyChord(.t, [.command]))]),
+        ("open a new tab", [.pressKey(KeyChord(.t, [.command]))]), ("close tab", [.pressKey(KeyChord(.w, [.command]))]),
+        ("close this tab", [.pressKey(KeyChord(.w, [.command]))]),
+        ("next tab", [.pressKey(KeyChord(.tab, [.control]))]), ("previous tab", [.pressKey(KeyChord(.tab, [.control, .shift]))]),
+        ("go to youtube", [.openURL(URL(string: "https://www.youtube.com")!, app: nil)]), ("open safari", [.openApp("safari")]),
+        ("open the new tab", [.pressKey(KeyChord(.t, [.command]))]), ("go to the next tab", [.pressKey(KeyChord(.l, [.command])), .typeText("the next tab"), .pressKey(KeyChord(.return))]),
+        ("tab 0", nil), ("tab 100", nil), ("youtube tab", nil), ("tab number", nil),
+        ("open chrome and go to the youtube tab", nil), ("open the other tab", [.openApp("the other tab")]),
+    ]
+    for (spoken, want) in cases { #expect(g.parse(spoken) == want, "\(spoken)") }
+}
+
+@Test func textEditingPhrases() {
+    func edit(_ e: TextEdit) -> [Action] { [.editText(e, otherwise: nil)] }
+    let cmdDelete = [Action.pressKey(KeyChord(.delete))]
+    // (spoken, with a text field focused, without one)
+    let table: [(String, [Action]?, [Action]?)] = [
+        // Units and "last" work with or without a field: the run says "no text field" when there is none.
+        ("select word", edit(.select(.word, last: false)), edit(.select(.word, last: false))),
+        ("Select the sentence.", edit(.select(.sentence, last: false)), edit(.select(.sentence, last: false))),
+        ("select paragraph", edit(.select(.paragraph, last: false)), edit(.select(.paragraph, last: false))),
+        ("select the line", edit(.select(.line, last: false)), edit(.select(.line, last: false))),
+        ("select the last word", edit(.select(.word, last: true)), edit(.select(.word, last: true))),
+        ("select last sentence", edit(.select(.sentence, last: true)), edit(.select(.sentence, last: true))),
+        ("delete line", edit(.delete(.line, last: false)), edit(.delete(.line, last: false))),
+        ("delete this line", edit(.delete(.line, last: false)), edit(.delete(.line, last: false))),
+        ("delete that line", edit(.delete(.line, last: false)), edit(.delete(.line, last: false))),
+        ("delete the current line", edit(.delete(.line, last: false)), edit(.delete(.line, last: false))),
+        ("delete this word", edit(.delete(.word, last: false)), edit(.delete(.word, last: false))),
+        ("delete that word", edit(.delete(.word, last: false)), edit(.delete(.word, last: false))),
+        ("select this line", edit(.select(.line, last: false)), edit(.select(.line, last: false))),
+        ("select the current word", edit(.select(.word, last: false)), edit(.select(.word, last: false))),
+        ("select that paragraph", edit(.select(.paragraph, last: false)), edit(.select(.paragraph, last: false))),
+        ("delete the sentence", edit(.delete(.sentence, last: false)), edit(.delete(.sentence, last: false))),
+        ("delete the paragraph", edit(.delete(.paragraph, last: false)), edit(.delete(.paragraph, last: false))),
+        ("delete last word", edit(.delete(.word, last: true)), edit(.delete(.word, last: true))),
+        ("delete the last sentence.", edit(.delete(.sentence, last: true)), edit(.delete(.sentence, last: true))),
+        ("go to the end of the line", edit(.caret(.lineEnd)), edit(.caret(.lineEnd))),
+        ("go to end of line", edit(.caret(.lineEnd)), edit(.caret(.lineEnd))),
+        ("go to the start of the line", edit(.caret(.lineStart)), edit(.caret(.lineStart))),
+        ("go to beginning of line", edit(.caret(.lineStart)), edit(.caret(.lineStart))),
+        ("go to the end of the document", edit(.caret(.documentEnd)), edit(.caret(.documentEnd))),
+        ("go to the bottom of the document", edit(.caret(.documentEnd)), edit(.caret(.documentEnd))),
+        ("go to the start of the document", edit(.caret(.documentStart)), edit(.caret(.documentStart))),
+        ("go to the top of the document", edit(.caret(.documentStart)), edit(.caret(.documentStart))),
+        ("capitalize that", edit(.changeCase(.capitalize)), edit(.changeCase(.capitalize))),
+        ("Uppercase that.", edit(.changeCase(.upper)), edit(.changeCase(.upper))),
+        ("lowercase that", edit(.changeCase(.lower)), edit(.changeCase(.lower))),
+        // Phrases need a focused field, and keep the speaker's casing and words.
+        ("select Project Alpha", edit(.selectPhrase("Project Alpha")), nil),
+        ("select the old files.", edit(.selectPhrase("the old files")), nil),
+        ("delete meeting", edit(.deletePhrase("meeting")), nil),
+        ("replace meeting with call", edit(.replace("meeting", with: "call")), nil),
+        ("Replace Bob with Alice.", edit(.replace("Bob", with: "Alice")), nil),
+        ("replace coffee with tea with milk", edit(.replace("coffee", with: "tea with milk")), nil),   // the first "with" splits
+        ("replace the filter with a new one", edit(.replace("the filter", with: "a new one")), nil),
+        ("go before the budget", edit(.caretBefore("the budget")), nil),
+        ("go after Thanks", edit(.caretAfter("Thanks")), nil),
+        // Never an edit: today's rules keep these phrases.
+        ("select all", [.pressKey(KeyChord(.a, [.command]))], [.pressKey(KeyChord(.a, [.command]))]),
+        ("delete", cmdDelete, cmdDelete), ("delete that", cmdDelete, cmdDelete), ("delete this", cmdDelete, cmdDelete),
+        ("delete word", [.pressKey(KeyChord(.delete, [.option]))], [.pressKey(KeyChord(.delete, [.option]))]),
+        ("select that", nil, nil), ("select it", nil, nil), ("select", nil, nil), ("delete the", cmdDelete, cmdDelete),   // the filler table, as today
+       
+        ("replace", nil, nil), ("replace x", nil, nil), ("replace x with", nil, nil), ("replace with y", nil, nil),
+        ("replace that with x", nil, nil), ("go before", nil, nil), ("go after the", nil, nil),
+        ("select one two three four five six seven eight nine ten eleven twelve thirteen", nil, nil),   // over 12 words
+        ("go to the end", [.pressKey(KeyChord(.l, [.command])), .typeText("the end"), .pressKey(KeyChord(.return))],
+         [.pressKey(KeyChord(.l, [.command])), .typeText("the end"), .pressKey(KeyChord(.return))]),
+        ("go to the end of the page", [.pressKey(KeyChord(.l, [.command])), .typeText("the end of the page"), .pressKey(KeyChord(.return))],
+         [.pressKey(KeyChord(.l, [.command])), .typeText("the end of the page"), .pressKey(KeyChord(.return))]),
+        ("go to youtube", [.openURL(URL(string: "https://www.youtube.com")!, app: nil)], [.openURL(URL(string: "https://www.youtube.com")!, app: nil)]),
+        ("home", [.pressKey(KeyChord(.home))], [.pressKey(KeyChord(.home))]), ("end", [.pressKey(KeyChord(.end))], [.pressKey(KeyChord(.end))]),
+        ("copy", [.pressKey(KeyChord(.c, [.command]))], [.pressKey(KeyChord(.c, [.command]))]),
+        ("capitalize it", nil, nil), ("capitalize", nil, nil),
+    ]
+    for (spoken, focused, unfocused) in table {
+        #expect(g.parse(spoken, textFocused: true) == focused, "\(spoken) (text field focused)")
+        #expect(g.parse(spoken) == unfocused, "\(spoken) (no text field)")
+    }
+    // The model can never produce an edit: it is the grammar's own.
+    #expect(Action.editText(.select(.word, last: false), otherwise: nil).carriesSpokenText == false)
+    #expect(Action.editText(.replace("a", with: "b"), otherwise: nil).carriesSpokenText)
+}
+
+@Test func mediaAndVolumePhrases() {
+    let table: [(String, Action)] = [
+        ("play", .media(.play)), ("resume", .media(.play)), ("play the music", .media(.play)),
+        ("pause", .media(.pause)), ("pause the video", .media(.pause)), ("pause the music", .media(.pause)),
+        ("play pause", .media(.playPause)), ("toggle play", .media(.playPause)),
+        ("next track", .media(.next)), ("next song", .media(.next)), ("next video", .media(.next)),
+        ("previous track", .media(.previous)), ("previous song", .media(.previous)), ("previous video", .media(.previous)),
+        ("full screen video", .media(.fullScreen)), ("video full screen", .media(.fullScreen)),
+        ("make the video full screen", .media(.fullScreen)),
+        ("exit full screen", .media(.exitFullScreen)), ("leave full screen", .media(.exitFullScreen)),
+        ("mute", .volume(.mute(true))), ("mute sound", .volume(.mute(true))),
+        ("unmute", .volume(.mute(false))), ("unmute sound", .volume(.mute(false))),
+        ("skip ahead", .media(.skip(seconds: 10))), ("skip back", .media(.skip(seconds: -10))),
+        ("skip forward", .media(.skip(seconds: 10))), ("skip backward", .media(.skip(seconds: -10))),
+        ("skip forward 30 seconds", .media(.skip(seconds: 30))), ("skip backward thirty seconds", .media(.skip(seconds: -30))),
+        ("skip ahead one second", .media(.skip(seconds: 1))), ("skip ahead 600 seconds", .media(.skip(seconds: 600))),
+        ("volume up", .volume(.by(10))), ("volume down three", .volume(.by(-30))), ("turn it up", .volume(.by(10))),
+        ("turn it down 2", .volume(.by(-20))), ("volume up 10", .volume(.by(100))),
+        ("volume up fifteen percent", .volume(.by(15))), ("volume down 5 percent", .volume(.by(-5))),
+        ("volume 30%", .volume(.set(30))), ("volume up 15%", .volume(.by(15))), ("volume 30 %", .volume(.set(30))),
+        ("set volume to 25 percent", .volume(.set(25))), ("volume 40", .volume(.set(40))), ("volume thirty percent", .volume(.set(30))), ("volume 0", .volume(.set(0))),
+        ("volume 150 percent", .volume(.set(100))), ("set volume to 25", .volume(.set(25))),
+        ("set the volume to fifty percent", .volume(.set(50))),
+    ]
+    for (said, action) in table { #expect(g.parse(said) == [action], "\(said)") }
+    for said in ["volume up 11", "volume up 0", "volume up percent", "volume up 101 percent", "skip ahead 0 seconds",
+                 "skip ahead 601 seconds", "skip ahead seconds", "skip", "skip ad", "volume", "volume loud", "set volume"] {
+        #expect(g.parse(said) == nil, "\(said)")
+    }
+    // "play the video" is not a grammar phrase (it can mean clicking the page's Play button): the model gets it.
+    #expect(g.parse("play the video") == nil)
+    // Older phrases and the stop keep their meaning.
+    #expect(g.parse("full screen") == [.pressKey(KeyChord(.f, [.command, .control]))])
+    #expect(g.parse("is it playing") == [.checkMedia])
+    #expect(g.parse("stop") == nil)
+    #expect(g.parse("stop the music") == nil)
+}
+
+@Test func systemControlPhrases() {
+    let lock = Action.system(.lockScreen), shot = Action.system(.screenshot(.screen))
+    let table: [(String, Action)] = [
+        ("lock screen", lock), ("lock the screen", lock), ("lock computer", lock), ("lock the mac", lock),
+        ("screenshot", shot), ("take a screenshot", shot), ("screenshot screen", shot),
+        ("screenshot selection", .system(.screenshot(.selection))), ("screenshot area", .system(.screenshot(.selection))),
+        ("screenshot window", .system(.screenshot(.window))),
+        ("mission control", .system(.missionControl)), ("open mission control", .system(.missionControl)),
+        ("show desktop", .system(.showDesktop)), ("show the desktop", .system(.showDesktop)),
+        ("next space", .system(.space(.right))), ("previous space", .system(.space(.left))),
+        ("notification center", .system(.notificationCenter)), ("notification centre", .system(.notificationCenter)),
+        ("show notifications", .system(.notificationCenter)),
+        ("empty trash", .system(.emptyTrash)), ("empty the trash", .system(.emptyTrash)),
+        ("open settings for bluetooth", .system(.openSettings(.bluetooth))),
+        ("open settings for the wifi", .system(.openSettings(.wifi))),
+        ("open sound settings", .system(.openSettings(.sound))), ("privacy and security settings", .system(.openSettings(.privacy))),
+        ("login items settings", .system(.openSettings(.loginItems))),
+    ]
+    for (said, action) in table { #expect(g.parse(said) == [action], "\(said)") }
+    // Unchanged phrases, and the stop: none of them is a system command.
+    #expect(g.parse("space") == [.pressKey(KeyChord(.space))])
+    #expect(g.parse("spotlight") == [.pressKey(KeyChord(.space, [.command]))])
+    #expect(g.parse("open system settings") == [.openApp("system settings")])
+    #expect(g.parse("open slack settings") == [.openApp("slack settings")])
+    #expect(g.parse("open settings") == [.openApp("settings")])
+    #expect(CommandGrammar(packs: .builtIns).parse("open settings", frontmost: "com.microsoft.VSCode") == [.pressKey(KeyChord(.comma, [.command]))])
+    #expect(g.parse("hide") == [.hideOverlay])
+    for said in ["stop", "stop screenshot", "lock screen stop", "empty trash and stop"] { #expect(g.parse(said) == nil, "\(said)") }
+}
+
+@Test func darkModeAndDoNotDisturbPhrases() {
+    let table: [([String], [Action]?)] = [
+        (["dark mode", "dark mode on", "turn on dark mode", "turn dark mode on", "switch to dark mode", "turn on the dark mode"], [.system(.appearance(.dark))]),
+        (["light mode", "dark mode off", "turn off dark mode", "turn dark mode off", "switch to light mode", "light mode on"], [.system(.appearance(.light))]),
+        (["toggle dark mode"], [.system(.appearance(.toggle))]),
+        (["do not disturb", "do not disturb on", "turn on do not disturb"], [.system(.doNotDisturb(true))]),
+        (["do not disturb off", "turn off do not disturb"], [.system(.doNotDisturb(false))]),
+        (["open automation settings", "automation settings"], [.system(.openSettings(.automation))]),
+        // Unchanged: neighbours and the stop keep their meaning.
+        (["dictation mode"], [.setMode(.dictation)]), (["command mode"], [.setMode(.command)]),
+        (["spoken feedback on"], [.setSpokenFeedback(.outcomes)]), (["stop", "stop dark mode", "dark mode stop"], nil),
+    ]
+    for (phrases, expected) in table {
+        for phrase in phrases { #expect(g.parse(phrase) == expected, "\(phrase)") }
+    }
+}
+
+@Test func settingsPaneNames() {
+    let table: [(SettingsPane, [String])] = [
+        (.wifi, ["wifi", "wi-fi", "wi fi"]), (.bluetooth, ["bluetooth"]), (.sound, ["sound", "audio"]),
+        (.displays, ["display", "displays"]), (.accessibility, ["accessibility"]),
+        (.privacy, ["privacy", "privacy and security", "security"]), (.loginItems, ["login items", "startup items"]),
+        (.notifications, ["notifications", "notification"]), (.battery, ["battery"]), (.general, ["general"]),
+        (.automation, ["automation", "automation settings"]),
+    ]
+    #expect(Set(table.map(\.0)) == Set(SettingsPane.allCases))
+    for (pane, names) in table {
+        for said in names { #expect(SettingsPane.parse(said.split(separator: " ").map(String.init)) == pane, "\(said)") }
+    }
+    for said in ["slack", "", "settings", "system"] { #expect(SettingsPane.parse(said.split(separator: " ").map(String.init)) == nil, "\(said)") }
+    let open: [(String, SettingsPane)] = [
+        ("open the settings for wifi", .wifi), ("open settings for display please", .displays),
+        ("open settings for privacy & security", .privacy), ("notification settings", .notifications),
+    ]
+    for (said, pane) in open { #expect(g.parse(said) == [.system(.openSettings(pane))], "\(said)") }
+    // An unknown pane after "open settings for" is rejected on the device, never opened and never sent to the model.
+    #expect(g.parse("open settings for slack") == nil)
+    #expect(g.rejection("open settings for slack") == "no settings pane called slack: say open system settings")
+    #expect(g.rejection("open settings for") != nil)
+    #expect(g.rejection("open settings for bluetooth") == nil && g.rejection("open system settings") == nil)
+    // A compound or long request goes to the model as before, with no rejection.
+    for said in ["open settings for bluetooth and turn it off", "open settings for slack and type hello", "open settings for slack bluetooth wifi sound off", "open settings for bluetooth to connect airpods", "open settings for sound to fifty"] {
+        #expect(g.parse(said) == nil && g.rejection(said) == nil, "\(said)")
+    }
+}
+
+@Test func spokenFeedbackPhrasesSetTheLevel() {
+    let table: [(String, [Action]?)] = [
+        ("spoken feedback on", [.setSpokenFeedback(.outcomes)]), ("turn on spoken feedback", [.setSpokenFeedback(.outcomes)]),
+        ("Spoken feedback off.", [.setSpokenFeedback(.off)]), ("turn off spoken feedback", [.setSpokenFeedback(.off)]),
+        ("spoken feedback all", [.setSpokenFeedback(.all)]), ("speak everything", [.setSpokenFeedback(.all)]),
+        // Unchanged: the stop phrases and near neighbours keep their meaning.
+        ("stop", nil), ("stop dictating", [.setMode(.command)]), ("stop the music", nil), ("turn on the lights", nil),
+        ("stop spoken feedback", nil), ("speak", nil),
+    ]
+    for (said, expected) in table { #expect(g.parse(said) == expected, "\(said)") }
+    for said in ["spoken feedback on", "speak everything", "turn off spoken feedback"] { #expect(!StopWords.isStop(said), "\(said)") }
+}
+
+@Test func pointerAndPageControlPhrases() {
+    func key(_ k: Key, _ m: Set<Modifier> = [.command]) -> [Action] { [.pressKey(KeyChord(k, m))] }
+    let drag: [Action] = [.drag(from: .numbered(5), to: .numbered(12))]
+    let hold: [Action] = [.moveCursor(.numbered(12)), .pressMouse(.left)]
+    let center: [Action] = [.moveCursor(.screenCenter)]
+    let table: [(String, [Action]?)] = [
+        ("drag 5 to 12", drag), ("drag from 5 to 12", drag), ("drag five to twelve", drag), ("drag two to three", [.drag(from: .numbered(2), to: .numbered(3))]),
+        ("click 12 and hold", hold), ("click twelve and hold", hold),
+        ("top of page", key(.up)), ("top of the page", key(.up)), ("scroll to the top", key(.up)), ("scroll to top of the page", key(.up)),
+        ("bottom of the page", key(.down)), ("bottom of page", key(.down)), ("scroll to bottom", key(.down)), ("scroll to the bottom of the page", key(.down)),
+        ("zoom in", key(.equal)), ("zoom out", key(.minus)), ("actual size", key(.zero)), ("reset zoom", key(.zero)),
+        ("move to center", center), ("move to the centre", center), ("move to the center of the screen", center),
+        // Unchanged: names, bare directions, the grid, the existing click counts and the caret moves.
+        ("drag the file to the trash", nil), ("drag to 12", nil), ("drag 5", nil), ("drag", nil),
+        ("click save and hold", [.click(.element(named: "save and hold"), button: .left, count: 1)]),
+        ("zoom 35", [.zoomGrid(35)]), ("move to 12", [.moveCursor(.numbered(12))]), ("scroll to the right", nil),
+        ("double click 12", [.click(.numbered(12), button: .left, count: 2)]),
+        ("right click 12", [.click(.numbered(12), button: .right, count: 1)]),
+        ("go to the top of the document", [.editText(.caret(.documentStart), otherwise: nil)]),
+    ]
+    for (phrase, expected) in table { #expect(g.parse(phrase) == expected, "\(phrase)") }
+    // A pack's own phrase still wins in its app.
+    #expect(g.parse("scroll to top", frontmost: "com.apple.Terminal") == key(.home))
 }

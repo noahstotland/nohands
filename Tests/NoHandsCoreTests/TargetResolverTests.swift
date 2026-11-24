@@ -54,3 +54,72 @@ private let save = UIElementInfo(id: 1, frame: CGRect(x: 100, y: 100, width: 80,
     #expect(TargetResolver.resolveClick(.label(2), overlay: .none, cursor: .zero, elements: [], labels: [7: save]) == .failure("no label 2"))
     #expect(TargetResolver.resolveMove(.label(1), overlay: .grid(grid), cursor: .zero, elements: []) == .failure("no label 1"))
 }
+
+private func el(_ id: Int, _ x: CGFloat, _ y: CGFloat, _ title: String, _ role: String) -> UIElementInfo {
+    UIElementInfo(id: id, frame: CGRect(x: x, y: y, width: 100, height: 30), title: title, role: role)
+}
+
+/// A browser: menu bar, toolbar, address field, tabs, short nav links, a filter chip, then three results that are
+/// each a thumbnail link and a title link with the same name.
+private let browser: [UIElementInfo] = [
+    el(1, 0, 0, "File", "AXMenuBarItem"), el(2, 120, 0, "Edit", "AXMenuBarItem"),
+    el(3, 0, 40, "Back", "AXButton"), el(4, 120, 40, "Reload", "AXButton"), el(5, 240, 40, "Address and search bar", "AXTextField"),
+    el(6, 0, 80, "Inbox", "AXTab"), el(7, 120, 80, "Results", "AXTab"),
+    el(8, 0, 120, "Home", "AXLink"), el(9, 120, 120, "Shorts", "AXLink"), el(10, 240, 120, "YouTube Home", "AXLink"),
+    el(11, 0, 160, "Videos", "AXButton"),
+    el(12, 0, 200, "Raptors vs Celtics Full Game", "AXLink"), el(13, 300, 200, "Raptors vs Celtics Full Game", "AXLink"),
+    el(14, 0, 300, "Cooking Pasta From Scratch", "AXLink"), el(15, 300, 300, "Cooking Pasta From Scratch", "AXLink"),
+    el(16, 0, 400, "Learning Swift In Ten Days", "AXLink"), el(17, 300, 400, "Learning Swift In Ten Days", "AXLink"),
+]
+
+@Test func ordinalNameResolvesOverTheShownList() {
+    func click(_ name: String, _ elements: [UIElementInfo]) -> TargetResolution {
+        let shown = LabelAssigner.assign(elements)
+        return TargetResolver.resolveClick(.element(named: name), overlay: .none, cursor: .zero, elements: elements, labels: shown)
+    }
+    func at(_ id: Int, in elements: [UIElementInfo] = browser) -> TargetResolution {
+        .point(elements.first { $0.id == id }!.clickPoint(screens: []))
+    }
+    let hint = "; say its label number from the list"
+    let realTitle = browser + [el(18, 0, 500, "First video", "AXLink")]
+    // A grid lists the thumbnails in one row and the titles in the next; a title only contains the spoken words.
+    let grid = browser.filter { $0.id < 12 } + [el(12, 0, 200, "Alpha Beta Gamma", "AXLink"), el(13, 300, 200, "Delta Epsilon Zeta", "AXLink"),
+        el(14, 0, 300, "Alpha Beta Gamma", "AXLink"), el(15, 300, 300, "Delta Epsilon Zeta", "AXLink")]
+    let containing = browser + [el(18, 0, 500, "Reacting to my first video", "AXLink")]
+    let cases: [(String, [UIElementInfo], TargetResolution)] = [
+        ("second video", grid, at(13, in: grid)),   // each video counts once even when its two links are not adjacent
+        ("first video", containing, at(12, in: containing)),   // only an exact title beats the position
+        ("first video", browser, at(12)),           // not the menu bar, toolbar, tabs, nav links or the "Videos" chip
+        ("the second result", browser, at(14)),     // the title link repeating the thumbnail's name is not a result
+        ("3rd link", browser, at(10)),
+        ("last video", browser, at(16)),
+        ("the first one", browser, at(12)),
+        ("second button", browser, at(4)),
+        ("first tab", browser, at(6)),
+        ("first text field", browser, at(5)),
+        ("first video", realTitle, at(18, in: realTitle)),   // a real title beats the ordinal reading
+        ("tenth video", browser, .failure("no element named 'tenth video'" + hint)),
+        ("first video", browser.filter { $0.role != "AXLink" }, .failure("no element named 'first video'" + hint)),
+        ("third result", browser.filter { $0.id < 16 }, .failure("no element named 'third result'" + hint)),
+        ("quit", browser, .failure("no element named 'quit'")),
+        ("first big red video player", browser, .failure("no element named 'first big red video player'")),
+    ]
+    for (name, elements, want) in cases { #expect(click(name, elements) == want, "\(name)") }
+    // Without a snapshot the count runs over the fresh elements; a move takes the same path.
+    #expect(TargetResolver.resolveClick(.element(named: "last video"), overlay: .none, cursor: .zero, elements: browser) == at(16))
+    #expect(TargetResolver.resolveMove(.element(named: "second video"), overlay: .none, cursor: .zero, elements: browser,
+                                       labels: LabelAssigner.assign(browser)) == at(14))
+}
+
+@Test func screenCenterIsTheMiddleOfTheCursorsScreen() {
+    let main = CGRect(x: 0, y: 0, width: 1000, height: 800), side = CGRect(x: 1000, y: 0, width: 400, height: 600)
+    let table: [(CGPoint, [CGRect], TargetResolution)] = [
+        (CGPoint(x: 1100, y: 50), [main, side], .point(CGPoint(x: 1200, y: 300))),
+        (CGPoint(x: 10, y: 10), [main, side], .point(CGPoint(x: 500, y: 400))),
+        (CGPoint(x: -50, y: 9000), [main, side], .point(CGPoint(x: 500, y: 400))),   // off every screen: the first
+        (CGPoint(x: 10, y: 10), [], .failure("no screen")),
+    ]
+    for (cursor, screens, expected) in table {
+        #expect(TargetResolver.resolveMove(.screenCenter, overlay: .none, cursor: cursor, elements: [], screens: screens) == expected)
+    }
+}

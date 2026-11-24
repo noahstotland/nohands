@@ -1,6 +1,7 @@
 import Testing
 import CoreGraphics
 import Foundation
+import os
 import NoHandsCore
 @testable import NoHandsMac
 
@@ -88,6 +89,16 @@ import NoHandsCore
     let r = await x.execute([.pressMouse(.left), .moveCursor(.numbered(1))])
     #expect(r == "no grid or labels shown")
     #expect(i.calls == ["down", "releaseAll"])
+}
+
+@MainActor @Test func spokenStopDoesNotReleaseMidDrag() async {
+    let (x, i, _, _) = make()
+    x.dragInFlight = true
+    x.releaseHeldButton()
+    #expect(i.calls.isEmpty)   // the drag's own mouse-up or catch releases
+    x.dragInFlight = false
+    x.releaseHeldButton()
+    #expect(i.calls == ["releaseAll"])
 }
 
 @MainActor @Test func releasedButtonIsNotReleasedAgain() async {
@@ -357,4 +368,128 @@ private let reload = UIElementInfo(id: 1, frame: CGRect(x: 100, y: 100, width: 8
         #expect(await x.execute([.searchSite("javascript:alert(1)", site: "youtube.com")]) == "can't search for that")
     }
     #expect(i.calls.isEmpty && e.opened.isEmpty)
+}
+
+@MainActor @Test func tabWithoutACloseButtonIsClosedByShortcutOnlyOnceItIsSelected() async {
+    var ledger = TabLedger()
+    let old = BrowserTab(id: "t0", title: "Inbox", active: true)
+    ledger.baseline(app: "Chrome", windows: [BrowserWindow(id: "w1", title: "Inbox", front: true, tabs: [old])])
+    let listing = ledger.listing(app: "Chrome", windows: [BrowserWindow(id: "w1", title: "Inbox", front: true,
+                                                                         tabs: [old, BrowserTab(id: "t1", title: "Ad")])])
+    // (selecting works, tab is in the front app's focused window, result, tabs selected)
+    let table: [(Bool, Bool, String?, [String])] = [
+        (true, true, nil, ["t1"]),
+        (false, true, "couldn't select that tab", ["t1"]),
+        (true, false, "can't close that tab", []),   // a tab in another window: command-W would close that window's tab
+    ]
+    for (selects, inFront, want, selected) in table {
+        let (ex, input, ax, _) = make()
+        ax.isBrowser = true; ax.tabHasNoCloseButton = true; ax.selectingWorks = selects; ax.tabInFrontWindow = inFront
+        #expect(await ex.execute([.closeTab(2)], tabs: listing) == want)
+        #expect(ax.selectedTabs == selected)
+        #expect(input.calls == (want == nil ? ["press"] : []))   // command-W goes out only for the tab that is selected in the front window
+    }
+    let (ex, _, ax, _) = make()
+    #expect(await ex.execute([.closeTab(5)], tabs: listing) == "no tab 5" && ax.closedTabs.isEmpty)
+}
+
+@MainActor @Test func namedClickRewalksAfterExposure() async {
+    let subscribe = UIElementInfo(id: 1, frame: CGRect(x: 100, y: 200, width: 80, height: 30), title: "Subscribe", role: "AXButton")
+    let click = [Action.click(.element(named: "subscribe"), button: .left, count: 1)]
+    for exposed in [true, false] {
+        let i = FakeInput(), e = FakeElements(), o = FakeOverlay()
+        e.walkLists = [[], [subscribe]]
+        e.exposeOnNextWalk = exposed
+        let x = ActionExecutor(input: i, ax: e, overlay: o, config: AppConfig(), exposureSettle: .zero)
+        let result = await x.execute(click)
+        if exposed {
+            #expect(result == nil && i.calls == ["click:140,215"] && e.walks == 2)
+        } else {
+            #expect(result == "no element named 'subscribe'" && i.calls.isEmpty && e.walks == 1)
+        }
+    }
+}
+
+@MainActor @Test func stopDuringTheExposureWaitStopsTheClick() async {
+    let subscribe = UIElementInfo(id: 1, frame: CGRect(x: 100, y: 200, width: 80, height: 30), title: "Subscribe", role: "AXButton")
+    let i = FakeInput(), e = FakeElements(), o = FakeOverlay()
+    e.walkLists = [[subscribe]]   // the thin first walk already holds a match
+    e.exposeOnNextWalk = true
+    let x = ActionExecutor(input: i, ax: e, overlay: o, config: AppConfig(), exposureSettle: .seconds(5))
+    let task = Task { @MainActor in await x.execute([.click(.element(named: "subscribe"), button: .left, count: 1)]) }
+    try? await Task.sleep(for: .milliseconds(50))
+    task.cancel()
+    #expect(await task.value == ActionExecutor.cancelled)
+    #expect(i.calls.isEmpty)
+}
+
+@MainActor @Test func tabCommandsActOnlyInABrowserAndReadTheStripOnlyWhenTheyMust() async {
+    let strip = [BrowserTab(id: "t1", title: "Inbox"), BrowserTab(id: "t2", title: "YouTube", active: true), BrowserTab(id: "t3", title: "GitHub")]
+    // (action, in a browser, tabs, failure, tab ids pressed, keys pressed)
+    let table: [(Action, Bool, [BrowserTab], String?, [String], [String])] = [
+        (.goToTab(.named("github")), true, strip, nil, ["t3"], []),
+        (.goToTab(.named("gmail")), true, strip, "no tab called gmail", [], []),
+        (.goToTab(.number(3)), true, strip, nil, [], ["press"]),          // command-3: no tab read
+        (.goToTab(.last), true, [], nil, [], ["press"]),                  // command-9 works where the strip is hidden
+        (.goToTab(.number(12)), true, strip, "only 3 tabs", [], []),
+        (.goToTab(.number(12)), true, [], "can't read the tabs in Chrome", [], []),
+        (.goToTab(.number(3)), false, strip, "no browser in front", [], []),   // Finder's command-3 stays unpressed
+        (.goToTab(.named("github")), false, strip, "no browser in front", [], []),
+        (.closeOtherTabs, false, strip, "no browser in front", [], []),
+        (.listTabs, false, strip, "no browser in front", [], []),
+    ]
+    for (action, inBrowser, tabs, want, selected, keys) in table {
+        let (ex, input, ax, _) = make()
+        ax.isBrowser = inBrowser; ax.front = "Chrome"
+        ax.browser = [BrowserWindow(id: "w1", title: "YouTube", front: true, tabs: tabs)]
+        #expect(await ex.execute([action]) == want, "\(action)")
+        #expect(ax.selectedTabs == selected && input.calls == keys, "\(action)")
+    }
+    let (ex, _, ax, overlay) = make()
+    ax.isBrowser = true; ax.front = "Chrome"; ax.browser = [BrowserWindow(id: "w1", title: "", front: true, tabs: strip)]
+    #expect(await ex.execute([.listTabs]) == nil && overlay.huds == ["1 Inbox \u{00B7} 2* YouTube \u{00B7} 3 GitHub"])
+}
+
+@MainActor @Test func aSpokenStopDuringTheTabReadKeepsTheTabUnpressed() async {
+    let (ex, _, ax, _) = make()
+    ax.isBrowser = true; ax.front = "Chrome"
+    ax.browser = [BrowserWindow(id: "w1", title: "", front: true, tabs: [BrowserTab(id: "t1", title: "YouTube")])]
+    // The read signals that it started, then blocks until the test has cancelled the task: the stop always lands mid-read.
+    let started = OSAllocatedUnfairLock(initialState: false), stopped = OSAllocatedUnfairLock(initialState: false)
+    ax.onBrowserRead = {
+        started.withLock { $0 = true }
+        let limit = ContinuousClock.now.advanced(by: .seconds(5))
+        while !stopped.withLock({ $0 }), ContinuousClock.now < limit { Thread.sleep(forTimeInterval: 0.005) }
+    }
+    let task = Task { @MainActor in await ex.execute([.goToTab(.named("youtube"))]) }
+    let limit = ContinuousClock.now.advanced(by: .seconds(5))
+    while !started.withLock({ $0 }), ContinuousClock.now < limit { try? await Task.sleep(for: .milliseconds(5)) }
+    task.cancel()
+    stopped.withLock { $0 = true }
+    #expect(await task.value == ActionExecutor.cancelled && ax.selectedTabs.isEmpty)
+}
+
+@MainActor @Test func aModelStepCannotPressAGuardedTitleItDidNotName() async {
+    let click: [Action] = [.click(.point(CGPoint(x: 5, y: 5)), button: .left, count: 1)]
+    let space: [Action] = [.pressKey(KeyChord(.space))]
+    // (actions, title under the pointer, focused button, confirmed verbs, step failure, input calls)
+    let table: [([Action], String?, String?, Set<String>, String?, [String])] = [
+        (click, "Send", nil, [], "send not confirmed, look again", []), (click, "Send", nil, ["send"], nil, ["click:5,5"]),
+        (click, nil, nil, [], nil, ["click:5,5"]), (click, "Reload", nil, [], nil, ["click:5,5"]),
+        (space, nil, "Send", [], "send not confirmed, look again", []), (space, nil, "Send", ["send"], nil, ["press"]),
+        ([.releaseMouse(.left)], "Delete", nil, [], "delete not confirmed, look again", []),
+        ([.drag(from: .point(.zero), to: .point(CGPoint(x: 9, y: 9)))], "Send", nil, [], "send not confirmed, look again", []),
+    ]
+    for (actions, title, focused, confirmed, failure, calls) in table {
+        let (x, i, e, _) = make()
+        e.titleAtPoint = title
+        e.focusedTitle = focused
+        x.pressGuard = PressGuard(goal: "reply to Anna", confirmed: confirmed)
+        #expect(await x.execute(actions) == failure, "\(actions) / \(String(describing: title))")
+        #expect(i.calls.filter { !$0.hasPrefix("move") } == calls, "\(actions) / \(String(describing: title))")
+    }
+    // a spoken command carries no guard: the same click goes through
+    let (x, i, e, _) = make()
+    e.titleAtPoint = "Send"
+    #expect(await x.execute(click) == nil && i.calls == ["click:5,5"])
 }

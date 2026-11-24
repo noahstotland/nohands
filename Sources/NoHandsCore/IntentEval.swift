@@ -1,12 +1,21 @@
 import Foundation
 
-/// One evaluation case. `accept` lists acceptable answers; each is decoded from a wire-format `{"actions":[...]}` object.
+/// One acceptable answer to a case: the actions, and optionally the step status it must have. An entry with a status
+/// matches only a step with that status; for `ask` the actions are not compared (the model writes none).
+public struct EvalAnswer: Sendable {
+    public var actions: [Action]
+    public var status: StepStatus?
+    public init(actions: [Action], status: StepStatus? = nil) { self.actions = actions; self.status = status }
+}
+
+/// One evaluation case. `accept` lists acceptable answers; each is decoded from a wire-format
+/// `{"actions":[...],"status":"..."}` object (the status is optional).
 public struct EvalCase: Decodable, Sendable {
     public var say: String
     public var app: String
     public var elements: [String]
     public var overlay: String
-    public var accept: [[Action]]
+    public var accept: [EvalAnswer]
 
     private enum CodingKeys: String, CodingKey { case say, app, elements, overlay, accept }
 
@@ -17,14 +26,18 @@ public struct EvalCase: Decodable, Sendable {
         elements = try c.decodeIfPresent([String].self, forKey: .elements) ?? []
         overlay = try c.decodeIfPresent(String.self, forKey: .overlay) ?? "none"
         var list = try c.nestedUnkeyedContainer(forKey: .accept)
-        var out: [[Action]] = []
+        var out: [EvalAnswer] = []
         while !list.isAtEnd {
             let raw = try list.decode(AnyJSON.self)
             let data = try JSONSerialization.data(withJSONObject: raw.value)
             guard let text = String(data: data, encoding: .utf8) else {
                 throw DecodingError.dataCorruptedError(in: list, debugDescription: "accept entry is not UTF-8")
             }
-            out.append(try IntentDecoder.actions(fromPayloadText: text))
+            let status = (raw.value as? [String: Any])?["status"] as? String
+            guard status == nil || StepStatus(rawValue: status!) != nil else {
+                throw DecodingError.dataCorruptedError(in: list, debugDescription: "accept entry has an unknown status")
+            }
+            out.append(EvalAnswer(actions: try IntentDecoder.actions(fromPayloadText: text), status: status.flatMap(StepStatus.init(rawValue:))))
         }
         accept = out
     }
@@ -45,6 +58,18 @@ private struct AnyJSON: Decodable {
 }
 
 public enum IntentEval {
+    /// `status` is the step's. An `ask` entry matches an `ask` step whatever its actions; any other entry with a
+    /// status also needs the actions to match; an entry without a status matches on actions alone.
+    public static func matches(_ got: [Action], status: StepStatus, anyOf: [EvalAnswer]) -> Bool {
+        anyOf.contains { want in
+            if let wanted = want.status {
+                guard wanted == status else { return false }
+                if wanted == .ask { return true }
+            }
+            return matches(got, anyOf: [want.actions])
+        }
+    }
+
     public static func matches(_ got: [Action], anyOf: [[Action]]) -> Bool {
         anyOf.contains { want in
             want.count == got.count && zip(got, want).allSatisfy { equivalent($0, $1) }

@@ -18,21 +18,50 @@ func usage() -> Never {
       nohands-cli move <x> <y>
       nohands-cli transcribe <wav>
       nohands-cli vad-test <wav>
+      nohands-cli endpoint-test <wav>...  (replays each file through the VAD, early close and ASR; prints how soon the
+                                      early text is ready after the true end of speech)
+      nohands-cli bench <dir>        (replays each .wav in the folder through the VAD, early close and ASR, parses the text,
+                                      and prints per-file latency plus p50 and p95 per stage; executes nothing)
       nohands-cli elements           (waits 3 s, lists frontmost app's actionable elements)
       nohands-cli click "<name>"     (waits 3 s, clicks the named element's center)
       nohands-cli grid               (10x8 grid 4 s, zoom into cell 35 for 4 s, HUD "done")
       nohands-cli labels             (waits 3 s, badges for frontmost app's elements for 5 s)
       nohands-cli observe            (waits 3 s, prints the task-loop observation of the frontmost app)
-      nohands-cli parse "<text>"     (dry run: prints the grammar's actions, or "no match -> LLM"; executes nothing)
+      nohands-cli parse "<text>" [--app <bundle id>]
+                                     (dry run: prints the grammar's actions, or "no match -> LLM"; executes nothing;
+                                      --app parses with that app in front, so its pack, built in or installed, applies)
+      nohands-cli pack add <file>    (checks the pack file, shows what it does, and installs it only if you answer y)
+      nohands-cli pack list          (installed packs: id, version, on or off, phrases, notes)
+      nohands-cli pack remove <id>   (removes an installed pack)
+      nohands-cli pack builtin <id>  (prints a built-in pack as a pack file, as a template)
+      nohands-cli pack new [--app <name or bundle id>] [--out <file>]
+                                     (reads the app's top-level menu items, waits 3 s without --app to read the app in
+                                      front, and writes a draft pack file, listing what it left out; never overwrites a
+                                      file or installs: edit it, then pack add)
+      nohands-cli pack search [words]  (fetches the pack registry's signed list and shows the packs that match; the
+                                      network is used only when you run this, install or update)
+      nohands-cli pack install <id>  (fetches that pack from the registry, shows what it does, installs only if you answer y)
+      nohands-cli pack update [<id>] (for each installed pack with a newer registry version, shows what changed and
+                                      updates it only if you answer y)
+      nohands-cli registry keygen <path>  (publishers: makes a signing key file, mode 600; prints the public key)
+      nohands-cli registry sign <index.json> --key <path> [--packs <dir>]
+                                     (publishers: checks the index, and the pack files in <dir>, and prints the signed file)
+      nohands-cli menu "<words>"     (waits 2 s, then prints the frontmost app's menu item those words name and presses it)
+      nohands-cli menu --list        (waits 3 s, prints the frontmost app's menu items, without the Apple menu)
       nohands-cli run "<phrase>"...  (waits 2 s, executes each phrase in order, 0.8 s apart)
       nohands-cli resolve "<text>"   (waits 3 s, sends text + frontmost app's labels to the configured backend;
                                       prints the step's intent, status and actions; executes nothing)
       nohands-cli task "<goal>"      (waits 3 s, then runs the goal as a multi-step task on the frontmost app,
                                       printing each step and the outcome; Ctrl-C stops it)
+      nohands-cli scenarios [file] [--only name]  (waits 3 s, then runs each scripted task goal for real and scores it
+                                      against a fresh screen check; takes over the screen; exits 0 only when all pass;
+                                      default file scripts/task-scenarios.json; Ctrl-C stops the suite)
       nohands-cli eval <file> [--runs N] [--model ID] [--effort LEVEL]
                                      (scores the configured backend on a fixture set; executes nothing;
                                       --model and --effort override the Claude settings for this run only)
       nohands-cli listen             (mic -> VAD -> ASR; Ctrl-C to quit)
+      nohands-cli claude-check       (sends one small request to Claude with your key and prints whether commands will
+                                      work; exits 0 only when connected; spends about one step's input tokens)
       nohands-cli desktop-status     (agent-desktop binary, version, permissions and the harness in use)
       nohands-cli snapshot [app]     (waits 3 s, prints the task-loop observation through agent-desktop of the
                                       frontmost app, or of the named app)
@@ -139,6 +168,101 @@ var exitStatus: Int32 = 0
                 }
                 i += 4096
             }
+        case "endpoint-test":
+            // endpoint-test <wav>...  Default config silenceMs and earlySilenceMs. One line per file, then a summary.
+            guard !rest.isEmpty else { usage() }
+            let config = try loadConfig()
+            let asr = try await ParakeetTranscriber(version: config.asrModelVersion)
+            _ = try await asr.transcribe([Float](repeating: 0, count: 16_000))   // warm up
+            print("silenceMs=\(config.silenceMs) earlySilenceMs=\(config.earlySilenceMs)")
+            var fired = 0, accepted = 0, mismatched = 0, extra = 0
+            var readyMs: [Double] = []
+            for path in rest {
+                let samples = try loadSamples16k(path: path)
+                let r = try await EndpointReplay.run(samples: samples, config: config, transcriber: asr)
+                if r.earlyFired > 0 { fired += 1 }
+                if r.earlyAccepted { accepted += 1 }
+                if r.earlyAccepted, r.sameAction == false { mismatched += 1 }
+                if r.emitted.count > 1 { extra += 1 }
+                if let ms = r.earlyReadyMs { readyMs.append(ms) }
+                func q(_ s: String?) -> String { s.map { "\"\($0)\"" } ?? "none" }
+                let same = r.sameAction.map { $0 ? "same" : "DIFFERENT" } ?? "n/a"
+                let early = r.earlyAccepted ? String(format: "%.0fms", r.earlyReadyMs ?? 0) : "fallback"
+                let full = r.fullReadyMs.map { String(format: "%.0fms", $0) } ?? "n/a"
+                print("\((path as NSString).lastPathComponent): early=\(q(r.earlyText)) full=\(q(r.fullText)) fired=\(r.earlyFired) accepted=\(r.earlyAccepted) actions=\(same) trueEnd=\(String(format: "%.2f", r.trueEnd))s ready=\(early) fullReady=\(full) emits=\(r.emitted.count)")
+            }
+            let p50 = readyMs.sorted().isEmpty ? "n/a" : String(format: "%.0fms", readyMs.sorted()[readyMs.count / 2])
+            print("summary: files=\(rest.count) fired=\(fired) accepted=\(accepted) fellBack=\(rest.count - accepted) wrongAction=\(mismatched) multipleEmits=\(extra) p50AcceptedReady=\(p50)")
+        case "bench":
+            // bench <dir>  Dry run: per-file latency from the true end of speech to the parsed actions. Executes nothing.
+            guard rest.count == 1 else { usage() }
+            let dir = rest[0]
+            let readme = "record the phrases listed in Tests/Fixtures/audio/README.md, or run scripts/make-bench-audio.sh to generate a synthesized set"
+            var isDir: ObjCBool = false
+            guard FileManager.default.fileExists(atPath: dir, isDirectory: &isDir), isDir.boolValue else {
+                fail("bench: \(dir) is not a directory; \(readme)")
+            }
+            let files = (try FileManager.default.contentsOfDirectory(atPath: dir))
+                .filter { $0.lowercased().hasSuffix(".wav") }
+                .sorted()
+            guard !files.isEmpty else { fail("bench: no .wav files in \(dir); \(readme)") }
+
+            var config = try loadConfig()
+            config.attentionWord = ""   // recordings do not start with the attention word
+            let t0 = ContinuousClock.now
+            let asr = try await ParakeetTranscriber(version: config.asrModelVersion)
+            for _ in 0..<2 { _ = try await asr.transcribe([Float](repeating: 0, count: 16_000)) }   // the first two runs are cold
+            let loadMs = Int(t0.duration(to: .now) / .milliseconds(1))
+            print("silenceMs=\(config.silenceMs) earlySilenceMs=\(config.earlySilenceMs) asr=\(config.asrModelVersion) attentionWord=ignored load=\(loadMs)ms")
+
+            let grammar = CommandGrammar(config: config.grammarConfig)
+            let width = files.map(\.count).max() ?? 0
+            var lag: [Double] = [], asrTimes: [Double] = [], parseTimes: [Double] = [], total: [Double] = []
+            var early = 0, full = 0, skipped = 0
+            for file in files {
+                let name = file.padding(toLength: width, withPad: " ", startingAt: 0)
+                do {
+                    let samples = try loadSamples16k(path: (dir as NSString).appendingPathComponent(file))
+                    let r = try await EndpointReplay.run(samples: samples, config: config, transcriber: asr)
+                    guard let closedBy = r.closedBy, let lagMs = r.speechEndLagMs, let asrMs = r.asrMs else {
+                        print("\(name)  skipped: no utterance")
+                        skipped += 1
+                        continue
+                    }
+                    let text = r.actedText ?? ""
+                    guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                        print("\(name)  skipped: empty transcript")
+                        skipped += 1
+                        continue
+                    }
+                    let p0 = ContinuousClock.now
+                    let actions = grammar.parse(text)
+                    let parseMs = Double(p0.duration(to: .now) / .nanoseconds(1)) / 1_000_000
+                    let outcome: String
+                    if config.attentionGate.isStop(text) {
+                        outcome = "stop"   // the pipeline halts on a stop phrase before the grammar sees it
+                    } else if let actions {
+                        outcome = "\(actions)"
+                    } else if let message = grammar.rejection(text) {
+                        outcome = "rejected: \(message)"
+                    } else {
+                        outcome = "no match -> LLM"
+                    }
+                    let e2e = lagMs + asrMs + parseMs
+                    lag.append(lagMs); asrTimes.append(asrMs); parseTimes.append(parseMs); total.append(e2e)
+                    if closedBy == .early { early += 1 } else { full += 1 }
+                    print("\(name)  close=\(closedBy == .early ? "early" : "full") lag=\(LatencyStats.format(lagMs)) asr=\(LatencyStats.format(asrMs)) parse=\(LatencyStats.format(parseMs)) e2e=\(LatencyStats.format(e2e)) utts=\(r.utterances) \"\(text)\" -> \(outcome)")
+                } catch {
+                    print("\(name)  skipped: \(error.localizedDescription)")
+                    skipped += 1
+                }
+            }
+            print("summary: files=\(files.count) measured=\(total.count) skipped=\(skipped) early=\(early) full=\(full)")
+            print(LatencyStats.summaryLine(stage: "lag", values: lag))
+            print(LatencyStats.summaryLine(stage: "asr", values: asrTimes))
+            print(LatencyStats.summaryLine(stage: "parse", values: parseTimes))
+            print(LatencyStats.summaryLine(stage: "end-to-end", values: total))
+            if total.isEmpty { exitStatus = 1 }
         case "elements":
             let ax = try await frontElements()
             print("app: \(ax.app)")
@@ -188,6 +312,12 @@ var exitStatus: Int32 = 0
             let kind: HarnessKind = probed ? .agentDesktop : .native
             let (obs, _, _) = await observer.observe(mode: .command, overlay: .none, harnessKind: kind)
             print(ClaudeRequestBuilder.userMessage(request: StepRequest(goal: "-", step: 1, maxSteps: 12, history: [], observation: obs)))
+        case "claude-check":
+            guard rest.isEmpty else { usage() }
+            let config = try loadConfig()
+            let result = await ClaudeConnectionCheck(config: config).run()
+            print(result.cliText(model: config.intentModel))
+            exitStatus = result.kind == .connected ? 0 : 1
         case "desktop-status":
             let config = try loadConfig()
             let status = await HarnessStatus.probe(config: config)
@@ -212,16 +342,42 @@ var exitStatus: Int32 = 0
                                                overlay: .none, limit: config.observedElementCap)
             var shown = obs
             shown.harness = .agentDesktop
+            shown.media = MediaSignal.state(elements: snap.elements, audioPlaying: AudioOutputProbe().isPlaying)
             print("snapshot \(snap.snapshotID): \(snap.elements.count) refs, \(obs.elements.count) listed, complete=\(snap.complete)")
             print(ClaudeRequestBuilder.userMessage(request: StepRequest(goal: "-", step: 1, maxSteps: 12, history: [], observation: shown)))
         case "parse":
-            guard rest.count == 1 else { usage() }
-            if let actions = CommandGrammar().parse(rest[0]) {
-                print("\(actions)")
-            } else if let message = CommandGrammar().rejection(rest[0]) {
+            guard rest.count == 1 || (rest.count == 3 && rest[1] == "--app") else { usage() }
+            let bundleID: String? = rest.count == 3 ? rest[2] : nil
+            let grammar = CommandGrammar(packs: PackSet(installed: (try? PackStore().loadEnabled()) ?? []))
+            if let match = grammar.match(rest[0], frontmost: bundleID) {
+                print("\(match.actions)\(match.confirm == nil ? "" : " (asks first)")")
+            } else if let message = grammar.rejection(rest[0]) {
                 print("rejected: \(message)")
             } else {
                 print("no match -> LLM")
+            }
+        case "pack":
+            await packCommand(rest)
+        case "registry":
+            registryCommand(rest)
+        case "menu":
+            guard rest.count == 1 else { usage() }
+            guard Permissions.accessibilityGranted(prompt: false) else {
+                fail("Accessibility permission is not granted to this process (or its terminal).")
+            }
+            let listing = rest[0] == "--list"
+            try await Task.sleep(for: .seconds(listing ? 3 : 2))
+            let reader = AXMenuReader()
+            let entries = reader.entries()
+            print("app: \(AXQuery().frontmostAppName() ?? ""), \(entries.count) menu items")
+            if listing {
+                for e in entries { print("\((e.path + [e.title]).joined(separator: " > "))\(e.enabled ? "" : "  (disabled)")") }
+            } else {
+                guard let i = MenuMatch.firstMatch(rest[0], in: entries) else { fail("no menu item called \(rest[0])") }
+                let e = entries[i]
+                print("match: \((e.path + [e.title]).joined(separator: " > "))\(e.enabled ? "" : "  (disabled)")")
+                guard e.enabled else { fail("menu item \(e.title) is disabled") }
+                print(reader.press(i) ? "pressed" : "the app ignored AXPress")
             }
         case "run":
             guard !rest.isEmpty else { usage() }
@@ -230,9 +386,10 @@ var exitStatus: Int32 = 0
             }
             var parsed: [[Action]] = []
             for phrase in rest {
-                guard let actions = CommandGrammar().parse(phrase) else { fail("not a command: \(phrase)") }
-                print("actions: \(actions)")
-                parsed.append(actions)
+                guard let match = CommandGrammar().match(phrase) else { fail("not a command: \(phrase)") }
+                guard match.confirm == nil else { fail("asks first: not run from the CLI") }
+                print("actions: \(match.actions)")
+                parsed.append(match.actions)
             }
             let config = try loadConfig()
             let harness = await loadHarness(config)
@@ -283,7 +440,8 @@ var exitStatus: Int32 = 0
                                               maxElements: config.observedElementCap, harness: harness,
                                               snapshotTimeoutMs: config.agentDesktopSnapshotMs)
                 let runner = TaskRunner(config: config, resolver: resolver, executor: executor,
-                                        observer: observer, overlay: overlay, harness: harness)
+                                        observer: observer, overlay: overlay, harness: harness,
+                                        screenshots: config.visionEnabled ? WindowScreenshotter(ax: AXQuery()) : nil)
                 let t0 = ContinuousClock.now
                 var last = t0
                 runner.onStatus = { status in if status.isFinal { print("status: \(sanitized(status.text))") } }
@@ -317,6 +475,8 @@ var exitStatus: Int32 = 0
                 exitStatus = outcome.exitStatus
                 try? await Task.sleep(for: .milliseconds(1800))   // let the outcome HUD show
             }
+        case "scenarios":
+            exitStatus = await runScenarios(rest)
         case "eval":
             guard let file = rest.first else { usage() }
             var runs = 1
@@ -348,7 +508,8 @@ var exitStatus: Int32 = 0
                         status = step.status
                     } catch { errText = "\(error)" }
                     let ms = Int(t0.duration(to: .now) / .milliseconds(1))
-                    let ok = errText == nil && IntentEval.matches(got, anyOf: c.accept)
+                    let ok: Bool
+                    if errText == nil, let status { ok = IntentEval.matches(got, status: status, anyOf: c.accept) } else { ok = false }
                     results.append((passed: ok, ms: ms))
                     if ok {
                         print("PASS \(ms)ms  \(c.say)")
@@ -378,25 +539,6 @@ Task { @MainActor in
 }
 app.run()
 
-/// Loads `~/.config/nohands/config.json` (plus environment) and builds the configured backend's resolver.
-/// `model` and `effort` override the Claude settings for this run only (the config file is not touched).
-func loadResolver(model: String? = nil, effort: String? = nil) throws -> (config: AppConfig, resolver: any IntentResolving, model: String) {
-    let cfgURL = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".config/nohands/config.json")
-    var config = try AppConfig.load(from: try? Data(contentsOf: cfgURL), environment: ProcessInfo.processInfo.environment)
-    if config.effectiveBackend != .claude, model != nil || effort != nil {
-        fail("error: --model and --effort apply to the Claude backend")
-    }
-    if let model { config.intentModel = model }
-    if let effort { config.intentEffort = effort }
-    switch config.effectiveBackend {
-    case .claude: return (config, ClaudeIntentResolver(config: config), config.intentModel)
-    case .local: return (config, OllamaIntentResolver(config: config), config.resolvedLocalModel)
-    case .off: fail("error: LLM off")
-    }
-}
-
-func ms(_ d: Duration) -> Int { Int(d / .milliseconds(1)) }
-
 /// Waits 3 s (so the user can focus an app), then labels the frontmost app's elements.
 /// Never prompts: exits non-zero with a message if Accessibility is not granted.
 func frontElements() async throws -> (app: String, labels: [Int: UIElementInfo]) {
@@ -406,15 +548,6 @@ func frontElements() async throws -> (app: String, labels: [Int: UIElementInfo])
     try await Task.sleep(for: .seconds(3))
     let q = AXQuery()
     return (q.frontmostAppName() ?? "", LabelAssigner.assign(q.actionableElements()))
-}
-
-/// Runs `body` on the main actor with an overlay (the app's run loop is already running; see `runCommand`).
-@MainActor func runOverlay(_ body: @MainActor (OverlayController) async -> Void) async {
-    await body(OverlayController())
-}
-
-func sanitized(_ s: String) -> String {
-    String(s.unicodeScalars.map { $0.properties.generalCategory == .control || $0.properties.generalCategory == .lineSeparator || $0.properties.generalCategory == .paragraphSeparator ? " " : Character($0) })
 }
 
 enum Log {

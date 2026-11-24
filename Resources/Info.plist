@@ -8,6 +8,8 @@
     <string>NoHands</string>
     <key>CFBundleExecutable</key>
     <string>NoHands</string>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
@@ -22,5 +24,7 @@
     <string>14.0</string>
     <key>NSMicrophoneUsageDescription</key>
     <string>NoHands listens for voice commands and dictation.</string>
+    <key>NSAppleEventsUsageDescription</key>
+    <string>NoHands changes dark mode through System Events when you say "dark mode", "light mode" or "toggle dark mode". It sends nothing else.</string>
 </dict>
 </plist>

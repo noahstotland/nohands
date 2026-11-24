@@ -7,13 +7,19 @@ public enum PipelineText {
     public static let localNotRunning = "local model not running: start Ollama"
     public static let localNotDownloaded = "local model not downloaded: see the NoHands menu"
     public static let llmDisabled = "LLM off (intentBackend is off)"
-    public static let llmOff = "LLM off: add anthropicAPIKey to ~/.config/nohands/config.json"
+    public static let llmOff = "LLM off: choose Set Claude API key… in the menu"
     public static let stopped = "stopped"
     public static let skippedBusy = "skipped (busy)"
     /// A held utterance discarded by a stop, or one that waited longer than the held-job limit.
     public static let dropped = "dropped"
     public static let cancelled = "cancelled"
     public static let stopping = "stopping the task"
+    public static let noPick = "no pick: say it again"
+    public static let rewriting = "rewriting…"
+    public static let notConfirmed = "not confirmed"
+    public static let noYes = "no yes in 30 s"
+    /// The row while a fixed phrase waits for its spoken yes.
+    public static func sayYes(to phrase: String) -> String { "say yes to \(phrase)" }
 
     /// The finish HUD for a task.
     public static func hud(for outcome: TaskOutcome) -> String {
@@ -49,11 +55,18 @@ public enum PipelineText {
         case .resolveWithLLM: "llm"
         case .ignore(let reason): "ignore(\(reason))"
         case .reject(let message): detailed ? "reject(\(message))" : "reject"
+        case .macro(let macro): detailed ? "macro(\(macro.name), \(macro.steps.count) steps)" : "macro"
+        case .forgetRoutes(let all): all ? "forget all routes" : "forget that route"
+        case .confirm(let held): detailed ? "confirm(\(held.phrase))" : "confirm"
         }
     }
 
     public static func describe(_ actions: [Action]) -> String {
-        let text = actions.map { String(describing: $0) }.joined(separator: ", ")
+        // A file request is logged by its kind, never by the words or a hit's name.
+        let text = actions.map { action -> String in
+            if case .openFile(let request) = action { return request.logName }
+            return String(describing: action)
+        }.joined(separator: ", ")
         return "[\(text.count > 160 ? String(text.prefix(160)) + "…" : text)]"
     }
 

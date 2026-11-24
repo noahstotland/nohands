@@ -30,13 +30,81 @@ public protocol ElementProviding: Sendable {
     /// The frame (CG coordinates) of the search box in the frontmost window, when it shows one: a page's own
     /// search field first, else the app's. Never a browser's address bar.
     func searchFieldFrame() -> CGRect?
+    /// Walks the focused window, offscreen parts included, for an element or text matching `words` (see
+    /// `PageFind.Matcher`); the match is remembered for `scrollIntoView`. Honors the calling task's cancellation.
+    func findOnPage(words: String) -> UIElementInfo?
+    /// The visible text of the focused window's page in reading order (see `AXQuery.pageText`); empty when there is
+    /// none. Honors the calling task's cancellation.
+    func pageText() -> [String]
+    /// Scrolls the element `findOnPage` just returned into view and returns its frame (CG coordinates) once it is on
+    /// a screen; nil when it cannot be scrolled or never arrives.
+    func scrollIntoView(_ element: UIElementInfo) async -> CGRect?
     /// Whether the frontmost app is a web browser (its address bar searches the web).
     func frontmostIsBrowser() -> Bool
+    /// The frontmost browser's name and its windows and tabs, with opaque ids that stay the same for the same window
+    /// or tab until `resetBrowserTokens()`; nil when the frontmost app is not a browser. The name is of the app
+    /// the windows were read from.
+    func browserWindows() -> (app: String, windows: [BrowserWindow])?
+    /// Closes the tab or window `id` names with its own close button. `.noControl` when it has none.
+    func closeBrowserTab(id: String) -> BrowserActionResult
+    func closeBrowserWindow(id: String) -> BrowserActionResult
+    /// Makes the tab `id` the selected one.
+    func selectBrowserTab(id: String) -> BrowserActionResult
+    func browserTabIsSelected(id: String) -> Bool
+    /// Whether the tab `id` belongs to the frontmost app and to that app's focused window: the only place a
+    /// keyboard shortcut reaches it.
+    func browserTabIsInFrontWindow(id: String) -> Bool
+    /// Forgets the ids handed out (the end of a task).
+    func resetBrowserTokens()
+    /// Whether the frontmost app's focused element takes typed text (never a password field).
+    func isTextFocused() -> Bool
+    /// The focused text field's value, selection and caret line (UTF-16); nil when there is none or it cannot be read
+    /// in time (over 200,000 units, a slow app, a password field). Blocks up to its budget: call it off the main actor.
+    func focusedText() -> FocusedText?
+    /// Selects `span` in the focused field and reads it back: true only when the field took it.
+    func setSelection(_ span: TextSpan) -> Bool
+    /// Whether the focused window is in full screen; nil when unknown.
+    func focusedWindowIsFullScreen() -> Bool?
+    /// Whether the focused element takes typed text.
+    func focusedElementIsTextInput() -> Bool
+    /// The title of the control under `point` (CG coordinates), read live: the element there, else its nearest titled
+    /// ancestor within a few levels. nil when nothing titled is there or the app does not answer in time.
+    func elementTitle(at point: CGPoint) -> String?
+    /// The title of the frontmost app's focused control when Return or Space would press it (a button, link or menu
+    /// button); nil for anything else or when it cannot be read.
+    func focusedElementTitle() -> String?
+}
+
+/// How a request to act on a browser tab or window went.
+public enum BrowserActionResult: Equatable, Sendable {
+    case done
+    /// The tab or window no longer exists.
+    case gone
+    /// It has no control for that (a tab with no close button): the caller falls back to a shortcut.
+    case noControl
+    case failed(String)
 }
 
 extension ElementProviding {
     public func searchFieldFrame() -> CGRect? { nil }
+    public func findOnPage(words: String) -> UIElementInfo? { nil }
+    public func pageText() -> [String] { [] }
+    public func scrollIntoView(_ element: UIElementInfo) async -> CGRect? { nil }
     public func frontmostIsBrowser() -> Bool { false }
+    public func browserWindows() -> (app: String, windows: [BrowserWindow])? { nil }
+    public func closeBrowserTab(id: String) -> BrowserActionResult { .failed("no browser tabs") }
+    public func closeBrowserWindow(id: String) -> BrowserActionResult { .failed("no browser windows") }
+    public func selectBrowserTab(id: String) -> BrowserActionResult { .failed("no browser tabs") }
+    public func browserTabIsSelected(id: String) -> Bool { false }
+    public func browserTabIsInFrontWindow(id: String) -> Bool { false }
+    public func resetBrowserTokens() {}
+    public func isTextFocused() -> Bool { false }
+    public func focusedText() -> FocusedText? { nil }
+    public func setSelection(_ span: TextSpan) -> Bool { false }
+    public func focusedWindowIsFullScreen() -> Bool? { nil }
+    public func focusedElementIsTextInput() -> Bool { false }
+    public func elementTitle(at point: CGPoint) -> String? { nil }
+    public func focusedElementTitle() -> String? { nil }
     public func focusedWindowTitle() -> String? { nil }
     public func webURL() -> String? { nil }
     public func didJustExpose() -> Bool { false }
@@ -64,6 +132,8 @@ extension AXQuery: ElementProviding {
     /// The prompt's row on the board at the top of the screen: its words and how far it has got. Reporting an
     /// unknown id adds the row; reporting a known one updates it.
     func report(_ id: Int, text: String, status: PromptStatus)
+    /// A running task's step trail, for the prompt's row. Ignored for an unknown id or a finished row.
+    func report(_ id: Int, trail: TaskTrail)
     func screenBoundsCG(containing point: CGPoint) -> CGRect
 }
 
@@ -84,6 +154,7 @@ extension OverlayController: OverlayPresenting {
     static let needsHarness = "needs agent-desktop"
     public static let elementChanged = "element changed, look again"
     static let readingLimit = 300
+    static let noPageText = "no text on this page"
 
     let input: any InputSynthesizing
     let ax: any ElementProviding
@@ -91,21 +162,78 @@ extension OverlayController: OverlayPresenting {
     private let config: AppConfig
     /// agent-desktop, when installed and chosen; nil runs every action natively.
     let harness: (any DesktopHarness)?
+    /// Where "menu <words>" looks for the item to press, before agent-desktop.
+    let menus: any MenuReading
     let clipboard: any ClipboardAccess
+    /// Set by the task loop for a model step: a press whose live title holds a guarded verb the goal did not name and
+    /// the user did not confirm fails the step (`pressRefusal`). Nil for spoken commands, macros and packs.
+    public var pressGuard: PressGuard?
     public var onModeChange: ((Mode) -> Void)?
+    /// Called when `.setSpokenFeedback` runs.
+    public var onSpokenFeedbackChange: ((SpeakLevel) -> Void)?
     private let frontTimeout: Duration
+    private let audio: any AudioOutputProbing
+    private let mediaPoll: Duration
+    private let volume: any VolumeControlling
+    let system: any SystemControlling
+    /// How long a window gets to leave full screen after Escape before the window chord is pressed.
+    private let fullScreenSettle: Duration
+    /// The accessibility layer the media walk uses: one with a larger budget than `ax`, which does not reach a
+    /// browser player's buttons. Nil walks with `ax`.
+    private let mediaAX: (any ElementProviding)?
+    /// How long a freshly exposed Chromium page tree gets to build before the one re-walk.
+    private let exposureSettle: Duration
     /// How long an app that just came to the front may take to show a window (a cold launch on a loaded Mac).
     private let windowTimeout: Duration
     private var pressed: Set<MouseButton> = []
+    /// True while a native drag holds the left button; a spoken stop must not release it mid-drag (the drag's own
+    /// mouse-up, or its catch, does).
+    var dragInFlight = false
     /// Label snapshot of the current LLM-derived batch; `.label(n)` resolves only against this.
     var labelSnapshot: [Int: UIElementInfo]?
+    /// The `Tabs:` list the current batch was chosen from; tab and window numbers resolve only against this.
+    private var tabSnapshot: TabListing?
     /// Text the model asked to read (`read_*` actions) since the last `takeReadings()`.
     public private(set) var readings: [String] = []
+    /// The element the last `findOnPage` scrolled into view, until `takeFound()`.
+    public private(set) var found: UIElementInfo?
+    /// Whether the last `editText` typed its `otherwise` words instead of editing: dictation, not an edit, so the
+    /// dictation record ("scratch that") still matches the screen.
+    public internal(set) var editTypedOtherwise = false
+    /// Where files are found and how they open (NH-58).
+    let files: any FileSource
+    let fileOpener: any FileOpening
+    /// Who is asking, for the current `execute`: only a spoken command may list several hits.
+    var fileContext = FileContext.model
+    /// The ranked hits a spoken "open file" found when several matched, until `takeFileOffer()`.
+    var fileOffer: [FileHit]?
+    /// Rewrites ask this; nil when the model is off (the failure text then says what to do). See `useRewriter`.
+    var rewriter: (any TextRewriting)?
+    var rewriteUnavailable = ActionExecutor.rewriteNeedsModel
+    /// Called when a rewrite's request goes out, so the pipeline can show "rewriting…".
+    var onRewriteStart: (() -> Void)?
+    /// What the last rewrite changed, until `takeRewrite()`.
+    var rewriteReport: RewriteReport?
 
     public init(input: any InputSynthesizing, ax: any ElementProviding, overlay: any OverlayPresenting,
                 config: AppConfig, frontTimeout: Duration = .seconds(1.5), windowTimeout: Duration = .seconds(6),
-                harness: (any DesktopHarness)? = nil, clipboard: any ClipboardAccess = PasteboardClipboard()) {
+                harness: (any DesktopHarness)? = nil, clipboard: any ClipboardAccess = PasteboardClipboard(),
+                audio: any AudioOutputProbing = AudioOutputProbe(), mediaPoll: Duration = .milliseconds(500),
+                mediaAX: (any ElementProviding)? = nil, exposureSettle: Duration = .milliseconds(600),
+                menus: any MenuReading = AXMenuReader(), volume: any VolumeControlling = CoreAudioVolume(),
+                fullScreenSettle: Duration = .milliseconds(800), system: any SystemControlling = MacSystemControl(),
+                files: any FileSource = SpotlightFileSource(), fileOpener: any FileOpening = WorkspaceFileOpener()) {
+        self.system = system
+        self.files = files
+        self.fileOpener = fileOpener
+        self.fullScreenSettle = fullScreenSettle
+        self.menus = menus
+        self.volume = volume
+        self.audio = audio
+        self.mediaAX = mediaAX
+        self.mediaPoll = mediaPoll
         self.frontTimeout = frontTimeout
+        self.exposureSettle = exposureSettle
         self.windowTimeout = windowTimeout
         self.input = input
         self.ax = ax
@@ -121,18 +249,41 @@ extension OverlayController: OverlayPresenting {
         return readings
     }
 
+    /// The element a find just scrolled to; the task loop lists it first in the next observation.
+    public func takeFound() -> UIElementInfo? {
+        defer { found = nil }
+        return found
+    }
+
+    /// A result the model reads as it is ("opened a file"), with no label.
+    func addResult(_ text: String) { readings.append(text) }
+
     func addReading(_ label: String, _ text: String) {
-        readings.append(String("\(label): \(text)".prefix(Self.readingLimit)))
+        // A label can come from the page (an element's title), so it can never spell the page reading's `page: `
+        // prefix: colons go, and a bare "page" is renamed.
+        var safe = label.replacingOccurrences(of: ":", with: " ").trimmingCharacters(in: .whitespaces)
+        if safe.lowercased() == PageText.readingLabel { safe = "\(safe) value" }
+        readings.append(String("\(safe): \(text)".prefix(Self.readingLimit)))
+    }
+
+    /// The page reading, the only long one. Only code calls this, so page content can't choose the long limit.
+    func addPageReading(_ text: String) {
+        readings.append(String("\(PageText.readingLabel): \(text)".prefix(PageText.limit)))
     }
 
     /// Executes in order; stops at the first failure. Returns the failure message if any (the caller shows it on
     /// the prompt's row). Any mouse button pressed by this call is released before a failure is returned.
     /// Returns `cancelled` when the calling task is cancelled before an action.
     @discardableResult
-    public func execute(_ actions: [Action], labels: [Int: UIElementInfo]? = nil) async -> String? {
+    public func execute(_ actions: [Action], labels: [Int: UIElementInfo]? = nil, tabs: TabListing? = nil,
+                        files context: FileContext = .model) async -> String? {
         pressed = []
+        editTypedOtherwise = false
+        fileContext = context
+        fileOffer = nil
         labelSnapshot = labels
-        defer { labelSnapshot = nil }
+        tabSnapshot = tabs
+        defer { labelSnapshot = nil; tabSnapshot = nil }
         for (i, action) in actions.enumerated() {
             // A cancelled task (stop phrase, pause) must not keep acting, e.g. after an interrupted `wait`.
             if Task.isCancelled {
@@ -140,6 +291,9 @@ extension OverlayController: OverlayPresenting {
                 pressed = []
                 return Self.cancelled
             }
+            // A found element is the next observation's number 1 only when the find was the step's last act: anything
+            // after it may have changed the page.
+            if case .findOnPage = action {} else { found = nil }
             if let message = await run(action, isLast: i == actions.count - 1) {
                 if !pressed.isEmpty { input.releaseAll() }
                 pressed = []
@@ -147,6 +301,17 @@ extension OverlayController: OverlayPresenting {
             }
         }
         return nil
+    }
+
+    /// The step's failure when `title`, read just before a press, names a guarded verb nobody allowed or confirmed.
+    func pressRefusal(title: String?) -> String? {
+        guard let pressGuard, let verb = IrreversibleGuard.unconfirmed(title: title, guard: pressGuard) else { return nil }
+        return "\(verb) not confirmed, look again"
+    }
+
+    /// The same, for the control under `point`; reads nothing outside a model step.
+    func pressRefusal(at point: CGPoint) -> String? {
+        pressGuard == nil ? nil : pressRefusal(title: ax.elementTitle(at: point))
     }
 
     private func run(_ action: Action, isLast: Bool) async -> String? {
@@ -157,12 +322,25 @@ extension OverlayController: OverlayPresenting {
                 try input.type(text)
                 hideStaleOverlay()
             case .pressKey(let chord):
+                // Return, and Space without modifiers, press the focused button.
+                if pressGuard != nil, chord.key == .return || (chord.key == .space && chord.modifiers.isEmpty),
+                   let refusal = pressRefusal(title: ax.focusedElementTitle()) { return refusal }
                 try input.press(chord)
                 hideStaleOverlay()
             case .click(let target, let button, let count):
                 guard (1...3).contains(count) else { return "bad click count" }
+                var target = target
+                var named: [UIElementInfo]?
+                if case .element(let name) = target {
+                    named = await freshElements()
+                    if Task.isCancelled { return Self.cancelled }
+                    // An exact title wins; a position ("first video") that maps to a shown label clicks as that label.
+                    if LabelAssigner.find(exactly: name, in: named ?? []) == nil, let shown = labelSnapshot,
+                       let n = OrdinalTarget.parse(name)?.label(in: shown) { target = .label(n) }
+                }
                 // A numbered element with a ref is clicked semantically; a point click is the fallback.
                 if case .label(let n) = target, let e = labelSnapshot?[n], let ref = e.ref, let harness {
+                    if let refusal = pressRefusal(title: e.title) { return refusal }
                     switch await harness.act(.click(ref: ref, button: button, count: count)) {
                     case .delivered: hideStaleOverlay(); return nil
                     case .failed(let m): return m
@@ -173,9 +351,12 @@ extension OverlayController: OverlayPresenting {
                 }
                 let usedOverlay: Bool
                 if case .numbered = target { usedOverlay = overlay.state != .none } else { usedOverlay = false }
-                switch resolveClick(target) {
+                if named == nil { named = await namedElements(for: target) }
+                if Task.isCancelled { return Self.cancelled }   // a spoken stop during the settle wait must not click
+                switch resolveClick(target, elements: named) {
                 case .failure(let m): return m
                 case .point(let p):
+                    if let refusal = pressRefusal(at: p) { return refusal }
                     try input.click(at: p, button: button, count: count)
                     if usedOverlay { overlay.hide() }
                 }
@@ -185,10 +366,13 @@ extension OverlayController: OverlayPresenting {
                 pressed.insert(b)
             case .releaseMouse(let b):
                 guard let at = input.currentMouseLocation() else { return Self.pointerUnknown }
+                if let refusal = pressRefusal(at: at) { return refusal }
                 try input.mouseUp(b, at: at)
                 pressed.remove(b)
             case .moveCursor(let target):
-                switch resolveMove(target) {
+                let named = await namedElements(for: target)
+                if Task.isCancelled { return Self.cancelled }
+                switch resolveMove(target, elements: named) {
                 case .failure(let m): return m
                 case .point(let p): try input.moveMouse(to: p)
                 }
@@ -205,15 +389,22 @@ extension OverlayController: OverlayPresenting {
                 guard let zoomed = g.zoomed(into: n) else { return "no cell \(n)" }
                 overlay.showGrid(zoomed)
             case .showLabels:
-                overlay.showLabels(LabelAssigner.assign(ax.actionableElements()))
+                let fresh = await freshElements()
+                if Task.isCancelled { return Self.cancelled }
+                overlay.showLabels(LabelAssigner.assign(fresh))
             case .hideOverlay:
                 overlay.hide()
             case .setMode(let mode):
                 onModeChange?(mode)
+            case .setSpokenFeedback(let level):
+                onSpokenFeedbackChange?(level)
             case .openApp(let name):
                 guard ax.activate(appNamed: name) else { return "no app named \(name)" }
                 hideStaleOverlay()
                 if let failure = await waitReady(name, moreActionsFollow: !isLast) { return failure }
+            case .openFile(let request):
+                if let failure = await openFile(request) { return failure }
+                hideStaleOverlay()
             case .openURL(let url, let app):
                 if let failure = await openURLAction(url, app: app, isLast: isLast) { return failure }
             case .moveWindow(let placement):
@@ -239,8 +430,44 @@ extension OverlayController: OverlayPresenting {
                 }
             case .wait(let ms):
                 try? await Task.sleep(for: .milliseconds(ms))
-            case .ignore:
+            case .checkMedia:
+                addReading("Media", await mediaState().rawValue)
+            case .findOnPage(let words, let movePointer):
+                if let failure = try await findOnPage(words, movePointer: movePointer) { return failure }
+                hideStaleOverlay()
+            case .ignore, .look:
                 break
+            case .readPage:
+                if let failure = await readPage() { return failure }
+            case .closeTab(let n):
+                guard let tab = tabSnapshot?.tab(n) else { return "no tab \(n)" }
+                if let failure = try await closeTab(id: tab.id) { return failure }
+            case .closeWindow(let n):
+                guard let window = tabSnapshot?.window(n) else { return "no window \(n)" }
+                if let failure = Self.failure(ax.closeBrowserWindow(id: window.id), gone: "window already closed",
+                                              noControl: "can't close that window") { return failure }
+            case .selectTab(let n):
+                guard let tab = tabSnapshot?.tab(n) else { return "no tab \(n)" }
+                if let failure = Self.failure(ax.selectBrowserTab(id: tab.id), gone: "tab already closed",
+                                              noControl: "can't select that tab") { return failure }
+            case .goToTab(let target):
+                if let failure = try await goToTab(target) { return failure }
+            case .closeOtherTabs:
+                if let failure = closeOtherTabs() { return failure }
+            case .listTabs:
+                if let failure = await listTabs() { return failure }
+            case .editText(let edit, let otherwise):
+                if let failure = try await editText(edit, otherwise: otherwise) { return failure }
+            case .rewriteText(let how):
+                if let failure = try await rewriteText(how) { return failure }
+            case .media(let command):
+                if let failure = try await runMedia(command) { return failure }
+                hideStaleOverlay()
+            case .volume(let change):
+                if let failure = changeVolume(change) { return failure }
+            case .system(let command):
+                if let failure = await runSystem(command) { return failure }
+                hideStaleOverlay()
             case .setValue, .typeInto, .clearField, .selectOption, .setChecked, .setExpanded, .focusElement, .scrollTo,
                  .scrollIn, .drag, .clickIn, .menuItem, .closeApp, .windowAction, .clipboardSet, .readClipboard,
                  .readValue, .readNotifications, .dismissNotifications, .waitFor:
@@ -257,6 +484,198 @@ extension OverlayController: OverlayPresenting {
         }
     }
 
+    static let noBrowser = "no browser in front"
+
+    /// The front window of the front browser and its tabs in strip order, read off the main actor (the read can take its
+    /// whole budget). nil when the front app is not a browser. Tab titles are page text: callers show them on the
+    /// board only, never in a log.
+    private func readFrontTabs() async -> (app: String, window: BrowserWindow?)? {
+        let ax = self.ax
+        guard let read = await Task.detached(operation: { ax.browserWindows() }).value else { return nil }
+        return (read.app, read.windows.first(where: \.front) ?? read.windows.first)
+    }
+
+    /// "tab 3", "last tab", "switch to the YouTube tab": a number from 1 to 8 and "last" press command-1 to command-9
+    /// (no read, works in Firefox); the rest read the strip and press the tab. Only in a browser, so "tab 3" never
+    /// presses command-3 in Finder or Xcode.
+    private func goToTab(_ target: TabTarget) async throws -> String? {
+        guard ax.frontmostIsBrowser() else { return Self.noBrowser }
+        if let chord = TabMatch.chord(for: target) {
+            try input.press(chord)
+            hideStaleOverlay()
+            return nil
+        }
+        guard let (app, window) = await readFrontTabs() else { return Self.noBrowser }
+        // A spoken stop during the read must not let the press go out.
+        if Task.isCancelled { return Self.cancelled }
+        guard let window, !window.tabs.isEmpty else { return "can't read the tabs in \(app)" }
+        let tabs = window.tabs
+        let index: Int
+        switch target {
+        case .number(let n):
+            guard n <= tabs.count else { return window.complete ? "only \(tabs.count) tab\(tabs.count == 1 ? "" : "s")" : "can't read that far in \(app)" }
+            index = n - 1
+        case .named(let words):
+            guard let match = TabMatch.best(words, in: tabs) else { return "no tab called \(words)" }
+            index = match
+        case .last:
+            index = tabs.count - 1
+        }
+        if let failure = Self.failure(ax.selectBrowserTab(id: tabs[index].id), gone: "tab already closed",
+                                      noControl: "can't select that tab") { return failure }
+        hideStaleOverlay()
+        return nil
+    }
+
+    /// "close the other tabs": the browser's own Close Other Tabs menu item, exact title only. A browser with no such
+    /// item (Chrome keeps it in the tab's context menu) fails instead of closing tabs one by one.
+    private func closeOtherTabs() -> String? {
+        guard ax.frontmostIsBrowser() else { return Self.noBrowser }
+        let title = "Close Other Tabs"
+        switch pressMenuItem(title, exactOnly: true) {
+        case .pressed: hideStaleOverlay(); return nil
+        case .disabled: return "menu item \(title) is disabled"
+        case .refused: return "couldn't press menu item \(title)"
+        case .noMatch: return "no \(title) menu item in \(ax.frontmostAppName() ?? "this browser")"
+        }
+    }
+
+    /// "list tabs": the front window's tabs as one line on the board.
+    private func listTabs() async -> String? {
+        guard ax.frontmostIsBrowser() else { return Self.noBrowser }
+        guard let (app, window) = await readFrontTabs() else { return Self.noBrowser }
+        if Task.isCancelled { return Self.cancelled }
+        guard let window, !window.tabs.isEmpty else { return "can't read the tabs in \(app)" }
+        overlay.showHUD(TabMatch.listLine(window.tabs), duration: .seconds(6))
+        return nil
+    }
+
+    private static func failure(_ r: BrowserActionResult, gone: String, noControl: String) -> String? {
+        switch r {
+        case .done: nil
+        case .gone: gone
+        case .noControl: noControl
+        case .failed(let m): m
+        }
+    }
+
+    /// Closes a tab with its own close button; without one, selects it, checks it is now the selected tab in the
+    /// front browser's focused window, and sends command-W. Naming the tab (not "the current one") and checking
+    /// where it lives keeps a focus change between observing and acting from closing the wrong one: command-W
+    /// closes whatever tab is selected in the focused window, not necessarily this tab's.
+    private func closeTab(id: String) async throws -> String? {
+        let gone = "tab already closed"
+        switch ax.closeBrowserTab(id: id) {
+        case .done: return nil
+        case .gone: return gone
+        case .failed(let m): return m
+        case .noControl:
+            guard ax.frontmostIsBrowser() else { return "browser not in front" }
+            let cannot = "can't close that tab"
+            guard ax.browserTabIsInFrontWindow(id: id) else { return cannot }
+            if let failure = Self.failure(ax.selectBrowserTab(id: id), gone: gone, noControl: "can't select that tab") { return failure }
+            try? await Task.sleep(for: .milliseconds(100))
+            // A spoken stop during the pause must not let command-W go out.
+            if Task.isCancelled { return Self.cancelled }
+            guard ax.browserTabIsSelected(id: id) else { return "couldn't select that tab" }
+            guard ax.browserTabIsInFrontWindow(id: id) else { return cannot }
+            try input.press(KeyChord(.w, [.command]))
+            return nil
+        }
+    }
+
+    /// "pause", "next track", "skip ahead", "full screen video", "exit full screen": the route (YouTube's keys in a
+    /// browser on YouTube, else a system key or the window chord) after the checks that stop a toggle doing the
+    /// opposite. A command whose point is already met ("nothing is playing") shows a notice and presses nothing.
+    private func runMedia(_ command: MediaCommand) async throws -> String? {
+        switch command {
+        case .pause, .play:
+            let state = await mediaState()
+            if Task.isCancelled { return Self.cancelled }
+            if command == .pause, state != .playing { overlay.showHUD("nothing is playing"); return nil }
+            if command == .play, state == .playing { overlay.showHUD("already playing"); return nil }
+        default: break
+        }
+        let isBrowser = ax.frontmostIsBrowser()
+        let host = isBrowser ? ax.webURL().flatMap { URL(string: $0)?.host } : nil
+        switch MediaRoute.step(for: command, isBrowser: isBrowser, host: host) {
+        case .siteKeys(let chords):
+            if ax.focusedElementIsTextInput() {
+                // A letter would be typed into the box: play and pause use the system key, the rest fail.
+                switch command {
+                case .play, .pause, .playPause: try input.pressMediaKey(.playPause); return nil
+                default: return "a text box has focus: click the video first"
+                }
+            }
+            for chord in chords {
+                if Task.isCancelled { return Self.cancelled }
+                try input.press(chord)
+            }
+        case .systemKey(let key): try input.pressMediaKey(key)
+        case .windowFullScreen:
+            if ax.focusedWindowIsFullScreen() == true { overlay.showHUD("already full screen"); return nil }
+            try input.press(Self.windowFullScreen)
+        case .exitFullScreen(let siteEscape):
+            guard ax.focusedWindowIsFullScreen() == true else { overlay.showHUD("not in full screen"); return nil }
+            guard siteEscape else { try input.press(Self.windowFullScreen); return nil }
+            // Escape leaves a video's full screen but not the window's: if the window is still full screen, use the chord.
+            try input.press(KeyChord(.escape))
+            try? await Task.sleep(for: fullScreenSettle)
+            if Task.isCancelled { return Self.cancelled }   // a spoken stop during the wait must not press the chord
+            if ax.focusedWindowIsFullScreen() == true { try input.press(Self.windowFullScreen) }
+        case .unsupported(let message): return message
+        }
+        return nil
+    }
+
+    private static let windowFullScreen = KeyChord(.f, [.command, .control])
+
+    /// "volume 30 percent", "volume up", "mute": CoreAudio on the default output. Any level above 0 also unmutes, as the
+    /// volume keys do. The notice shows the new level.
+    private func changeVolume(_ change: VolumeChange) -> String? {
+        do {
+            if case .mute(let on) = change {
+                try volume.setMuted(on)
+                if on { overlay.showHUD("muted"); return nil }
+            } else {
+                guard let current = volume.level(), let target = VolumeMath.apply(change, current: current) else {
+                    return VolumeError.noControl.description
+                }
+                try volume.setLevel(target)
+                if target > 0 { try? volume.setMuted(false) }
+            }
+            overlay.showHUD(volume.level().map { "volume \($0)%" } ?? "unmuted")
+            return nil
+        } catch {
+            return "\(error)"
+        }
+    }
+
+    /// Whether media plays in the front window now, from a native walk of its elements (never agent-desktop).
+    /// The walk runs off the main actor (it can take its whole budget); screen rects are read here first.
+    func mediaState() async -> MediaState {
+        let provider = mediaAX ?? ax
+        let audio = self.audio
+        let screens = provider.screenRectsCG()
+        return await Task.detached {
+            MediaSignal.state(elements: provider.actionableElements(screens: screens), audioPlaying: audio.isPlaying)
+        }.value
+    }
+
+    /// Polls `mediaState()` until it is `playing` (nil) or `timeoutMs` passes ("wait timed out"). Cancellation
+    /// ends it at once.
+    func waitForMediaPlaying(timeoutMs: Int) async -> String? {
+        let deadline = ContinuousClock.now.advanced(by: .milliseconds(timeoutMs))
+        while true {
+            if Task.isCancelled { return Self.cancelled }
+            if await mediaState() == .playing { return nil }
+            let left = ContinuousClock.now.duration(to: deadline)
+            if left <= .zero { return "wait timed out" }
+            try? await Task.sleep(for: min(mediaPoll, left))
+        }
+    }
+
+    var overlayShown: Bool { overlay.state != .none }
     func hideStaleOverlay() { if overlay.state != .none { overlay.hide() } }
 
     /// Open `url` in the named browser or the default one, then wait for it to come to the front when more
@@ -365,28 +784,114 @@ extension OverlayController: OverlayPresenting {
         return .failure("point off screen")
     }
 
-    private func elementsIfNeeded(named: Bool) -> [UIElementInfo] { named ? ax.actionableElements() : [] }
+    /// One walk; if it just exposed a Chromium page tree, wait for the tree to build and walk once more.
+    /// A flag left by a walk nobody re-walked for (the harness paths) is cleared first, so it costs no wait here.
+    /// The caller checks for cancellation after this returns: a cancelled wait returns the thin first walk.
+    private func freshElements() async -> [UIElementInfo] {
+        _ = ax.didJustExpose()
+        let first = ax.actionableElements()
+        guard ax.didJustExpose() else { return first }
+        try? await Task.sleep(for: exposureSettle)
+        return Task.isCancelled ? first : ax.actionableElements()
+    }
 
-    private func resolveClick(_ t: ClickTarget) -> TargetResolution {
+    /// "find <words>": the focused window is walked, offscreen parts included, for the words; the match is scrolled
+    /// into view and kept for `takeFound()`. With `movePointer` (the spoken command) the pointer is left on it, so a
+    /// bare "click" follows; the model's find never moves it. Nothing natively and a harness: agent-desktop's find and
+    /// scroll-to. A cancel (a spoken stop) is seen after the walk and again before the scroll.
+    private func findOnPage(_ words: String, movePointer: Bool) async throws -> String? {
+        found = nil
+        guard words.count <= PageFind.maxWords else { return "text too long" }
+        guard !PageFind.normalize(words).isEmpty else { return "nothing to find" }
+        PipelineLog.info("find: walking the page (len=\(words.count))")
+        _ = ax.didJustExpose()
+        var match = ax.findOnPage(words: words)
+        if ax.didJustExpose() {
+            try? await Task.sleep(for: exposureSettle)
+            if !Task.isCancelled { match = ax.findOnPage(words: words) }
+        }
+        if Task.isCancelled { return Self.cancelled }
+        if let match {
+            guard let frame = await ax.scrollIntoView(match) else {
+                return Task.isCancelled ? Self.cancelled : "couldn't scroll to \(words)"
+            }
+            if Task.isCancelled { return Self.cancelled }
+            var shown = match
+            shown.frame = frame
+            found = shown
+            if movePointer { try input.moveMouse(to: shown.clickPoint(screens: ax.screenRectsCG())) }
+            return nil
+        }
+        if let harness, let m = await harness.find(app: ax.frontmostAppName(), surface: nil, name: words) {
+            if Task.isCancelled { return Self.cancelled }
+            switch await harness.act(.scrollTo(ref: m.ref)) {
+            case .delivered: break
+            case .failed(let message), .notDelivered(let message): return message
+            case .elementChanged: return Self.elementChanged
+            }
+            found = UIElementInfo(id: 0, frame: .zero, title: m.name, role: m.role, ref: m.ref)
+            return nil
+        }
+        return Task.isCancelled ? Self.cancelled : PageFind.failure(words)
+    }
+
+    /// "read_page": the focused window's visible text as one `page:` reading for the next step. A cancel (a spoken
+    /// stop) is seen after the walk, before anything is kept. Always the native walk: an agent-desktop snapshot holds
+    /// no static text.
+    private func readPage() async -> String? {
+        _ = ax.didJustExpose()
+        var runs = ax.pageText()
+        if ax.didJustExpose() {
+            try? await Task.sleep(for: exposureSettle)
+            if !Task.isCancelled { runs = ax.pageText() }
+        }
+        if Task.isCancelled { return Self.cancelled }
+        // Room for the label, so the cut mark is never trimmed off the end.
+        let text = PageText.join(runs, limit: PageText.limit - PageText.readingLabel.count - 2)
+        guard !text.isEmpty else { return Self.noPageText }
+        PipelineLog.info("read_page: \(text.count) characters", detail: text)
+        addPageReading(text)
+        return nil
+    }
+
+    private func namedElements(for target: ClickTarget) async -> [UIElementInfo]? {
+        if case .element = target { return await freshElements() }
+        return nil
+    }
+
+    private func namedElements(for target: MoveTarget) async -> [UIElementInfo]? {
+        if case .element = target { return await freshElements() }
+        return nil
+    }
+
+    private func resolveClick(_ t: ClickTarget, elements: [UIElementInfo]?) -> TargetResolution {
         var needsElements = false, direct = false
         if case .element = t { needsElements = true }
         if case .point = t { direct = true }
         let cursor = input.currentMouseLocation()
         if case .cursor = t, cursor == nil { return .failure(Self.pointerUnknown) }
         return checkOnScreen(TargetResolver.resolveClick(t, overlay: overlay.state, cursor: cursor ?? .zero,
-                                           elements: elementsIfNeeded(named: needsElements),
+                                           elements: elements ?? (needsElements ? ax.actionableElements() : []),
                                            screens: ax.screenRectsCG(), labels: labelSnapshot), checked: direct)
     }
 
-    func resolveMove(_ t: MoveTarget) -> TargetResolution {
+    func resolveMove(_ t: MoveTarget, elements: [UIElementInfo]? = nil) -> TargetResolution {
         var needsElements = false, direct = false
         if case .element = t { needsElements = true }
         switch t { case .point, .relative: direct = true; default: break }
         let cursor = input.currentMouseLocation()
         if case .relative = t, cursor == nil { return .failure(Self.pointerUnknown) }
         return checkOnScreen(TargetResolver.resolveMove(t, overlay: overlay.state, cursor: cursor ?? .zero,
-                                          elements: elementsIfNeeded(named: needsElements),
+                                          elements: elements ?? (needsElements ? ax.actionableElements() : []),
                                           screens: ax.screenRectsCG(), labels: labelSnapshot), checked: direct)
+    }
+
+    /// A spoken stop: releases a mouse button a command left held (`hold click`), leaving any grid or labels shown.
+    /// Does nothing during a native drag: the drag releases its own button when it ends or fails.
+    public func releaseHeldButton() {
+        guard !dragInFlight else { return }
+        input.releaseAll()
+        pressed = []
     }
 
     /// Safety net for pause/quit: release any held mouse button and drop any grid/labels overlay.

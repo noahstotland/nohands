@@ -1,0 +1,221 @@
+# Voice commands
+
+Everything NoHands understands without a model. Anything else goes to Claude or the local model as a task (see [Tasks](tasks.md)). Back to the [README](../README.md); settings are in [Configuration](configuration.md).
+
+| Say | Does |
+|---|---|
+| `type <words>` | Types the words, spoken punctuation applied |
+| `spell <letters>` | Letters, NATO words (`kilo`, `x ray`), digits, `space`, `dash`, `dot`, `underscore`, `at sign` as one string; `capital` uppercases the next letter (`spell capital kilo nine x ray` types `K9x`) |
+| `press command shift s` | Presses a key chord |
+| `enter`, `tab`, `escape`, `delete`, arrow names | Presses that key |
+| `undo`, `redo`, `copy`, `paste`, `cut`, `select all`, `save`, `find` | Standard shortcuts |
+| `select word`, `select line`, `select sentence`, `select paragraph`, `select the last word`, `select the last sentence` | Selects that unit at the caret in the focused text field (the last whole word or sentence that ends before the caret). The same with `delete` removes it (`delete the last sentence`, `delete line` takes the whole line and its newline). Without a text field the row says `no text field: click into one first` |
+| `select <words>`, `delete <words>`, `replace <words> with <words>`, `go before <words>`, `go after <words>` | Finds the words in the focused text field (case does not matter, whole words only, a leading `the`, `a`, `an` or `my` is optional) and selects, deletes, replaces or puts the caret next to them. The nearest match before the caret wins, else the nearest after it (with a selection, a match inside it does not count as after); no guess at near matches: a miss says `no "<words>" in the text`. `replace coffee with tea` splits at the first `with`; a replacement keeps a capital the old words started with. The words must be in a text field you have focused, so `select the second option` in a list still goes to the model |
+| `go to the end of the line`, `go to the start of the line` (`beginning`), `go to the end of the document`, `go to the start of the document` (`top`, `bottom`) | Moves the caret with the arrow keys, in any text field, with no read |
+| `capitalize that`, `uppercase that`, `lowercase that` | Changes the case of the selection, or of the word before the caret when nothing is selected (`capitalize` raises each word's first letter) |
+| `make that shorter`, `longer`, `clearer`, `simpler`, `more concise`, `more formal`, `more casual`, `more polite`, `more professional`, `friendlier`; `say it more politely` (`formally`, `casually`, `clearly`, `simply`, `concisely`, `professionally`); `fix the grammar`, `fix the grammar in that`, `fix the spelling`, `proofread that`; `translate that to French`; `rewrite that`, `rewrite that as a list` | Asks the model to rewrite the selection (with nothing selected, the last sentence before the caret) and types the answer over it, so `undo` takes it back. **The selected text is sent to Claude, or to the local model on this Mac** ([Privacy](privacy.md)). Command mode only, in a text field you have focused; at most 2,000 characters. The row shows `rewriting…`, then the first words of the answer; `stop` cancels it before anything is typed |
+| `new tab`, `close tab`, `close window`, `quit app`, `switch app`, `spotlight` | App and window shortcuts; filler ignored (`close the current tab`, `close this window`) |
+| `no, the other one`, `the next one`, `also …`, `instead …` (within 30 s of a task) | A follow-up that refers to the task that just ended: the model sees its goal and steps. Goes to the model as a task, not the grammar; see [Tasks](tasks.md#multi-step-tasks) |
+| `forget that route` | Drops the saved route the last task was given as a hint and the one it saved (see [Tasks](tasks.md#multi-step-tasks)). The row says `forgot that route`, or `no route to forget` when the last task had none. Never goes to the model; also works as a macro step |
+| `forget all routes` | Empties `~/.config/nohands/routes.json` (the file stays, with no routes). The row says `forgot all routes`. Also works as a macro step |
+| `minimize`, `full screen`, `hide app`, `reload` / `refresh` | Window and app shortcuts |
+| `left half`, `right half`, `snap left`, `top left`, `maximize`, `center window` | Moves and resizes the front window; richer phrasing such as `make the window half width and snap to the left side of the screen` goes to the model |
+| `go back`, `go forward`, `next tab`, `previous tab` | Browser and tab navigation |
+| `tab 3`, `tab number 3`, `switch to tab 3`, `go to tab 3`, `first tab`, `last tab` | Tab 1 to 99; outside a browser `no browser in front` |
+| `switch to the YouTube tab`, `go to the YouTube tab`, `open the YouTube tab` | Tab by title; miss: `no tab called …` |
+| `close the other tabs`, `close other tabs`, `close all other tabs` | Close Other Tabs menu item; none (Chrome): `no Close Other Tabs menu item in …` |
+| `list tabs`, `list the tabs`, `list my tabs` | Board line for a few seconds: `1 YouTube · 2* Inbox · 3 GitHub` |
+| `go to <site>` | Site or domain in the default browser; other text goes to the address bar |
+| `search for <words>` | The page's or app's search box, else a known results page (YouTube, Google, Amazon, Reddit, Wikipedia…), else the address bar. Refused: `javascript:`, `file:`, `chrome:`, any `scheme:text`: `can't search for that` |
+| `search for <words> on <site>`, `search <site> for <words>` | That site's search box if in front, else its results page |
+| `is it playing`, `is the video playing`, `is anything playing` | Row says `playing`, `paused` or `none` |
+| `play`, `resume`, `pause`, `play pause`, `toggle play` (also `play the music`, `pause the video`, `pause the music`; `play the video` goes to the model) | In a browser on a YouTube page, presses the player's `k`; anywhere else, the Mac's play key, which goes to the app macOS treats as Now Playing (Music, Spotify, a browser tab), not necessarily the window in front. `pause` does nothing (`nothing is playing`) unless the front window or the Mac shows playing (a window with no visible Pause or Play button is judged by sound from any app, so `pause` may say `nothing is playing` while a quiet player is open), and `play` does nothing (`already playing`) while it plays, so neither turns into its opposite; `play pause` always toggles. If a text box has focus on the YouTube page, the system play key is used so no letter is typed |
+| `next track`, `next song`, `next video`, `previous track`, `previous song`, `previous video` | On YouTube, shift-N and shift-P; anywhere else, the Mac's next and previous keys. With a text box focused on YouTube it fails with `a text box has focus: click the video first` |
+| `skip ahead`, `skip forward`, `skip back`, `skip backward`, each with an optional `<n> seconds` | YouTube only (`j` and `l`, 10 seconds a press; the default is 10 seconds, `<n>` is 1 to 600 and is rounded to the nearest 10, so 1 to 4 seconds still moves 10); elsewhere the row says `skip works on YouTube only`. Bare `skip` is not a command |
+| `full screen video`, `video full screen`, `make the video full screen` | On YouTube, the player's `f`; elsewhere, the window's full screen (command-control-F), unless the window is already full screen (`already full screen`). Bare `full screen` is still command-control-F |
+| `exit full screen`, `leave full screen` | Leaves full screen only when the front window is in it (YouTube: escape, then command-control-F if the window is still full screen; elsewhere command-control-F); otherwise it says `not in full screen` and presses nothing |
+| `volume up`, `volume down`, `turn it up`, `turn it down`, each with an optional `<n>` | Steps the Mac's output volume by 10 points, or `<n>` steps (1 to 10); `volume up 20 percent` moves by that many points (1 to 100). Any level above 0 also unmutes |
+| `volume 40`, `volume 40 percent`, `volume 40%`, `set volume to 40`, `set the volume to 40 percent` | Sets the output volume (0 to 100, a larger number becomes 100) and shows `volume 40%`. A device with no volume control (some displays and HDMI outputs) says `this speaker has no volume control` |
+| `mute`, `mute sound`, `unmute`, `unmute sound` | Mutes or unmutes the Mac's speakers (the output device), not a call's microphone; saying `mute` twice stays muted. An output with no mute switch says `this speaker can't be muted` |
+| `lock screen`, `lock the screen`, `lock computer`, `lock the mac` | Locks the Mac (control-command-Q). Nothing unlocks it by voice: you need the password or Touch ID |
+| `screenshot`, `take a screenshot`, `screenshot screen` | Whole screen, saved where macOS saves screenshots (command-shift-3) |
+| `screenshot selection`, `screenshot area` | The crosshair (command-shift-4): drag with `hold click`, `move …`, `release click`, or say `escape` to cancel |
+| `screenshot window` | The camera pointer (command-shift-4, then space): `click` takes the window under the pointer, `escape` cancels |
+| `mission control`, `show desktop` | Opens Mission Control, or shows the desktop (say it again to bring the windows back); works whatever those shortcuts are bound to |
+| `next space`, `previous space` | Switches to the Space on the right or left (control-right and control-left); with one Space nothing happens |
+| `notification center`, `notification centre`, `show notifications` | Presses the clock in the menu bar; none: `can't find the menu bar clock: show it in System Settings > Control Center` |
+| `open settings for <pane>`, `open <pane> settings`, `<pane> settings` | Opens that System Settings pane. Panes: `wifi` (`wi-fi`, `wi fi`), `bluetooth`, `sound` (`audio`), `displays` (`display`), `accessibility`, `privacy` (`privacy and security`, `security`), `login items` (`startup items`), `notifications`, `battery`, `general`, `automation`. An unknown name after `open settings for` says `no settings pane called <name>: say open system settings` and opens nothing; `open <name> settings` with another name still opens an app of that name, and `open system settings` is unchanged. `open settings for <pane>` drops filler words such as `the`, `a` and `please`; a name with `and`, `then` and the like, or a name of more than four words after fillers are dropped, goes to the model |
+| `empty trash`, `empty the trash` | Asks first, then presses Finder's `Empty Trash…` item, so Finder asks `Are you sure you want to permanently erase the items in the Trash?`: answer `enter` or `escape` yourself, NoHands does not. If Finder's `Show warning before emptying the Trash` is off the row says `Finder's Trash warning is off: turn it on in Finder Settings > Advanced, or empty the Trash by hand` and nothing is pressed; an empty Trash says `the Trash is already empty` |
+| `dark mode`, `dark mode on`, `turn on dark mode`, `turn dark mode on`, `switch to dark mode` | Sets the appearance to Dark through System Events. The first time, macOS asks to let NoHands control System Events: the row says `allow NoHands in the prompt, then say dark mode again`, and nothing changes yet (`press enter` accepts, or `show numbers` and click Allow). Say it again after allowing; the row says `dark mode`. Denied: `allow NoHands to control System Events: say open automation settings`; System Events slow: `System Events didn't answer: say it again`; other: `couldn't change dark mode (error <n>)`. Setting Dark or Light turns Auto off, as System Settings does |
+| `light mode`, `dark mode off`, `turn off dark mode`, `turn dark mode off`, `switch to light mode`, `light mode on` | Sets the appearance to Light the same way; the row says `light mode` |
+| `toggle dark mode` | Switches between Dark and Light; the row says which one it is now |
+| `do not disturb`, `do not disturb on`, `turn on do not disturb` | Runs your Shortcut `NoHands Do Not Disturb On` (see below); the row says `do not disturb on`. Missing: `no shortcut called NoHands Do Not Disturb On: make it in Shortcuts`; failed: `the NoHands Do Not Disturb On shortcut failed`; slow: `the shortcut didn't finish` |
+| `do not disturb off`, `turn off do not disturb` | Runs your Shortcut `NoHands Do Not Disturb Off` the same way; the row says `do not disturb off` |
+| `click`, `double click`, `right click`, `middle click` | Clicks at the pointer |
+| `click 42`, `double click 12`, `right click 12` | Clicks label or grid cell 42; `double click` and `right click` take a number the same way |
+| `click save` | Clicks the element named "save" |
+| `click first video`, `click the second result`, `click the 3rd link`, `click last video` | With no exact title, the position among numbered elements (`first` to `tenth`, `1st`, `2nd`, … `last`); too few: `no element named …; say its label number from the list` |
+| `drag 5 to 12`, `drag from 5 to 12` | Drags from label or grid cell 5 to 12 (numbers only; `drag the file to the trash` goes to the model). The drag moves in steps and takes about a third of a second, and a stop during it waits for the release. NoHands can't undo a drag: say `undo` where the app supports it |
+| `hold click` / `release click`, `click 12 and hold` | Press and release the button (drag by hand). `click 12 and hold` moves to 12 and presses (numbers only, left button). Between them `move to 30`, `move down 100` and `move to center` are drags; `escape` cancels the drag in most apps. `release click` or any stop phrase (`stop`, `cancel`) lets go, with or without a task running, and `stop` keeps the grid up |
+| `move up 100`, `move to 12`, `move to center`, `move to the center of the screen` | Moves the pointer; `center` is the middle of the screen the pointer is on (`centre` works too) |
+| `scroll down 10` | Scrolls |
+| `find <words>` | Scrolls until text or an element with those words shows, pointer left on it; bare `find` is command-F; none: `no match for <words> on this page` |
+| `scroll to <words>` | Same as `find <words>`; `scroll to the left` and the other directions go to the model |
+| `scroll to the top`, `scroll to top`, `top of page`, `top of the page` | Jumps to the top of the page (command-up; in a focused text field it moves the caret to the start). Terminal's own `scroll to top` still goes to the scrollback |
+| `scroll to the bottom`, `scroll to bottom`, `bottom of page`, `bottom of the page` | Jumps to the bottom of the page (command-down) |
+| `grid`, `zoom 35`, `show numbers`, `hide` | Targeting overlays; `zoom <n>` is the grid |
+| `zoom in`, `zoom out`, `actual size`, `reset zoom` | Makes the page bigger or smaller (command-equals, command-minus), or back to normal size (command-0), in browsers, Preview and most apps; always the page, never the grid. `zoom out` and `actual size` undo `zoom in` |
+| `open safari` | Opens or focuses an app |
+| `open youtube`, `open youtube.com`, `open reddit in safari` | Website in the default or named browser (any `name.com` works) |
+| `open the downloads folder`, `open my documents folder` | Opens a standard folder in Finder: Desktop, Documents, Downloads, Pictures, Music, Movies, Home (`home folder`), Applications (`apps folder`) or Trash; singular or plural |
+| `open the trash`, `open trash` | Opens the Trash in Finder. No other folder has a bare form: `open music`, `open home` and `open photos` stay apps |
+| `open the reports folder` | Finds a folder whose name has every word (Spotlight, in your home folder) |
+| `open file budget`, `open the budget file` | Finds files (not folders) whose name has every word |
+| `open the budget document`, `… spreadsheet`, `… presentation`, `… pdf` (`the` or `my` needed) | The same, of that kind |
+| `open my last keynote`, `open the last pdf`, `open my latest spreadsheet`, `open my most recent word document` | Opens the file of that kind you used last, with no list; kinds: `file`, `document`, `spreadsheet`, `presentation`, `pdf`, `keynote`, `pages`, `numbers`, `word`, `excel`, `powerpoint`; none: `no recent <kind>` |
+| `1` to `6`, `number 2`, `open 2`, `first` to `sixth` (while a list shows) | Opens that file. Several matches show up to six rows (name and folder) under the prompt, ranked by exact name, then last used; the row says `say 1 to 6, or cancel` (and `more: say more words` when there were more). A number out of range asks again; `cancel` or `stop` closes the list; any other command closes it and runs; 30 s of silence closes it (`no pick: say it again`). Zero matches: `no file called <words>` |
+| `stop` | Halts the running task, and also cuts NoHands' own voice if it is speaking. It is checked before anything else, so it works even over the speech |
+| `start dictating` / `stop dictating` | Switch between command and dictation mode |
+| `scratch that` (dictation) | Deletes what your last dictated phrase typed |
+| `delete word` (dictation) | Deletes the previous word |
+| `delete that` | Presses Delete (it removes what is selected) |
+| `go to sleep` / `wake up` | Pause and resume listening |
+| `spoken feedback on`, `turn on spoken feedback` | NoHands says how a task ended (level `outcomes`) and confirms with `Spoken feedback on.` |
+| `spoken feedback all`, `speak everything` | Also says the model's questions, `Say yes to …` and what a task read (level `all`), and confirms with `Spoken feedback all.` |
+| `spoken feedback off`, `turn off spoken feedback` | Stops all speech. Each of these changes the `speakFeedback` setting at once and saves it ([Configuration](configuration.md)) |
+| `menu <words>` | Presses the front app's menu item through Accessibility, e.g. `menu bookmark this tab`, `menu save as`; none: `no menu item called <words>`; greyed: `menu item <title> is disabled`; the Apple menu is never searched (no `menu shut down`) |
+| `<macro name>` (from `macros` in config) | Runs its steps in order on one row (`step 2 of 4 · go to …`); a failure or a stop ends it at that step |
+
+**Asks first.** A phrase marked `Asks first` does not run when NoHands hears it. The row shows `say yes to send message` (read aloud at spoken feedback `all`) and waits up to 30 s. Say `yes`, `confirm` or `do it`, with `please` before or after if you like (`please yes`); with an attention word set, start with it (`computer, yes`). Anything else drops the phrase (`not confirmed`) and is not run as a command: `yeah`, `yes send it`, `next message`. Silence for 30 s drops it too (`no yes in 30 s`), and `stop` always does. A phrase for another app waits for its own app: if you switch away before saying yes, it does not run (`Mail is no longer in front: say it again`). In a macro, a step that asks waits the same way and a no ends the macro. Packs you install can add the same ask to their own phrases ([App packs](app-packs.md#asking-first)). `nohands-cli run` will not run a phrase that asks first.
+
+Files open only from inside your home folder (not `~/Library`, dot folders or anything a link points out of home) and never programs: apps, scripts, installers and files with an execute bit are refused (`won't open <name>: it can run as a program`). Words are matched against the name as you said them; a compound phrase (`open the budget and print it`) goes to the model.
+
+Details: `docs/superpowers/specs/2026-11-16-nh-58-open-files-design.md`, `docs/superpowers/specs/2026-11-05-nh-10-spell-command-design.md`, `docs/superpowers/specs/2026-11-15-nh-53-browser-tabs-design.md`, `docs/superpowers/specs/2026-11-05-nh-15-search-on-site-design.md`, `docs/superpowers/specs/2026-11-15-nh-93-ordinal-click-target-design.md`, `docs/superpowers/specs/2026-11-15-nh-44-find-on-page-design.md`.
+
+- The `open settings for <pane>` names can't be used as macro names. The `Empty Trash…` item is matched by its English title only; with another system language the row says `no Empty Trash item in Finder`.
+- The lock, screenshot and Space phrases press macOS's own shortcuts (control-command-Q, command-shift-3 and -4, control-left and control-right). If you rebound or turned one off in System Settings > Keyboard > Keyboard Shortcuts, its phrase does nothing. The model is never given these commands. Details: `docs/superpowers/specs/2026-11-16-nh-52-system-controls-design.md`.
+- **Dark mode** sends System Events one fixed script (it sets the appearance and nothing else) and asks for the Automation permission only the first time you say a dark-mode phrase. The permission is per app: only System Events is ever asked about, but a grant lets an app send System Events any command, so allow it only if you are comfortable with that. To change it later, say `open automation settings` (System Settings > Privacy & Security > Automation). Details: `docs/superpowers/specs/2026-11-16-nh-163-dark-mode-design.md`.
+- **Do Not Disturb** has no public API, so NoHands runs two Shortcuts you make once, with exactly these names. In Shortcuts, make a new shortcut named `NoHands Do Not Disturb On` with one action, Set Focus: Do Not Disturb, Turn On; make `NoHands Do Not Disturb Off` the same way with Turn Off; run each once from Shortcuts so macOS lets it run. Other Focus modes are not covered.
+- With `attentionWord` set, start each command with it: `computer, new tab`.
+- In a browser `show numbers` and `click <name>` can take about half a second longer (a second on the first per launch in Chromium).
+- In dictation mode, say `period`, `comma`, `question mark`, `new line`, `new paragraph`, `open quote` and similar to insert punctuation. The text-editing commands work while you dictate too, and `scratch that` forgets what it can no longer undo after one. A phrase command (`delete the old files`, `replace meeting with call`) edits only when those words are in the field; otherwise the words you said are typed like any other dictation.
+
+**How text editing works.** The app reads the focused field through Accessibility (the field's text stays on the Mac and is never logged), works out the range, selects it and types the replacement or presses Delete, so the app's own undo (`undo`) takes the edit back. Reading the field takes at most half a second, and a field over 200,000 characters counts as unreadable, as do password fields. Where the field cannot be read or will not take a selection (some web editors, Google Docs), `select`/`delete` of a word, line or paragraph use keyboard shortcuts instead; sentences, `<words>` and case changes need a readable field and say `can't read the text here: select it by hand or say "select line"`. `go to the end of the line` and the other caret moves always use keyboard shortcuts.
+
+**How rewriting works.** It reads the focused field as the editing commands do, sends only the selection (or the last sentence) and a short instruction, then checks the field is unchanged before typing the answer; if you typed or clicked meanwhile it types nothing and says `the text changed: say it again`. A line break in the answer becomes a space when the selection had none, so a rewrite never presses Return in a chat box. When the selection had line breaks, a multi-line answer is typed line by line with Shift-Return between them, and tabs in the answer become spaces. In TextEdit, Notes, Mail and Pages a multi-line answer comes back as one paragraph with soft line breaks (Shift-Return). In a spreadsheet cell or a one-line field a selection with line breaks is not worth rewriting. A `stop` while it is typing leaves what was typed so far (say `undo`). It needs a model (`rewrite needs a model: add a Claude key or set up the local model`; `rewrite is off` when `intentBackend` is `off`) and a field NoHands can read (`can't read the text here: rewrite needs a field NoHands can read`). It is not a dictation command: while dictating, `make it shorter` is typed as words. Phrases outside this list (`make it bigger`, `make the window wider`) work as before.
+
+## Per-app commands
+
+An app can have phrases that work only while it is in front and win on a shared phrase. Leading `open`, `go to` and `a` / `the` are ignored in lookup (`open a new tab`, `go to the new tab`, `new tab` are the same); where the app lacks the phrase, `open <phrase>` (two or more words) runs the global one (`open a new tab` presses command-T). Each app adds its rows below. Details: `docs/superpowers/specs/2026-11-15-nh-76-per-app-commands-design.md`.
+
+| App | Say | Does |
+|---|---|---|
+| Terminal | `new window` | Opens a new Terminal window |
+| Terminal | `clear`, `clear all` | Clears the screen and the scrollback (command-K) |
+| Terminal | `clear screen` | Clears the screen only |
+| Terminal | `clear scrollback`, `clear history` | Clears the scrollback only |
+| Terminal | `scroll to top`, `scroll to bottom` | Jumps to the start or end of the scrollback |
+| Terminal | `split pane`, `close pane` | Splits the window, or closes the split pane |
+| Terminal | `bigger font`, `smaller font`, `default font size` | Changes the font size |
+| Terminal | `interrupt`, `cancel command` | Sends control-C to the running command |
+| Mail | `new message`, `compose` | Opens a new message |
+| Mail | `reply`, `reply all`, `forward` | Replies to, replies to all on, or forwards the selected message |
+| Mail | `send`, `send message`, `send email` | Sends the open draft. Asks first |
+| Mail | `undo send` | Takes the send back while Mail's undo delay runs |
+| Mail | `next message`, `previous message` | Moves the selection in the message list |
+| Mail | `get mail`, `check mail` | Checks for new mail |
+| Mail | `mark as read`, `mark as unread` | Toggles read and unread |
+| Mail | `flag`, `unflag` | Toggles the flag |
+| Mail | `archive`, `junk` | Archives the message, or moves it to Junk |
+| Mail | `delete message`, `trash message` | Moves the message to Trash (`undo` brings it back). Asks first |
+| Mail | `show mailboxes`, `hide mailboxes` | Toggles the mailbox list |
+| Mail | `go to inbox`, `go to sent` | Opens the Inbox, or Sent |
+| Mail | `search mail` | Focuses the search field (then say or type what to find) |
+| Mail | `attach a file` | Opens the Attach Files sheet |
+| Mail | `close message` | Closes the front Mail window (a draft shows Mail's own save sheet) |
+| VS Code | `command palette`, `quick open`, `go to line` | Opens the palette, the file picker, or the line box (then say `type 42`, `enter`) |
+| VS Code | `go to definition`, `find references` | Jumps to the definition, or peeks the references |
+| VS Code | `next editor`, `previous editor`, `close editor`, `split editor` | Moves along, closes or splits editors |
+| VS Code | `toggle sidebar`, `explorer`, `source control`, `extensions`, `problems` | Shows the side bar or a view in it |
+| VS Code | `save all`, `format document`, `rename symbol`, `toggle comment` | Edits the file |
+| VS Code | `move line up`, `move line down`, `duplicate line` | Moves or copies the current line |
+| VS Code | `find in files`, `find and replace`, `replace in files` | Searches, or replaces in the file or the project |
+| VS Code | `toggle terminal`, `new terminal` | Shows the integrated terminal, or opens a new one |
+| VS Code | `start debugging`, `toggle breakpoint`, `step over`, `step into`, `step out` | Drives the debugger |
+| VS Code | `zen mode`, `new window`, `settings` | Window and settings |
+| Messages | `new message`, `compose` | Starts a new message (command-N) |
+| Messages | `next conversation`, `previous conversation` | Moves between conversations |
+| Messages | `search`, `search messages` | Focuses the conversation search field |
+| Messages | `show details`, `info` | Shows the conversation details |
+| Messages | `mark as unread`, `mark as read` | Marks the conversation through the Conversation menu |
+| Messages | `emoji`, `add emoji` | Opens the emoji picker |
+| Messages | `tapback`, `react` | Opens the tapback picker |
+| Messages | `close window` | Closes the Messages window (command-W) |
+| Messages | `delete conversation` | Opens Messages' own delete confirm. Asks first |
+| Safari | `new window`, `new private window` | Opens a new window, or a new private window |
+| Safari | `reopen closed tab`, `reopen closed window` | Reopens whatever closed last, tab or window |
+| Safari | `address bar`, `focus address bar` | Focuses the address bar |
+| Safari | `bookmark this page`, `add bookmark` | Bookmarks the page |
+| Safari | `show bookmarks`, `hide bookmarks` | Toggles the bookmarks sidebar |
+| Safari | `edit bookmarks`, `all bookmarks` | Opens the bookmark editor |
+| Safari | `add to reading list`, `read later` | Adds the page to the Reading List |
+| Safari | `show reading list`, `hide reading list` | Toggles the Reading List sidebar |
+| Safari | `show history`, `history` | Shows your browsing history |
+| Safari | `show downloads`, `downloads` | Shows Safari's downloads |
+| Safari | `tab overview`, `show all tabs` | Toggles Tab Overview |
+| Safari | `show sidebar`, `hide sidebar` | Toggles the sidebar |
+| Safari | `reader`, `reader mode` | Toggles Reader |
+| Safari | `favorites bar`, `hide favorites bar` | Toggles the favorites bar |
+| Safari | `hard reload`, `reload from origin` | Reloads the page without the cache |
+| Safari | `view source`, `page source` | Shows the page source |
+| Safari | `print page`, `print this page` | Opens the print dialog |
+| Safari | `home page` | Opens your Safari home page |
+| Safari | `move tab to new window` | Moves the current tab into its own window |
+| Safari | `merge all windows` | Merges all Safari windows into one |
+| Finder | `new window`, `new folder` | Opens a new Finder window, or creates a new folder |
+| Finder | `go to downloads`, `go to my documents`, `go home` | Moves the front window to that folder (also desktop, applications, iCloud Drive) |
+| Finder | `go to folder` | Opens Go to Folder (then `type ~/Projects`, `enter`) |
+| Finder | `go up` | Goes up a folder |
+| Finder | `icon view`, `list view`, `column view`, `gallery view` | Switches the view |
+| Finder | `show sidebar`, `show path bar` | Toggles the sidebar, or the path bar |
+| Finder | `get info`, `open`, `quick look` | Gets info on, opens, or previews the selection |
+| Finder | `duplicate`, `make alias`, `rename` | Duplicates, makes an alias of, or starts renaming the selection |
+| Finder | `move here` | Moves the copied files into this folder |
+| Finder | `move to trash`, `delete this file` | Trashes the selection (`undo` brings it back). Asks first |
+| Finder | `put back` | Puts the selection back from the Trash |
+| Finder | `show hidden files` | Toggles hidden files |
+| Finder | `search` | Focuses the search field |
+| Finder | `close window` | Closes the front Finder window |
+| Chrome | `new window`, `new incognito window`, `incognito window`, `incognito` | Opens a window or a private window |
+| Chrome | `reopen closed tab`, `reopen tab`, `reopen last tab`, `restore tab` | Reopens the last closed tab |
+| Chrome | `duplicate tab`, `duplicate this tab`, `pin tab`, `pin this tab`, `unpin tab`, `unpin this tab` | Duplicates, pins or unpins the tab |
+| Chrome | `move tab to new window`, `move tab to a new window`, `move this tab to a new window` | Moves the tab to its own window |
+| Chrome | `search tabs`, `tab search` | Opens tab search |
+| Chrome | `hard reload`, `force reload`, `hard refresh` | Reloads without the cache |
+| Chrome | `home page`, `go home` | Goes to the home page |
+| Chrome | `find next`, `find previous` | Steps through the find matches |
+| Chrome | `view source`, `view page source`, `page source`, `developer tools`, `dev tools`, `devtools`, `javascript console` | Opens the page source, DevTools or the console |
+| Chrome | `print page`, `print this page`, `save page`, `save page as`, `save this page` | Opens the print or save dialog |
+| Chrome | `bookmark this page`, `bookmark this tab`, `bookmark page`, `add bookmark`, `bookmark all tabs` | Bookmarks the tab, or all tabs |
+| Chrome | `bookmarks bar`, `show bookmarks bar`, `hide bookmarks bar`, `toggle bookmarks bar` | Toggles the bookmarks bar |
+| Chrome | `bookmark manager`, `bookmarks`, `manage bookmarks` | Opens the bookmark manager |
+| Chrome | `history`, `show history`, `browsing history`, `downloads`, `show downloads` | Opens history or downloads |
+| Chrome | `extensions`, `show extensions`, `manage extensions`, `settings`, `chrome settings`, `preferences` | Opens extensions or Chrome's settings |
+| Chrome | `delete browsing data` | Opens Chrome's Delete Browsing Data dialog. Asks first |
+| Chrome | `address bar`, `focus address bar`, `location bar`, `url bar` | Focuses the address bar (command-L) |
+
+The global `new tab`, `close tab`, `close window`, `next tab`, `previous tab`, `find`, `page up` and `page down` also work in Terminal. Closing a tab or window with a running command shows Terminal's own confirm, which NoHands does not answer (say `enter` or `escape`). `stop` never interrupts a shell command; say `interrupt`. `top of page` and `bottom of page` press command-up and command-down in Terminal too; its own `scroll to top` and `scroll to bottom` still win there.
+
+The global `find`, `next tab`, `previous tab` and `search for <name>` also work in Messages. `delete conversation` asks you first, and then Messages asks its own question, which NoHands does not answer for you (say `enter` or `escape`). Sending stays `enter` (or `press return`), so there is no `send` phrase. Pin and unpin are not phrases yet: say them as a request and the model handles them.
+
+In Finder the global `new tab`, `close tab`, `go back`, `go forward`, `copy`, `paste`, `select all`, `undo` and `find` work as elsewhere. `go to <place>` changes the front window, while `open the downloads folder` still opens that folder as before. The sidebar, path bar, hidden files and Quick Look phrases toggle. `move to trash` is undone by `undo` or `put back`, `rename` only starts editing (say `enter` to finish), and `empty trash` asks you first and then still asks Finder's own question.
+
+In Chrome the global `new tab`, `close tab`, `close window`, `next tab`, `previous tab`, `reload`, `go back`, `go forward`, `find`, `zoom in`, `zoom out` and `full screen` work as elsewhere, and every phrase above also works with a leading `open` and `a` or `the` (`open a new window`). In Chrome `find next` and `find previous` step through the find matches (command-G, shift-command-G) instead of moving the pointer to the word on the page. `go to downloads`, `go to history` and `go to settings` open Chrome's own pages instead of typing the words into the address bar. Say `escape` to stop a page load (there is no spoken stop). `open settings` opens Chrome's settings while it is in front (`open system settings` still opens System Settings). `delete browsing data` only opens the dialog; NoHands does not press anything in it. There is no translate or reading mode phrase because Chrome has no menu-bar item for either.
+
+In Mail, read, flag, junk and the mailbox list are toggles. `go to inbox` and `go to sent` open the first Favorites mailbox and the Sent favorite, so they need Inbox and Sent in the Favorites bar. `next message` and `previous message` move the selection while the message list has focus. The global `delete`, `undo`, `find`, `up` and `down` keep their meaning while writing a message.
+
+The global `new tab`, `close tab`, `close window`, `next tab`, `previous tab`, `reload`, `go back`, `go forward`, `find`, `zoom in`, `zoom out`, `actual size` and `tab 3` work in Safari as they do elsewhere. The sidebar, bookmarks sidebar, Reading List, Reader, favorites bar and Tab Overview phrases toggle, so `hide reading list` while the list is hidden shows it. `view source` needs Safari's "Show features for web developers" setting, and `hard reload` may need it too. `reopen closed tab` reopens whatever closed last, a tab or a window. With Safari in front, `open downloads` shows Safari's downloads; `open the downloads folder` still opens the folder.
+
+In VS Code the global `save`, `find`, `close tab`, `close window`, `full screen`, `undo`, `redo`, `copy`, `paste` and `select all` work as elsewhere, and `new tab`, `next tab`, `previous tab`, `go back` and `go forward` do the VS Code thing (new file, next or previous editor, navigate back or forward). VS Code phrases that start with `find`, `go to` or `open` (`find references`, `go to line`, `open extensions`) win over the page search, the address bar and app opening while it is in front. `open settings` opens VS Code's settings while it is in front (`open system settings` still opens System Settings). Show, hide and toggle `sidebar` and `terminal` are all one toggle, so `hide sidebar` on a hidden side bar shows it. There is no spoken "stop debugging" (`stop` always halts NoHands): use the debug toolbar or `menu stop debugging`.
+
+More apps: install a pack file with `nohands-cli pack add`; see [App packs](app-packs.md).

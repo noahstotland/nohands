@@ -1,4 +1,5 @@
 import Testing
+import os
 import CoreGraphics
 import Foundation
 import NoHandsCore
@@ -11,7 +12,12 @@ final class FakeInput: InputSynthesizing, @unchecked Sendable {
     var location: CGPoint? = CGPoint(x: 10, y: 20)
     var throwOnType = false
     func type(_ text: String) throws { if throwOnType { throw Boom() }; calls.append("type:\(text)") }
-    func press(_ chord: KeyChord) throws { calls.append("press") }
+    var chords: [KeyChord] = []
+    var mediaKeys: [SystemMediaKey] = []
+    func press(_ chord: KeyChord) throws { calls.append("press"); chords.append(chord) }
+    func pressMediaKey(_ key: SystemMediaKey) throws { calls.append("mediaKey"); mediaKeys.append(key) }
+    var hardwareArrows: [KeyChord] = []
+    func pressHardwareArrow(_ chord: KeyChord) throws { calls.append("arrow"); hardwareArrows.append(chord) }
     func moveMouse(to point: CGPoint) throws { calls.append("move:\(Int(point.x)),\(Int(point.y))") }
     func click(at point: CGPoint, button: MouseButton, count: Int) throws { calls.append("click:\(Int(point.x)),\(Int(point.y))") }
     func mouseDown(_ button: MouseButton, at point: CGPoint) throws { calls.append("down") }
@@ -19,6 +25,22 @@ final class FakeInput: InputSynthesizing, @unchecked Sendable {
     func scroll(_ direction: Direction, lines: Int) throws { calls.append("scroll") }
     func currentMouseLocation() -> CGPoint? { location }
     func releaseAll() { calls.append("releaseAll") }
+}
+
+final class FakeVolume: VolumeControlling, @unchecked Sendable {
+    var current: Int? = 50
+    var muted = false
+    var canMute = true
+    var set: [Int] = []
+    func level() -> Int? { current }
+    func setLevel(_ level: Int) throws { set.append(level); current = level }
+    func setMuted(_ muted: Bool) throws { guard canMute else { throw VolumeError.noMute }; self.muted = muted }
+}
+
+final class FakeAudio: AudioOutputProbing, @unchecked Sendable {
+    var playing = false
+    var asked = 0
+    func isPlaying() -> Bool { asked += 1; return playing }
 }
 
 final class FakeElements: ElementProviding, @unchecked Sendable {
@@ -33,16 +55,75 @@ final class FakeElements: ElementProviding, @unchecked Sendable {
     /// Set to report that the next walk freshly exposed a Chromium page tree (cleared when read).
     var exposeOnNextWalk = false
     func searchFieldFrame() -> CGRect? { searchBox }
+    /// Text editing: whether a text field has focus, what it holds (nil: unreadable), whether it takes a selection,
+    /// the selections asked for, and a hook run inside the read (a test cancels the task there).
+    var fieldFocused = false
+    var field: FocusedText?
+    var selectionTakes = true
+    var selections: [TextSpan] = []
+    var onFieldRead: (@Sendable () -> Void)?
+    func isTextFocused() -> Bool { fieldFocused }
+    func focusedText() -> FocusedText? { onFieldRead?(); return field }
+    func setSelection(_ span: TextSpan) -> Bool { selections.append(span); return selectionTakes }
+    /// Page find: what the walk returns (nil: no match), where a scroll lands the element (nil: the scroll fails),
+    /// the words searched for, the elements scrolled, and a hook run inside the walk (a test cancels the task there).
+    var pageMatch: UIElementInfo?
+    var scrollLandsAt: CGRect? = CGRect(x: 100, y: 300, width: 200, height: 20)
+    var findWords: [String] = []
+    var scrolled: [UIElementInfo] = []
+    var onFind: (@Sendable () -> Void)?
+    func findOnPage(words: String) -> UIElementInfo? { findWords.append(words); onFind?(); return pageMatch }
+    func scrollIntoView(_ element: UIElementInfo) async -> CGRect? { scrolled.append(element); return scrollLandsAt }
+    /// Read page: the text runs the walk returns, and a hook run inside the walk.
+    var pageRuns: [String] = []
+    var onPageText: (@Sendable () -> Void)?
+    func pageText() -> [String] { onPageText?(); return pageRuns }
+    /// The browser's windows and tabs (nil: the front app is not a browser) and the tab and window ids closed or selected.
+    var browser: [BrowserWindow]?
+    var closedTabs: [String] = []
+    var closedWindows: [String] = []
+    var selectedTabs: [String] = []
+    /// The app the windows were read from (nil: the front app's name).
+    var browserApp: String?
+    /// Runs inside the strip read (a test stalls it here, then stops the task).
+    var onBrowserRead: (@Sendable () -> Void)?
+    func browserWindows() -> (app: String, windows: [BrowserWindow])? { onBrowserRead?(); return browser.map { (browserApp ?? front ?? "Browser", $0) } }
+    /// Whether a tab is in the front app's focused window.
+    var tabInFrontWindow = true
+    func browserTabIsInFrontWindow(id: String) -> Bool { tabInFrontWindow }
+    /// A tab with no close button of its own, and whether selecting a tab really makes it the selected one.
+    var tabHasNoCloseButton = false
+    var selectingWorks = true
+    func closeBrowserTab(id: String) -> BrowserActionResult {
+        if tabHasNoCloseButton { return .noControl }
+        closedTabs.append(id); return .done
+    }
+    func browserTabIsSelected(id: String) -> Bool { selectingWorks && selectedTabs.last == id }
+    func closeBrowserWindow(id: String) -> BrowserActionResult { closedWindows.append(id); return .done }
+    func selectBrowserTab(id: String) -> BrowserActionResult { selectedTabs.append(id); return .done }
     func frontmostIsBrowser() -> Bool { isBrowser }
     private var justExposed = false
     /// Number of `actionableElements()` walks.
     var walks = 0
+    /// When non-empty, each walk returns the next list (the last repeats) instead of `elements`.
+    var walkLists: [[UIElementInfo]] = []
     /// Called on every walk (e.g. to advance a fake clock), and where each walk ran.
     var onWalk: (@Sendable () -> Void)?
     var walkedOnMainThread: [Bool] = []
     /// Screen rects passed in by the caller of `actionableElements(screens:)` (nil entry: read here).
     var walkScreens: [[CGRect]?] = []
+    var fullScreen: Bool? = nil
+    var textFocused = false
+    /// Set to make the window leave full screen after the first read (Escape worked).
+    var fullScreenAfterFirstRead: Bool?
+    func focusedWindowIsFullScreen() -> Bool? { defer { fullScreenAfterFirstRead.map { fullScreen = $0 } }; return fullScreen }
+    func focusedElementIsTextInput() -> Bool { textFocused }
     func focusedWindowTitle() -> String? { windowTitle }
+    /// Live titles for the press-time check: the control under the pointer (nil: unknown) and the focused button.
+    var titleAtPoint: String?
+    var focusedTitle: String?
+    func elementTitle(at point: CGPoint) -> String? { titleAtPoint }
+    func focusedElementTitle() -> String? { focusedTitle }
     func webURL() -> String? { url }
     func frontmostAppName() -> String? { front }
     func actionableElements() -> [UIElementInfo] { walk(screens: nil) }
@@ -53,7 +134,7 @@ final class FakeElements: ElementProviding, @unchecked Sendable {
         walkScreens.append(screens)
         onWalk?()
         if exposeOnNextWalk { exposeOnNextWalk = false; justExposed = true }
-        return elements
+        return walkLists.isEmpty ? elements : walkLists[min(walks - 1, walkLists.count - 1)]
     }
     func didJustExpose() -> Bool { defer { justExposed = false }; return justExposed }
     func screenRectsCG() -> [CGRect] { [CGRect(x: 0, y: 0, width: 1000, height: 800)] }
@@ -98,19 +179,23 @@ final class FakeElements: ElementProviding, @unchecked Sendable {
     /// Every prompt report, in order.
     var reports: [(id: Int, text: String, status: PromptStatus)] = []
     /// The status cell of every report, in order (what the user reads).
-    var statuses: [String] { reports.map { $0.status.text } }
+    /// The status texts the rows read, without the runner's phase lines ("Thinking · ...").
+    var statuses: [String] { reports.map { $0.status.text }.filter { !isPhaseLine($0) } }
     func showGrid(_ grid: GridModel) { state = .grid(grid) }
     func showLabels(_ labels: [Int: UIElementInfo]) { state = .labels(labels) }
     func hide() { state = .none }
     func showHUD(_ text: String, duration: Duration) { huds.append(text) }
     func report(_ id: Int, text: String, status: PromptStatus) { reports.append((id, text, status)) }
+    /// Every trail report, in order.
+    var trails: [(id: Int, trail: TaskTrail)] = []
+    func report(_ id: Int, trail: TaskTrail) { trails.append((id, trail)) }
     func screenBoundsCG(containing point: CGPoint) -> CGRect { CGRect(x: 0, y: 0, width: 1000, height: 800) }
 }
 
 @MainActor func make() -> (ActionExecutor, FakeInput, FakeElements, FakeOverlay) {
     let i = FakeInput(), e = FakeElements(), o = FakeOverlay()
     return (ActionExecutor(input: i, ax: e, overlay: o, config: AppConfig(), frontTimeout: .milliseconds(150),
-                           windowTimeout: .milliseconds(300)), i, e, o)
+                           windowTimeout: .milliseconds(300), audio: FakeAudio()), i, e, o)
 }
 
 
@@ -150,6 +235,8 @@ final class FakeHarness: DesktopHarness, @unchecked Sendable {
     private let lock = NSLock()
     let kind: HarnessKind = .agentDesktop
     var calls: [String] = []
+    /// `calls` read under the lock, for a test that polls while the harness is running.
+    var recordedCalls: [String] { lock.withLock { calls } }
     /// Snapshot results consumed in order (the last one repeats); nil means "no snapshot" (native fallback).
     var snapshotResults: [DesktopSnapshot?] = [nil]
     var findResult: DesktopFindMatch?
@@ -161,6 +248,11 @@ final class FakeHarness: DesktopHarness, @unchecked Sendable {
     /// Surfaces every `act` leaves open (as agent-desktop reports in `data.surfaces`).
     var surfacesAfterAct: [String] = []
     var sessionID: String? = "sess-1"
+    /// When set, a `wait` returns this instead of the act results, after running `onWait` and sleeping `waitDelay`
+    /// (a cancel cuts the sleep short).
+    var waitResult: HarnessActionResult?
+    var waitDelay: Duration = .zero
+    var onWait: (@Sendable () -> Void)?
 
     func snapshot(app: String, surface: DesktopSurface?, timeoutMs: Int) async -> DesktopSnapshot? {
         lock.withLock {
@@ -174,7 +266,15 @@ final class FakeHarness: DesktopHarness, @unchecked Sendable {
         lock.withLock { calls.append("find:\(surface?.rawValue ?? "window"):\(app ?? "-"):\(name)"); return findResult }
     }
     func act(_ command: DesktopCommand) async -> HarnessActionResult {
-        lock.withLock {
+        if case .wait = command, let waited = lock.withLock({ () -> HarnessActionResult? in
+            if waitResult != nil { calls.append("act:" + command.argv(headed: false, session: nil).joined(separator: " ")) }
+            return waitResult
+        }) {
+            onWait?()
+            if waitDelay > .zero { try? await Task.sleep(for: waitDelay) }
+            return waited
+        }
+        return lock.withLock {
             calls.append("act:" + command.argv(headed: false, session: nil).joined(separator: " "))
             let r = actResults.first ?? .delivered(verified: true)
             if actResults.count > 1 { actResults.removeFirst() }
@@ -194,8 +294,10 @@ final class FakeHarness: DesktopHarness, @unchecked Sendable {
     func startSession(name: String) async -> String? {
         lock.withLock { calls.append("session:start"); return sessionID }
     }
+    /// Whether the task that ended the session was already cancelled (a real `session end` would be killed).
+    var sessionEndedCancelled: Bool?
     func endSession(_ id: String) async {
-        lock.withLock { calls.append("session:end:\(id)") }
+        lock.withLock { calls.append("session:end:\(id)"); sessionEndedCancelled = Task.isCancelled }
     }
 }
 
@@ -205,4 +307,74 @@ final class FakeClock: @unchecked Sendable {
     private var current = ContinuousClock.now
     func now() -> ContinuousClock.Instant { lock.withLock { current } }
     func advance(_ d: Duration) { lock.withLock { current = current.advanced(by: d) } }
+}
+
+/// A scripted `ScreenshotProviding`: records each capture's badges, answers from preset results (the last repeats),
+/// and can be told to hang.
+final class FakeScreenshots: ScreenshotProviding, @unchecked Sendable {
+    private let lock = NSLock()
+    private var results: [ScreenshotResult]
+    private var badgeCalls: [[Int: UIElementInfo]] = []
+    var hangs = false
+    var calls: Int { lock.withLock { badgeCalls.count } }
+    var badges: [[Int: UIElementInfo]] { lock.withLock { badgeCalls } }
+
+    /// A 200x150 picture of the 400x300 window at (100, 100): scale 2, so a picture point (x, y) is screen (100 + 2x, 100 + 2y).
+    static let shot = StepScreenshot(jpeg: Data([1, 2, 3]), imageSize: CGSize(width: 200, height: 150),
+                                     windowFrame: CGRect(x: 100, y: 100, width: 400, height: 300), app: "Safari")
+
+    init(_ results: [ScreenshotResult] = [.image(FakeScreenshots.shot)]) { self.results = results }
+
+    func capture(badges: [Int: UIElementInfo]) async -> ScreenshotResult {
+        let (hang, result): (Bool, ScreenshotResult) = lock.withLock {
+            badgeCalls.append(badges)
+            let r = results.first ?? .failed
+            if results.count > 1 { results.removeFirst() }
+            return (hangs, r)
+        }
+        if hang { try? await Task.sleep(for: .seconds(30)) }   // a capture that never comes back in time
+        return result
+    }
+}
+
+/// True for the line a running task shows before its first step ("Reading · looking at the screen").
+func isPhaseLine(_ text: String) -> Bool { text.hasPrefix("Reading \u{00B7} ") || text.hasPrefix("Thinking \u{00B7} ") }
+
+/// A `MenuReading` over a fixed list; records the indexes pressed.
+@MainActor final class FakeMenus: MenuReading {
+    var items: [MenuEntry]
+    var pressed: [Int] = []
+    var pressWorks = true
+    init(_ items: [MenuEntry]) { self.items = items }
+    func entries() -> [MenuEntry] { items }
+    func press(_ index: Int) -> Bool { pressed.append(index); return pressWorks }
+}
+
+/// A `TextRewriting` that answers from a script and records what it was asked. `during` runs while the "model" works
+/// (a test changes the field or waits for a spoken stop there).
+final class FakeRewriter: TextRewriting {
+    let answer: Result<String, any Error>
+    let during: @Sendable () async -> Void
+    private let seen = OSAllocatedUnfairLock(initialState: [(text: String, how: RewriteInstruction)]())
+    init(_ answer: Result<String, any Error>, during: @escaping @Sendable () async -> Void = {}) {
+        self.answer = answer; self.during = during
+    }
+    var calls: [(text: String, how: RewriteInstruction)] { seen.withLock { $0 } }
+    func rewrite(_ text: String, _ instruction: RewriteInstruction) async throws -> String {
+        seen.withLock { $0.append((text, instruction)) }
+        await during()
+        return try answer.get()
+    }
+}
+
+/// Route memory held in an array, with no file.
+@MainActor final class FakeRouteStore: RouteStoring {
+    var routes: [Route] = []
+    func save(_ route: Route) { routes = RouteMemory.saving(route, into: routes) }
+    @discardableResult func remove(_ dropped: [Route]) -> Bool {
+        let before = routes.count
+        routes.removeAll { dropped.contains($0) }
+        return routes.count != before
+    }
+    func removeAll() { routes = [] }
 }

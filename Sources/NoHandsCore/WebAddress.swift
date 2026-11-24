@@ -1,7 +1,7 @@
 import Foundation
 
 /// Turns a spoken or model-written site reference into an `http(s)` URL: a known site name ("youtube"),
-/// a bare domain ("youtube.com/@veritasium"), or a full URL. Anything else, including other schemes, is nil.
+/// a bare domain ("youtube.com/@someone"), or a full URL. Anything else, including other schemes, is nil.
 public enum WebAddress {
     /// Spoken names of sites that have no Mac app of the same name (so "open <name>" never hijacks an app).
     public static let knownSites: [String: String] = [
@@ -60,5 +60,27 @@ public enum WebAddress {
         guard host.contains("."), !host.hasPrefix("."), !host.hasSuffix("."),
               host.allSatisfy({ $0.isLetter || $0.isNumber || $0 == "-" || $0 == "." }) else { return nil }
         return URL(string: "https://" + t)
+    }
+
+    /// Endings common enough that typed text ending in one is taken as a web address. File extensions that are
+    /// also real endings (`app`, `md`, `py`, `sh`, `zip`, `mov`, `rs`) are left out on purpose.
+    static let commonEndings: Set<String> = [
+        "com", "org", "net", "edu", "gov", "io", "co", "tv", "ai", "dev", "me", "info", "gg", "uk", "de", "fr", "ca",
+        "au", "jp", "us",
+    ]
+
+    /// Stricter than `url(for:)`, for text the model typed: an explicit `http(s)://`, a `www.` start, or a host
+    /// ending in a common web ending. Known site names without a dot ("apple"), file names ("notes.txt") and
+    /// numbers ("3.14") are not addresses.
+    public static func typedAddress(_ text: String) -> URL? {
+        var t = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        while let last = t.last, ".,!?".contains(last) { t.removeLast() }
+        guard !t.contains(where: { $0.isWhitespace }), let url = url(for: t) else { return nil }
+        let lower = t.lowercased()
+        if lower.hasPrefix("http://") || lower.hasPrefix("https://") { return url }
+        let host = lower.split(whereSeparator: { "/?#".contains($0) }).first.map(String.init) ?? ""
+        guard host.contains(".") else { return nil }
+        let ending = host.split(separator: ".").last.map(String.init) ?? ""
+        return host.hasPrefix("www.") || commonEndings.contains(ending) ? url : nil
     }
 }

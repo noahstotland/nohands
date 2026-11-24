@@ -14,6 +14,8 @@ public enum DesktopWaitKind: String, Codable, Sendable, CaseIterable {
     case text, window, event, menu
     case menuClosed = "menu_closed"
     case element
+    /// Answered by NoHands itself (no agent-desktop condition exists), so it never becomes a `DesktopCommand`.
+    case mediaPlaying = "media_playing"
 }
 
 public enum DesktopEvent: String, Codable, Sendable, CaseIterable {
@@ -140,8 +142,8 @@ public enum DesktopCommand: Equatable, Sendable {
         case .scroll(let ref, let direction, let amount):
             out += [ref, "--direction", direction.rawValue, "--amount", String(amount)]
         case .drag(let fromRef, let fromXY, let toRef, let toXY):
-            if let fromRef { out += ["--from", fromRef] } else if let fromXY { out += ["--from-xy", Self.xy(fromXY)] }
-            if let toRef { out += ["--to", toRef] } else if let toXY { out += ["--to-xy", Self.xy(toXY)] }
+            if let fromRef { out += ["--from", fromRef] } else if let fromXY { out.append("--from-xy=" + Self.xy(fromXY)) }
+            if let toRef { out += ["--to", toRef] } else if let toXY { out.append("--to-xy=" + Self.xy(toXY)) }
         case .closeApp(let app):
             out.append(app)
         case .window(let op, let app, let title):
@@ -161,6 +163,7 @@ public enum DesktopCommand: Equatable, Sendable {
             case .menu: out.append("--menu")
             case .menuClosed: out.append("--menu-closed")
             case .element: out += ["--element", ref ?? "", "--predicate", value ?? "exists"]
+            case .mediaPlaying: break   // the executor answers it; never sent to agent-desktop
             }
             if let app { out += ["--app", app] }
             out += ["--timeout", String(timeoutMs)]
@@ -172,6 +175,7 @@ public enum DesktopCommand: Equatable, Sendable {
         return out
     }
 
-    /// Rounded integer `x,y`: agent-desktop takes whole screen pixels.
+    /// Rounded integer `x,y`: agent-desktop takes whole screen pixels. Sent as `--flag=x,y`: a negative value after a
+    /// separate `--flag` would be read as another flag.
     private static func xy(_ p: CGPoint) -> String { "\(Int(p.x.rounded())),\(Int(p.y.rounded()))" }
 }

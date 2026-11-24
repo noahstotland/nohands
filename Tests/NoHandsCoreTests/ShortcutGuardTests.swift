@@ -38,3 +38,50 @@ import Testing
     #expect(ShortcutGuard.blocked([.closeApp("Slack")], goal: "the closet app") != nil)
     #expect(ShortcutGuard.blocked([.windowAction(.minimize, app: "Slack", title: nil)], goal: "hide it") == nil)
 }
+
+@Test func menuItemsThatCloseOrQuitNeedTheGoalToAskLikeTheChords() {
+    // (title, goal, blocked)
+    let cases: [(String, String, Bool)] = [
+        ("Quit Google Chrome", "play music", true), ("File > Close Window", "open the latest video", true),
+        ("Close Tab", "close this tab", false), ("Quit Spotify", "quit spotify", false),
+        ("Bookmark This Tab…", "open the latest video", false),
+        ("File>Close Window", "open the latest video", true), ("Safari>Quit Safari", "play music", true),
+        ("Close…", "play music", true), ("Exit Full Screen", "watch it small", false),
+        ("Reopen Closed Tab", "open the latest video", false),
+    ]
+    for (title, goal, blocked) in cases {
+        #expect((ShortcutGuard.blocked([.menuItem(title)], goal: goal) != nil) == blocked, Comment(rawValue: title))
+    }
+}
+
+@Test func aNegatedQuitOrCloseWordAllowsNothing() {
+    let cmdQ: [Action] = [.pressKey(KeyChord(.q, [.command]))], cmdW: [Action] = [.pressKey(KeyChord(.w, [.command]))]
+    // (actions, goal, blocked)
+    let cases: [([Action], String, Bool)] = [
+        (cmdQ, "don't quit Safari", true), (cmdW, "never close this", true), ([.closeApp("Safari")], "don't quit", true),
+        ([.menuItem("Close Window")], "don't close it", true),
+        (cmdQ, "quit Safari", false), (cmdW, "close this tab", false), (cmdQ, "don't save, just quit", false),
+    ]
+    for (actions, goal, blocked) in cases { #expect((ShortcutGuard.blocked(actions, goal: goal) != nil) == blocked, Comment(rawValue: goal)) }
+    #expect(!ShortcutGuard.allowsClose(goal: "don't close the tabs") && ShortcutGuard.allowsClose(goal: "close the tabs"))
+}
+
+@Test func menuBarClickInFollowsTheMenuItemRules() {
+    let cases: [(name: String, goal: String, blocked: Bool)] = [
+        ("Quit Safari", "open the latest video", true),
+        ("Quit Safari", "don't quit Safari", true),
+        ("Quit Safari", "quit Safari", false),
+        ("File>Close Window", "open the latest video", true),
+        ("Close Window", "close this window", false),
+        ("Shut Down", "shut down the mac", true),
+        ("Force Quit", "force quit", true),
+        ("Apple > Restart", "restart", true),
+        ("Log Out Noah…", "log out", true),
+        ("Sаve", "save it", true),   // Cyrillic а
+        ("Save", "open the latest video", false),
+    ]
+    for c in cases {
+        #expect((ShortcutGuard.blocked([.clickIn(.menubar, name: c.name)], goal: c.goal) != nil) == c.blocked, "\(c.name) / \(c.goal)")
+    }
+    #expect(ShortcutGuard.blocked([.clickIn(.dock, name: "Quit")], goal: "open the latest video") == nil)
+}

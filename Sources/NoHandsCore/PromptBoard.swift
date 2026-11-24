@@ -64,12 +64,17 @@ public struct PromptRow: Equatable, Sendable {
     public var text: String
     public var status: PromptStatus
     public var updatedAt: ContinuousClock.Instant
+    /// The steps a task has taken, for the corner panel. Nil for a grammar command or a prompt not yet run.
+    public var trail: TaskTrail?
 
-    public init(id: Int, text: String, status: PromptStatus, updatedAt: ContinuousClock.Instant) {
+    public init(
+        id: Int, text: String, status: PromptStatus, updatedAt: ContinuousClock.Instant, trail: TaskTrail? = nil
+    ) {
         self.id = id
         self.text = text
         self.status = status
         self.updatedAt = updatedAt
+        self.trail = trail
     }
 }
 
@@ -86,8 +91,9 @@ public struct PromptBoard: Equatable, Sendable {
     public private(set) var notice: PromptNotice?
     /// At most this many prompts are kept; the oldest finished one goes first.
     public var maxRows = 4
-    /// How long a finished prompt stays on the board.
-    public var finalLinger: Duration = .seconds(6)
+    /// How long a finished prompt stays on the board: a failure needs reading time, the rest a moment.
+    public var doneLinger: Duration = .milliseconds(1500)
+    public var failedLinger: Duration = .seconds(3)
     /// A "listening" row whose words never arrived (the speech was abandoned) leaves after this long.
     public var listeningLinger: Duration = .seconds(10)
     /// A safety net for a prompt that never reaches a final status.
@@ -112,6 +118,13 @@ public struct PromptBoard: Equatable, Sendable {
         }
     }
 
+    /// Sets a running task's step trail. Does nothing for an unknown id or a final row.
+    public mutating func report(id: Int, trail: TaskTrail, now: ContinuousClock.Instant) {
+        guard let i = rows.firstIndex(where: { $0.id == id }), !rows[i].status.isFinal else { return }
+        rows[i].trail = trail
+        rows[i].updatedAt = now
+    }
+
     public mutating func notice(_ text: String, for duration: Duration, now: ContinuousClock.Instant) {
         notice = PromptNotice(text: text, until: now.advanced(by: duration))
     }
@@ -121,7 +134,8 @@ public struct PromptBoard: Equatable, Sendable {
         switch row.status {
         case .listening: row.updatedAt.advanced(by: listeningLinger)
         case .heard, .running, .held: row.updatedAt.advanced(by: activeLinger)
-        case .done, .failed, .stopped, .dropped, .ignored: row.updatedAt.advanced(by: finalLinger)
+        case .done, .stopped, .ignored: row.updatedAt.advanced(by: doneLinger)
+        case .failed, .dropped: row.updatedAt.advanced(by: failedLinger)
         }
     }
 

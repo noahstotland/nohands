@@ -15,6 +15,12 @@ public final class AXQuery: @unchecked Sendable {
     private var exposedPids: Set<pid_t> = []
     /// Set when a pid is first exposed; cleared by `didJustExpose()`.
     private var justExposed = false
+    /// Browser windows and tabs handed to the task loop as opaque ids, matched by `CFEqual` so one element keeps one
+    /// id for the whole task. Cleared by `resetBrowserTokens()`; guarded by `lock`.
+    private var browserTokens: [(token: String, element: AXUIElement)] = []
+    /// The element the last `findOnPage` matched, under the id it handed out; `scrollIntoView` acts on it. Guarded by `lock`.
+    private var foundElement: (id: Int, element: AXUIElement)?
+    private var nextFoundID = 1_000_000
 
     static let maxDepth = 30   // YouTube links sit ~23 levels below the window
     public static let defaultMaxNodes = 2000
@@ -43,7 +49,7 @@ public final class AXQuery: @unchecked Sendable {
     /// The page tree appears ~0.5 s AFTER exposure and this never waits, so the first walk of a freshly exposed
     /// browser is thin. Callers that need page content check `didJustExpose()` and re-observe (the task loop
     /// settles then); the voice path accepts a thin first walk.
-    private func exposeChromiumTree(_ app: NSRunningApplication, _ appEl: AXUIElement) {
+    func exposeChromiumTree(_ app: NSRunningApplication, _ appEl: AXUIElement) {
         guard let id = app.bundleIdentifier, Self.chromiumBundleIDs.contains(id) else { return }
         let pid = app.processIdentifier
         let first = lock.withLock {
@@ -106,6 +112,64 @@ public final class AXQuery: @unchecked Sendable {
         return nil
     }
 
+    /// Whether the focused window is in full screen; nil when there is no window or it does not say.
+    public func focusedWindowIsFullScreen() -> Bool? {
+        focusedWindow().flatMap { Self.attr($0.window, "AXFullScreen") as? Bool }
+    }
+
+    /// Whether the focused element takes typed text (a text field, text area, search field or combo box), so a
+    /// player's letter key would be typed into it.
+    public func focusedElementIsTextInput() -> Bool {
+        guard let f = focusedWindow() else { return false }
+        exposeChromiumTree(f.app, f.appEl)
+        // Chromium may not have built the page tree yet: an unreadable focus there could be the search box.
+        guard let element = Self.element(f.appEl, kAXFocusedUIElementAttribute) else {
+            return f.app.bundleIdentifier.map(Self.chromiumBundleIDs.contains) ?? false
+        }
+        AXUIElementSetMessagingTimeout(element, 0.05)
+        return ["AXTextField", "AXTextArea", "AXComboBox", "AXSearchField"].contains(Self.string(element, kAXRoleAttribute))
+            || Self.string(element, kAXSubroleAttribute) == "AXSearchField"
+    }
+
+    /// Roles whose title never names a control to press: climbing stops here.
+    private static let containerRoles: Set<String> = ["AXWindow", "AXApplication", "AXSheet", "AXWebArea", "AXDrawer", "AXScrollArea"]
+
+    private static let pressRoles: Set<String> = ["AXButton", "AXPopUpButton", "AXMenuButton", "AXLink", "AXMenuItem", "AXCheckBox", "AXRadioButton"]
+
+    public func elementTitle(at point: CGPoint) -> String? {
+        let system = AXUIElementCreateSystemWide()
+        AXUIElementSetMessagingTimeout(system, 0.05)
+        var hit: AXUIElement?
+        guard AXUIElementCopyElementAtPosition(system, Float(point.x), Float(point.y), &hit) == .success, var element = hit else { return nil }
+        // The first title seen is kept as a fallback; a button, link or menu item above it names the press better
+        // (an icon or label inside "Send" must not hide it).
+        var first: String?
+        for _ in 0..<4 {
+            AXUIElementSetMessagingTimeout(element, 0.05)
+            let role = Self.string(element, kAXRoleAttribute) ?? ""
+            if Self.containerRoles.contains(role) { break }
+            let title = Self.string(element, kAXTitleAttribute) ?? Self.string(element, kAXDescriptionAttribute)
+                ?? (role == "AXStaticText" ? Self.string(element, kAXValueAttribute) : nil)
+            if let title {
+                if Self.pressRoles.contains(role) { return title }
+                first = first ?? title
+            }
+            guard let parent = Self.element(element, kAXParentAttribute) else { break }
+            element = parent
+        }
+        return first
+    }
+
+    public func focusedElementTitle() -> String? {
+        guard let app = NSWorkspace.shared.frontmostApplication else { return nil }
+        let appEl = AXUIElementCreateApplication(app.processIdentifier)
+        AXUIElementSetMessagingTimeout(appEl, 0.05)
+        guard let element = Self.element(appEl, kAXFocusedUIElementAttribute) else { return nil }
+        AXUIElementSetMessagingTimeout(element, 0.05)
+        guard ["AXButton", "AXPopUpButton", "AXMenuButton", "AXLink"].contains(Self.string(element, kAXRoleAttribute)) else { return nil }
+        return Self.string(element, kAXTitleAttribute) ?? Self.string(element, kAXDescriptionAttribute)
+    }
+
     public func frontmostAppName() -> String? {
         NSWorkspace.shared.frontmostApplication?.localizedName
     }
@@ -158,21 +222,207 @@ public final class AXQuery: @unchecked Sendable {
             return nil
         }
         // The page first: a browser's own toolbar also has text fields ("Address and search bar").
-        func firstWebArea(_ el: AXUIElement, depth: Int) -> AXUIElement? {
-            guard depth <= Self.maxDepth, visited < Self.searchMaxNodes, ContinuousClock.now < deadline else { return nil }
-            visited += 1
-            AXUIElementSetMessagingTimeout(el, 0.05)
-            if Self.string(el, kAXRoleAttribute) == "AXWebArea" { return el }
-            for c in Self.elements(el, kAXChildrenAttribute) {
-                if let w = firstWebArea(c, depth: depth + 1) { return w }
-            }
-            return nil
-        }
-        if let web = firstWebArea(f.window, depth: 1) {
+        if let web = Self.firstWebArea(f.window, depth: 1, visited: &visited, limit: Self.searchMaxNodes, deadline: deadline) {
             if let hit = find(web, depth: 1, skippingWebAreas: false) { return hit }
             visited = 0
         }
         return find(f.window, depth: 1, skippingWebAreas: true)
+    }
+
+    // MARK: find on page
+
+    /// A find walks the whole page, so it gets more nodes than a search does, and the same time.
+    static let findBudget: Duration = .milliseconds(800)
+    static let findMaxNodes = 6000
+    /// How long `scrollIntoView` re-reads the frame of an element the page was asked to scroll.
+    static let scrollSettle: Duration = .milliseconds(300)
+    /// Roles whose own value is what the user reads. No other role offers its value: a field holds the user's data.
+    static let valueTextRoles: Set<String> = ["AXStaticText", "AXHeading"]
+    /// `kAXScrollToVisibleAction`, which Swift does not import.
+    static let scrollToVisibleAction = "AXScrollToVisible"
+    static let findContainerRoles: Set<String> = ["AXLink", "AXButton"]
+    static let textEntryRoles: Set<String> = ["AXTextField", "AXTextArea", "AXSecureTextField", "AXComboBox", "AXSearchField"]
+
+    /// Walks the focused window for an element whose title, description (or, for static text and headings, value)
+    /// matches `words`, offscreen ones included: the page's web area first, then the rest of the window, menus never.
+    /// A text inside a link or button (within three levels) reports that link or button. Stops on an exact match,
+    /// when the budget runs out, or when the calling task is cancelled. The match is remembered for `scrollIntoView`.
+    public func findOnPage(words: String) -> UIElementInfo? {
+        lock.withLock { foundElement = nil }
+        var matcher = PageFind.Matcher(words: words)
+        guard let f = focusedWindow() else { return nil }
+        exposeChromiumTree(f.app, f.appEl)
+        var visited = 0
+        var nextID = 0
+        var bestElement: AXUIElement?
+        let deadline = ContinuousClock.now.advanced(by: Self.findBudget)
+
+        /// A frame the walk can use: finite and not empty.
+        func usableFrame(_ el: AXUIElement) -> CGRect? {
+            guard let r = Self.frame(el), r.origin.x.isFinite, r.origin.y.isFinite, r.width.isFinite, r.height.isFinite,
+                  r.width > 0, r.height > 0 else { return nil }
+            return r
+        }
+        func title(_ el: AXUIElement) -> String? {
+            Self.string(el, kAXTitleAttribute) ?? Self.string(el, kAXDescriptionAttribute)
+        }
+        /// Offers one text; true when the walk can stop (an exact match).
+        func offer(_ text: String, role: String, reporting el: AXUIElement, enclosing: (el: AXUIElement, role: String, depth: Int)?,
+                   depth: Int) -> Bool {
+            guard matcher.wouldTake(text), let own = usableFrame(el) else { return false }
+            var target = el, frame = own, name = text, targetRole = role
+            if Self.valueTextRoles.contains(role), let c = enclosing, depth - c.depth <= 3, let cf = usableFrame(c.el) {
+                (target, frame, name, targetRole) = (c.el, cf, title(c.el) ?? text, c.role)
+            }
+            nextID += 1
+            let info = UIElementInfo(id: nextID, frame: frame, title: name, role: targetRole)
+            let exact = matcher.offer(text, element: info)
+            if matcher.best?.id == info.id { bestElement = target }
+            return exact
+        }
+        func visit(_ el: AXUIElement, depth: Int, skippingWebAreas: Bool,
+                   enclosing: (el: AXUIElement, role: String, depth: Int)?) -> Bool {
+            guard depth <= Self.maxDepth, visited < Self.findMaxNodes, ContinuousClock.now < deadline, !Task.isCancelled else { return false }
+            visited += 1
+            AXUIElementSetMessagingTimeout(el, 0.05)
+            let role = Self.string(el, kAXRoleAttribute) ?? ""
+            if role == "AXMenuBar" || role == "AXMenuItem" || role == "AXMenu" { return false }
+            if skippingWebAreas && role == "AXWebArea" { return false }
+            var texts: [String] = []
+            let secure = role == "AXSecureTextField" || (role == "AXTextField" && Self.string(el, kAXSubroleAttribute) == "AXSecureTextField")
+            if !secure {
+                texts = [Self.string(el, kAXTitleAttribute), Self.string(el, kAXDescriptionAttribute)].compactMap { $0 }
+                if Self.valueTextRoles.contains(role), let v = Self.string(el, kAXValueAttribute) { texts.append(v) }
+            }
+            for t in texts where offer(t, role: role, reporting: el, enclosing: enclosing, depth: depth) { return true }
+            // A text-entry element's children hold what the user typed (a contenteditable editor's draft is static
+            // text under an AXTextArea): never walk into one.
+            if Self.textEntryRoles.contains(role) || secure { return false }
+            let inner = Self.findContainerRoles.contains(role) ? (el, role, depth) : enclosing
+            for c in Self.elements(el, kAXChildrenAttribute) {
+                if visit(c, depth: depth + 1, skippingWebAreas: skippingWebAreas, enclosing: inner) { return true }
+            }
+            return false
+        }
+        // The page first: a browser's own toolbar holds titles too.
+        if let web = Self.firstWebArea(f.window, depth: 1, visited: &visited, limit: Self.findMaxNodes, deadline: deadline) {
+            // A match on the page wins over one in the browser's own chrome (a tab title, a bookmark).
+            if visit(web, depth: 1, skippingWebAreas: false, enclosing: nil) || matcher.best != nil {
+                return finishFind(matcher, bestElement)
+            }
+            visited = 0
+        }
+        _ = visit(f.window, depth: 1, skippingWebAreas: true, enclosing: nil)
+        return finishFind(matcher, bestElement)
+    }
+
+    private func finishFind(_ matcher: PageFind.Matcher, _ element: AXUIElement?) -> UIElementInfo? {
+        guard !Task.isCancelled, let best = matcher.best, let element else { return nil }
+        let id = lock.withLock { () -> Int in
+            nextFoundID += 1
+            foundElement = (nextFoundID, element)
+            return nextFoundID
+        }
+        var info = best
+        info.id = id
+        return info
+    }
+
+    /// Asks the page to scroll the element `findOnPage` returned into view, then re-reads its frame for up to 300 ms
+    /// until it is on a screen (and in the focused window). Nil when the element is not the last find's, the action
+    /// fails, or the frame never comes on screen.
+    public func scrollIntoView(_ element: UIElementInfo) async -> CGRect? {
+        guard let el = lock.withLock({ foundElement.flatMap { $0.id == element.id ? $0.element : nil } }),
+              AXUIElementPerformAction(el, Self.scrollToVisibleAction as CFString) == .success else { return nil }
+        let deadline = ContinuousClock.now.advanced(by: Self.scrollSettle)
+        while !Task.isCancelled {
+            let screens = Self.screenRectsCG()
+            let window = focusedWindowFrame()
+            if let r = Self.frame(el), r.width > 0, r.height > 0, screens.contains(where: { $0.intersects(r) }),
+               window.map({ $0.intersects(r) }) ?? true { return r }
+            if ContinuousClock.now >= deadline { return nil }
+            try? await Task.sleep(for: .milliseconds(25))
+        }
+        return nil
+    }
+
+    // MARK: read page
+
+    /// Reading a page's text is bounded like a search: it stops at the screen, so it needs less than a find.
+    static let pageTextBudget: Duration = .milliseconds(500)
+    static let pageTextMaxNodes = 4000
+    /// A text run keeps this many characters (an element's usual title is cut at 120).
+    static let pageTextRunLimit = 400
+    /// Roles whose own value is page text. A link or button offers its title instead.
+    static let pageTextRoles: Set<String> = ["AXStaticText", "AXHeading"]
+
+    /// The visible text of the focused window in reading order (the walk's depth-first order): `AXStaticText` and
+    /// `AXHeading` values, `AXLink` and `AXButton` titles, only for elements on a screen. In a browser only the first
+    /// web area; elsewhere the whole window, menus never. Fields and secure fields are never read, nor walked into
+    /// (a contenteditable editor's draft is static text under a text area). Stops at the budget, the node limit, or
+    /// when the calling task is cancelled.
+    public func pageText() -> [String] {
+        guard let f = focusedWindow() else { return [] }
+        exposeChromiumTree(f.app, f.appEl)
+        let screens = Self.screenRectsCG()
+        let deadline = ContinuousClock.now.advanced(by: Self.pageTextBudget)
+        var visited = 0
+        var runs: [String] = []
+        func onScreen(_ el: AXUIElement) -> Bool {
+            guard let r = Self.frame(el), r.origin.x.isFinite, r.origin.y.isFinite, r.width.isFinite, r.height.isFinite,
+                  r.width > 0, r.height > 0 else { return false }
+            return screens.contains { $0.intersects(r) }
+        }
+        func visit(_ el: AXUIElement, depth: Int) {
+            guard depth <= Self.maxDepth, visited < Self.pageTextMaxNodes, ContinuousClock.now < deadline,
+                  !Task.isCancelled else { return }
+            visited += 1
+            AXUIElementSetMessagingTimeout(el, 0.05)
+            let role = Self.string(el, kAXRoleAttribute) ?? ""
+            if role == "AXMenuBar" || role == "AXMenuItem" || role == "AXMenu" { return }
+            if Self.textEntryRoles.contains(role) || Self.string(el, kAXSubroleAttribute) == "AXSecureTextField" { return }
+            if Self.pageTextRoles.contains(role) {
+                if let t = Self.string(el, kAXValueAttribute, limit: Self.pageTextRunLimit)
+                    ?? Self.string(el, kAXTitleAttribute, limit: Self.pageTextRunLimit), onScreen(el) { runs.append(t) }
+            } else if Self.findContainerRoles.contains(role) {
+                if let t = Self.string(el, kAXTitleAttribute, limit: Self.pageTextRunLimit)
+                    ?? Self.string(el, kAXDescriptionAttribute, limit: Self.pageTextRunLimit), onScreen(el) { runs.append(t) }
+            }
+            for c in Self.elements(el, kAXChildrenAttribute) { visit(c, depth: depth + 1) }
+        }
+        var seen = 0
+        let root = Self.firstWebArea(f.window, depth: 1, visited: &seen, limit: Self.pageTextMaxNodes, deadline: deadline)
+        visit(root ?? f.window, depth: 1)
+        return runs
+    }
+
+    /// The id for a browser window or tab element (`prefix` "w" or "t"): the same element always gets the same id.
+    func browserToken(for el: AXUIElement, prefix: String) -> String {
+        lock.withLock {
+            if let known = browserTokens.first(where: { CFEqual($0.element, el) }) { return known.token }
+            let token = "\(prefix)\(browserTokens.count + 1)"
+            browserTokens.append((token, el))
+            return token
+        }
+    }
+
+    func browserElement(forToken token: String) -> AXUIElement? {
+        lock.withLock { browserTokens.first { $0.token == token }?.element }
+    }
+
+    public func resetBrowserTokens() { lock.withLock { browserTokens = [] } }
+
+    /// The first `AXWebArea` under `el` (depth-first), within the node limit and deadline.
+    static func firstWebArea(_ el: AXUIElement, depth: Int, visited: inout Int, limit: Int,
+                             deadline: ContinuousClock.Instant) -> AXUIElement? {
+        guard depth <= maxDepth, visited < limit, ContinuousClock.now < deadline else { return nil }
+        visited += 1
+        AXUIElementSetMessagingTimeout(el, 0.05)
+        if string(el, kAXRoleAttribute) == "AXWebArea" { return el }
+        for c in elements(el, kAXChildrenAttribute) {
+            if let w = firstWebArea(c, depth: depth + 1, visited: &visited, limit: limit, deadline: deadline) { return w }
+        }
+        return nil
     }
 
     public func element(for id: Int) -> AXUIElement? {
@@ -191,11 +441,22 @@ public final class AXQuery: @unchecked Sendable {
         let appEl = AXUIElementCreateApplication(app.processIdentifier)
         AXUIElementSetMessagingTimeout(appEl, 0.05)
         exposeChromiumTree(app, appEl)   // may block briefly; must precede the walk deadline
-        var walker = Walker(screens: screens, maxNodes: maxNodes, deadline: ContinuousClock.now.advanced(by: budget))
+        let policy = WalkPolicy.pick(isBrowser: frontmostIsBrowser(),
+                                     default: WalkPolicy(budget: budget, maxNodes: maxNodes, pageFirst: false))
+        let deadline = ContinuousClock.now.advanced(by: policy.budget)
+        var walker = Walker(screens: screens, maxNodes: policy.maxNodes, deadline: deadline)
 
         // Menu bar first (cheap, always present), then windows (sheets/popovers), then plain children.
         if let bar = Self.element(appEl, kAXMenuBarAttribute) {
             walker.visit(bar, depth: 1, descend: true, stopAtMenuBarItems: true)
+        }
+        if policy.pageFirst, let window = Self.element(appEl, kAXFocusedWindowAttribute) {
+            var seen = 0
+            if let web = Self.firstWebArea(window, depth: 1, visited: &seen, limit: policy.maxNodes, deadline: deadline) {
+                walker.tracksText = true
+                walker.visit(web, depth: 1, descend: true)
+                walker.tracksText = false
+            }
         }
         for w in Self.elements(appEl, kAXWindowsAttribute) { walker.visit(w, depth: 1, descend: true) }
         for c in Self.elements(appEl, kAXChildrenAttribute) { walker.visit(c, depth: 1, descend: true) }
@@ -203,7 +464,7 @@ public final class AXQuery: @unchecked Sendable {
         var infos: [UIElementInfo] = []
         var map: [Int: AXUIElement] = [:]
         for (i, found) in walker.found.enumerated() {
-            infos.append(UIElementInfo(id: i, frame: found.frame, title: found.title, role: found.role))
+            infos.append(UIElementInfo(id: i, frame: found.frame, title: found.title, role: found.role, near: found.near))
             map[i] = found.element
         }
         lock.withLock { elements = map }
@@ -349,10 +610,10 @@ public final class AXQuery: @unchecked Sendable {
         (attr(el, name) as? [AXUIElement]) ?? []
     }
 
-    static func string(_ el: AXUIElement, _ name: String) -> String? {
+    static func string(_ el: AXUIElement, _ name: String, limit: Int = 120) -> String? {
         guard let s = attr(el, name) as? String else { return nil }
         let t = s.trimmingCharacters(in: .whitespacesAndNewlines)
-        return t.isEmpty ? nil : String(t.prefix(120))
+        return t.isEmpty ? nil : String(t.prefix(limit))
     }
 
     static func frame(_ el: AXUIElement) -> CGRect? {
@@ -363,7 +624,7 @@ public final class AXQuery: @unchecked Sendable {
         return CGRect(origin: pt, size: sz)
     }
 
-    struct Found { var element: AXUIElement; var frame: CGRect; var title: String; var role: String }
+    struct Found { var element: AXUIElement; var frame: CGRect; var title: String; var role: String; var near: String? = nil }
 
     struct Walker {
         let screens: [CGRect]
@@ -372,6 +633,10 @@ public final class AXQuery: @unchecked Sendable {
         var found: [Found] = []
         var visited = 0
         var seen: [CFHashCode: [AXUIElement]] = [:]
+        /// Set while the walk is inside a browser's first web area: the latest static text or heading passed, so a
+        /// generic link or button can say what it sits next to (`PageText.near`). Nil keeps the walker as it was.
+        var lastText: String?
+        var tracksText = false
 
         init(screens: [CGRect], maxNodes: Int, deadline: ContinuousClock.Instant) {
             self.screens = screens
@@ -388,7 +653,7 @@ public final class AXQuery: @unchecked Sendable {
             return true
         }
 
-        mutating func visit(_ el: AXUIElement, depth: Int, descend: Bool, stopAtMenuBarItems: Bool = false) {
+        mutating func visit(_ el: AXUIElement, depth: Int, descend: Bool, stopAtMenuBarItems: Bool = false, inField: Bool = false) {
             guard depth <= AXQuery.maxDepth, !exhausted, firstVisit(el) else { return }
             visited += 1
             AXUIElementSetMessagingTimeout(el, 0.05)
@@ -405,14 +670,22 @@ public final class AXQuery: @unchecked Sendable {
                 }
                 if title == nil, secure { title = TitleSource.secureFieldTitle }
                 let finalTitle = title ?? ""
-                found.append(Found(element: el, frame: f, title: finalTitle, role: role))
+                // Only a link or button reads the hint, and only a generic one (an unnamed link is the worst case).
+                let near = tracksText && AXQuery.findContainerRoles.contains(role) && PageText.isGeneric(finalTitle)
+                    ? lastText.flatMap(PageText.near) : nil
+                found.append(Found(element: el, frame: f, title: finalTitle, role: role, near: near))
+            } else if tracksText, !inField, AXQuery.pageTextRoles.contains(role),
+                      let t = AXQuery.string(el, kAXValueAttribute, limit: 400) ?? AXQuery.string(el, kAXTitleAttribute, limit: 400) {
+                lastText = t
             }
             // Menu bar items open menus whose contents are not on screen; do not descend into them.
             if stopAtMenuBarItems && role == "AXMenuBarItem" { return }
             if role == "AXMenuItem" { return }
+            // Under a field its children are the user's own text (a contenteditable draft): never a `near:` source.
+            let nowInField = inField || AXQuery.textEntryRoles.contains(role)
             for c in AXQuery.elements(el, kAXChildrenAttribute) {
                 if exhausted { return }
-                visit(c, depth: depth + 1, descend: true, stopAtMenuBarItems: stopAtMenuBarItems)
+                visit(c, depth: depth + 1, descend: true, stopAtMenuBarItems: stopAtMenuBarItems, inField: nowInField)
             }
         }
 

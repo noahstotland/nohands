@@ -1,4 +1,5 @@
 import Foundation
+import AppKit
 import CoreGraphics
 import NoHandsCore
 import os
@@ -17,15 +18,24 @@ public enum InputSynthesisError: Error, CustomStringConvertible {
 public protocol InputSynthesizing: Sendable {
     func type(_ text: String) throws
     func press(_ chord: KeyChord) throws
+    /// Presses an arrow chord the way the keyboard's arrow key does (function and numeric-pad flags set), which the
+    /// Dock's Spaces shortcuts require. The default is a plain `press`.
+    func pressHardwareArrow(_ chord: KeyChord) throws
     func moveMouse(to point: CGPoint) throws
     func click(at point: CGPoint, button: MouseButton, count: Int) throws
     func mouseDown(_ button: MouseButton, at point: CGPoint) throws
     func mouseUp(_ button: MouseButton, at point: CGPoint) throws
     func scroll(_ direction: Direction, lines: Int) throws
+    /// The system play, next or previous key (a system-defined event, not a key code).
+    func pressMediaKey(_ key: SystemMediaKey) throws
     /// nil when the pointer position cannot be read.
     func currentMouseLocation() -> CGPoint?
     /// Releases any mouse button this synthesizer is still holding down (safety net on pause/quit).
     func releaseAll()
+}
+
+extension InputSynthesizing {
+    public func pressHardwareArrow(_ chord: KeyChord) throws { try press(chord) }
 }
 
 public struct CGEventInputSynthesizer: InputSynthesizing {
@@ -65,6 +75,16 @@ public struct CGEventInputSynthesizer: InputSynthesizing {
     }
 
     public func press(_ chord: KeyChord) throws {
+        try postKeyPair(virtualKey: chord.key.keyCode, flags: Self.flags(for: chord), what: "key event for \(chord.key)")
+    }
+
+    public func pressHardwareArrow(_ chord: KeyChord) throws {
+        // A hardware arrow key carries these two; the Spaces hotkeys are registered with them.
+        let flags = Self.flags(for: chord).union([.maskSecondaryFn, .maskNumericPad])
+        try postKeyPair(virtualKey: chord.key.keyCode, flags: flags, what: "arrow key event for \(chord.key)")
+    }
+
+    private static func flags(for chord: KeyChord) -> CGEventFlags {
         var flags: CGEventFlags = []
         for m in chord.modifiers {
             switch m {
@@ -75,7 +95,28 @@ public struct CGEventInputSynthesizer: InputSynthesizing {
             case .function: flags.insert(.maskSecondaryFn)
             }
         }
-        try postKeyPair(virtualKey: chord.key.keyCode, flags: flags, what: "key event for \(chord.key)")
+        return flags
+    }
+
+    public func pressMediaKey(_ key: SystemMediaKey) throws {
+        // NX_KEYTYPE_PLAY 16, NEXT 17, PREVIOUS 18; subtype 8 is a media key; 0xA00 is key down, 0xB00 key up.
+        let code: Int
+        switch key {
+        case .playPause: code = 16
+        case .next: code = 17
+        case .previous: code = 18
+        }
+        for down in [true, false] {
+            let state = down ? 0xA00 : 0xB00
+            guard let event = NSEvent.otherEvent(with: .systemDefined, location: .zero,
+                                                 modifierFlags: NSEvent.ModifierFlags(rawValue: UInt(state)), timestamp: 0,
+                                                 windowNumber: 0, context: nil, subtype: 8,
+                                                 data1: (code << 16) | state, data2: -1),
+                  let cgEvent = event.cgEvent else {
+                throw InputSynthesisError.eventCreationFailed("media key \(key)")
+            }
+            cgEvent.post(tap: .cghidEventTap)
+        }
     }
 
     public func moveMouse(to point: CGPoint) throws {
