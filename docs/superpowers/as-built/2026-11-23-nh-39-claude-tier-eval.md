@@ -1,6 +1,6 @@
 # As-built: NH-39 Claude model tiers on the intent fixtures
 
-**Shipped:** in PR TBD
+**Shipped:** in PR #187
 **Ticket:** NH-39
 **Spec:** [2026-11-05-nh-39-measure-claude-model-tiers-design.md](../specs/2026-11-05-nh-39-measure-claude-model-tiers-design.md)
 
