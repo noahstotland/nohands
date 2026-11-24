@@ -32,4 +32,4 @@ With [agent-desktop](https://github.com/vercel-labs/agent-desktop) installed (`n
 
 The harness keys are in [Configuration](configuration.md#agent-desktop-harness-keys).
 
-**Claude vs. the local model.** Use Claude for tasks: with `qwen2.5:7b-instruct` the cold first request timed out, the warm one answered `ignore`, and no task has completed. A step costs 5 to 20 s on an M1 Pro (about 2,200 prompt tokens), hence `localLlmDeadlineMs` (30 s) and `localMaxObservedElements` (40). NoHands warms the model every 20 minutes while listening.
+**Claude vs. the local model.** Claude answers a first step in about 1 to 2 s (p50 1.1 s on Haiku `low`, 1.9 s on Opus `medium`; p95 2 to 3 s) and passes 73% to 92% of the intent fixtures depending on tier; the local model is far slower and less proven. Use Claude for tasks: with `qwen2.5:7b-instruct` the cold first request timed out, the warm one answered `ignore`, and no task has completed. A step costs 5 to 20 s on an M1 Pro (about 2,200 prompt tokens), hence `localLlmDeadlineMs` (30 s) and `localMaxObservedElements` (40). NoHands warms the model every 20 minutes while listening.

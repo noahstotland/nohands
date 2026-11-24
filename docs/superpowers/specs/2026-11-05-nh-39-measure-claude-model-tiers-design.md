@@ -1,6 +1,7 @@
 # NH-39: Measure the Claude model tiers on the intent fixtures — Design
 
-**Date:** 2026-11-05  **Status:** Draft  **Ticket:** [NH-39](https://github.com/noahstotland/nohands/issues/39)
+**Date:** 2026-11-05  **Status:** Shipped  **Ticket:** [NH-39](https://github.com/noahstotland/nohands/issues/39)
+**Shipped:** in PR TBD, with differences: [as-built](../as-built/2026-11-23-nh-39-claude-tier-eval.md)
 
 ## Intent
 
