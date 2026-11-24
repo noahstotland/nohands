@@ -15,7 +15,7 @@ What the numbers say, for the user's call (not acted on here):
 
 - Haiku at `low` trails the others by 4 to 19 points: 81% and 73% against 88% to 92% for Opus and 85% to 92%
   for Sonnet. Haiku at `medium` is no better on the main file (80%) and 12 points better on the disfluent file (85%).
-- Its p50 is about 40% lower than Opus (1078 ms against 1895 to 1943 ms on the main file). Haiku at `low` also has the lowest p95 on both files.
+- Its p50 is about 45% lower than Opus (1078 ms against 1895 to 1943 ms on the main file). Haiku at `low` also has the lowest p95 on both files.
 - Sonnet at `low` is 0 to 2 points under Opus at `low` and 6% to 18% faster at p50. It is the middle option if
   Haiku's accuracy matters more than its price.
 - Effort made no consistent difference (`low` vs `medium` within 2 points on Sonnet and Opus). Where it did
@@ -29,8 +29,8 @@ What the numbers say, for the user's call (not acted on here):
 - Run on 2026-11-23 on a MacBook Pro (arm64, 16 GB), one network, a debug build of `cef5e4a` (this branch with
   `origin/main` merged in). Defaults for everything else: `llmDeadlineMs` 12000, so a timeout
   would count as a fail (none showed in the logs; every FAIL line carried a model answer).
-- A call passes when `IntentEval.matches(actions, status:, anyOf:)` accepts it. On this `main` that includes the
-  step `status`, so a right action with `continue` where the fixture wants `done` fails.
+- A call passes when `IntentEval.matches(actions, status:, anyOf:)` accepts it (the actions, and the step `status`
+  only for the one fixture case that sets one).
 - Latency is wall time per call, including HTTP; p50 and p95 are nearest-rank over every call (no warm-up
   dropped for Claude).
 
@@ -74,9 +74,12 @@ Counts are failed calls out of 18 per case (3 runs × 6 pairs).
 | scroll way down | 7 | 3 of 6 |
 | the other 12 cases | 1 to 6 each | 1 to 2 of 6, mostly Haiku |
 
-Six cases fail on at least 5 of 6 pairs, Opus at `medium` included. The wrong answers are mostly a right
-action with a different `status` (`continue` instead of `done`) or an empty action list for the folder phrases,
-so these point at the prompt or the fixture, not the tier. Both are out of scope here (no prompt or fixture
+Six cases fail on at least 5 of 6 pairs, Opus at `medium` included. The wrong answers are a direct action where
+the fixture expects a label click or a keystroke: the downloads phrases get `openFile` (or an empty list) where
+the fixture clicks label 3, "choose the second tab" gets ⌘2 where it clicks label 2, "make safari full screen"
+gets `moveWindow(.maximize)` where it presses ⌃⌘F, "copy this then paste it below" adds an extra key to the
+expected sequence, and "jot down …" opens Notes where it types into Mail. These point at the prompt or the
+fixture, not the tier. Both are out of scope here (no prompt or fixture
 edits). Opus at `medium`, the pre-NH-95 default, itself passes 88% and 92%, so "both files stay at 100% on the
 chosen default" cannot be met by any pair today.
 
@@ -94,12 +97,11 @@ the cache. Today (before #37) there is no cache to lose, only the extra call.
 - **Defaults were already Haiku at `low`** (NH-95 merged after the spec was written), so the spec's baseline
   "opus/medium" is now one row of the table, not the running default.
 - **1,062 calls, not 972**, because the main fixture file grew from 40 to 45 cases after the spec.
-- **`main`'s matcher also checks `status`**, which the spec did not know about; the results above use it.
 
 ## Follow-up proposed
 
-- A ticket to look at the six shared failures (`status` on one-step requests such as the folder, copy/paste,
-  full-screen and jot-down phrases): fix the prompt or the fixture, then rerun this table.
+- A ticket to look at the six shared failures (the folder, second-tab, full-screen, copy/paste and jot-down
+  phrases): fix the prompt or the fixture, then rerun this table.
 - A product call on whether Haiku at `low`'s 4 to 19 point gap is worth its price saving; Sonnet at `low` is the
   nearest alternative.
 
