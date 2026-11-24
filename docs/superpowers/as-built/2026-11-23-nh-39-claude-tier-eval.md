@@ -15,7 +15,7 @@ What the numbers say, for the user's call (not acted on here):
 
 - Haiku at `low` trails the others by 4 to 19 points: 81% and 73% against 88% to 92% for Opus and 85% to 92%
   for Sonnet. Haiku at `medium` is no better on the main file (80%) and 12 points better on the disfluent file (85%).
-- Its p50 is about 45% lower than Opus (1078 ms against 1895 to 1943 ms on the main file). Haiku at `low` also has the lowest p95 on both files.
+- Its p50 is 43% to 45% lower than Opus (1078 ms against 1895 to 1943 ms on the main file). Haiku at `low` also has the lowest p95 on both files.
 - Sonnet at `low` is 0 to 2 points under Opus at `low` and 6% to 18% faster at p50. It is the middle option if
   Haiku's accuracy matters more than its price.
 - Effort made no consistent difference (`low` vs `medium` within 2 points on Sonnet and Opus). Where it did
@@ -74,11 +74,12 @@ Counts are failed calls out of 18 per case (3 runs × 6 pairs).
 | scroll way down | 7 | 3 of 6 |
 | the other 12 cases | 1 to 6 each | 1 to 2 of 6, mostly Haiku |
 
-Six cases fail on at least 5 of 6 pairs, Opus at `medium` included. The wrong answers are a direct action where
-the fixture expects a label click or a keystroke: the downloads phrases get `openFile` (or an empty list) where
-the fixture clicks label 3, "choose the second tab" gets ⌘2 where it clicks label 2, "make safari full screen"
-gets `moveWindow(.maximize)` where it presses ⌃⌘F, "copy this then paste it below" adds an extra key to the
-expected sequence, and "jot down …" opens Notes where it types into Mail. These point at the prompt or the
+Six cases fail on at least 5 of 6 pairs, Opus at `medium` included. The wrong answers differ from the
+fixture's expected action: the downloads phrases get `openFile` (or an empty list) where the fixture clicks
+label 3, "choose the second tab" gets ⌘2 where it clicks label 2, "make safari full screen" gets
+`moveWindow(.maximize)` where it presses ⌃⌘F, "copy this then paste it below" adds an extra key to the expected
+sequence, and "jot down …" opens Notes on Opus and Sonnet where the fixture types into Mail (Haiku types the
+right text with a trailing period, which the matcher does not normalise). These point at the prompt or the
 fixture, not the tier. Both are out of scope here (no prompt or fixture
 edits). Opus at `medium`, the pre-NH-95 default, itself passes 88% and 92%, so "both files stay at 100% on the
 chosen default" cannot be met by any pair today.
