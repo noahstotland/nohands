@@ -1,5 +1,11 @@
 # Release notes
 
+## 2026-11-24 ignore the closed Apple menu agent-desktop reports as an open menu (NH-185) (#188)
+
+Merged 2026-11-24 3:16 pm UTC.
+
+NoHands tasks in Chrome and other apps no longer waste steps pressing Escape to close an Apple menu that was never open.
+
 ## 2026-11-24 Slack voice commands (NH-81) (#141)
 
 Merged 2026-11-24 3:05 pm UTC.
