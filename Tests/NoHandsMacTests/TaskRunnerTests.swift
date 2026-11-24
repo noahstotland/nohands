@@ -1026,6 +1026,32 @@ private func resolverForSend() -> FakeResolver {
     }
 }
 
+@MainActor @Test func theScreenIsReadAgainAfterAYes() async {
+    // (what the screen shows when the yes comes, the click that landed (nil: none), the failure the model sees next)
+    let table: [([UIElementInfo], String?, String?)] = [
+        ([el(1, "Send")], "click:140,55", nil),
+        ([el(1, "Send", x: 300)], "click:340,55", nil),
+        ([el(1, "Delete")], nil, ActionExecutor.elementChanged),
+        ([], nil, ActionExecutor.elementChanged),
+    ]
+    let holdTimeout: @Sendable (Duration) async -> Void = { d in
+        if d == TaskRunner.answerTimeout { try? await Task.sleep(for: .seconds(30)) }
+    }
+    for (after, click, failure) in table {
+        let steps = [step("send it", .continue, [.click(.label(1), button: .left, count: 1)]), step("give up", .stuck)]
+        let r = rig(FakeResolver(steps), sleep: holdTimeout)
+        r.ax.elements = [el(1, "Send")]
+        let runner = r.runner
+        let task = Task { await runner.run(goal: "reply to Anna", mode: .command) }
+        for _ in 0..<2000 where !runner.isAwaitingAnswer { await Task.yield() }
+        r.ax.elements = after
+        runner.answer("yes")
+        _ = await task.value
+        #expect(r.input.calls.filter { $0.hasPrefix("click") } == (click.map { [$0] } ?? []), "\(after.map(\.title))")
+        #expect(r.resolver.requests[1].history.last?.failure == failure, "\(after.map(\.title))")
+    }
+}
+
 @MainActor @Test func askedQuestionWaitsForTheAnswer() async {
     enum Reply { case say(String), stop, silence }
     let click = Action.click(.label(1), button: .left, count: 1)

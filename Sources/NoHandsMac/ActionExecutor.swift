@@ -67,6 +67,12 @@ public protocol ElementProviding: Sendable {
     func focusedWindowIsFullScreen() -> Bool?
     /// Whether the focused element takes typed text.
     func focusedElementIsTextInput() -> Bool
+    /// The title of the control under `point` (CG coordinates), read live: the element there, else its nearest titled
+    /// ancestor within a few levels. nil when nothing titled is there or the app does not answer in time.
+    func elementTitle(at point: CGPoint) -> String?
+    /// The title of the frontmost app's focused control when Return or Space would press it (a button, link or menu
+    /// button); nil for anything else or when it cannot be read.
+    func focusedElementTitle() -> String?
 }
 
 /// How a request to act on a browser tab or window went.
@@ -97,6 +103,8 @@ extension ElementProviding {
     public func setSelection(_ span: TextSpan) -> Bool { false }
     public func focusedWindowIsFullScreen() -> Bool? { nil }
     public func focusedElementIsTextInput() -> Bool { false }
+    public func elementTitle(at point: CGPoint) -> String? { nil }
+    public func focusedElementTitle() -> String? { nil }
     public func focusedWindowTitle() -> String? { nil }
     public func webURL() -> String? { nil }
     public func didJustExpose() -> Bool { false }
@@ -157,6 +165,9 @@ extension OverlayController: OverlayPresenting {
     /// Where "menu <words>" looks for the item to press, before agent-desktop.
     let menus: any MenuReading
     let clipboard: any ClipboardAccess
+    /// Set by the task loop for a model step: a press whose live title holds a guarded verb the goal did not name and
+    /// the user did not confirm fails the step (`pressRefusal`). Nil for spoken commands, macros and packs.
+    public var pressGuard: PressGuard?
     public var onModeChange: ((Mode) -> Void)?
     /// Called when `.setSpokenFeedback` runs.
     public var onSpokenFeedbackChange: ((SpeakLevel) -> Void)?
@@ -292,6 +303,17 @@ extension OverlayController: OverlayPresenting {
         return nil
     }
 
+    /// The step's failure when `title`, read just before a press, names a guarded verb nobody allowed or confirmed.
+    func pressRefusal(title: String?) -> String? {
+        guard let pressGuard, let verb = IrreversibleGuard.unconfirmed(title: title, guard: pressGuard) else { return nil }
+        return "\(verb) not confirmed, look again"
+    }
+
+    /// The same, for the control under `point`; reads nothing outside a model step.
+    func pressRefusal(at point: CGPoint) -> String? {
+        pressGuard == nil ? nil : pressRefusal(title: ax.elementTitle(at: point))
+    }
+
     private func run(_ action: Action, isLast: Bool) async -> String? {
         do {
             switch action {
@@ -300,6 +322,9 @@ extension OverlayController: OverlayPresenting {
                 try input.type(text)
                 hideStaleOverlay()
             case .pressKey(let chord):
+                // Return, and Space without modifiers, press the focused button.
+                if pressGuard != nil, chord.key == .return || (chord.key == .space && chord.modifiers.isEmpty),
+                   let refusal = pressRefusal(title: ax.focusedElementTitle()) { return refusal }
                 try input.press(chord)
                 hideStaleOverlay()
             case .click(let target, let button, let count):
@@ -315,6 +340,7 @@ extension OverlayController: OverlayPresenting {
                 }
                 // A numbered element with a ref is clicked semantically; a point click is the fallback.
                 if case .label(let n) = target, let e = labelSnapshot?[n], let ref = e.ref, let harness {
+                    if let refusal = pressRefusal(title: e.title) { return refusal }
                     switch await harness.act(.click(ref: ref, button: button, count: count)) {
                     case .delivered: hideStaleOverlay(); return nil
                     case .failed(let m): return m
@@ -330,6 +356,7 @@ extension OverlayController: OverlayPresenting {
                 switch resolveClick(target, elements: named) {
                 case .failure(let m): return m
                 case .point(let p):
+                    if let refusal = pressRefusal(at: p) { return refusal }
                     try input.click(at: p, button: button, count: count)
                     if usedOverlay { overlay.hide() }
                 }
@@ -339,6 +366,7 @@ extension OverlayController: OverlayPresenting {
                 pressed.insert(b)
             case .releaseMouse(let b):
                 guard let at = input.currentMouseLocation() else { return Self.pointerUnknown }
+                if let refusal = pressRefusal(at: at) { return refusal }
                 try input.mouseUp(b, at: at)
                 pressed.remove(b)
             case .moveCursor(let target):

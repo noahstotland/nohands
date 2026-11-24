@@ -57,12 +57,63 @@ private func el(_ id: Int, _ title: String, role: String = "AXButton", states: [
         (click(1), labels, "reply to Anna but don't send it", "send"), (click(1), labels, "send it, don't delete", nil),
         (click(1), labels, "I don't want to send it", "send"), (click(1), labels, "don't actually send it", "send"),
         (click(1), labels, "no problem, send it", nil), (click(1), labels, "don't wait, send it", nil),
+        // a comma ends a negation only when no guarded verb was negated, or a new instruction follows
+        (click(1), labels, "no, send it", nil), (click(1), labels, "don't send it, just save", "send"),
+        (click(1), labels, "don't delete, send or archive anything", "send"), (click(1), labels, "don't delete it, just send it", nil),
         // every held verb in the step is named, so one yes covers exactly what was asked about
         (click(6) + click(5) + click(1), labels, "reply to Anna", "place order and send"),
         (click(1) + click(1) + click(5), labels, "send it", "place order"),
     ]
     for (actions, labels, goal, expected) in table {
         #expect(IrreversibleGuard.held(actions, labels: labels, goal: goal) == expected, "\(actions) / \(goal)")
+    }
+}
+
+@Test func everyRouteToAButtonIsHeld() {
+    let reload = el(1, "Reload"), send = el(2, "Send"), back = el(3, "Back"), field = el(4, "Body", role: "AXTextArea")
+    let labels = [1: reload, 2: send, 3: back, 4: field]
+    let atSend = CGPoint(x: 40, y: 95)   // inside Send (y 80...110), not Reload (40...70)
+    let grid = OverlayState.grid(GridModel(bounds: CGRect(x: 0, y: 0, width: 80, height: 400), columns: 1, rows: 10))
+    func click(_ t: ClickTarget) -> [Action] { [.click(t, button: .left, count: 1)] }
+    let focused = ["focused"]
+    let focusedSend = [1: reload, 2: el(2, "Send", states: focused)]
+    // (actions, overlay, real pointer, labels, the verb asked about or nil)
+    let table: [([Action], OverlayState, CGPoint?, [Int: UIElementInfo], String?)] = [
+        // a grid cell is the element under its centre, not label n (cell 3 is over Send, cell 2 over Reload)
+        (click(.numbered(3)), grid, nil, labels, "send"), (click(.numbered(2)), grid, nil, labels, nil),
+        (click(.numbered(1)), .labels([1: send]), nil, labels, "send"), (click(.numbered(2)), .none, nil, labels, "send"),
+        // the cursor: moved in this step, already there, moved away, released over the button
+        ([.moveCursor(.point(atSend)), click(.cursor)[0]], .none, nil, labels, "send"),
+        ([.moveCursor(.relative(dx: 0, dy: 50)), click(.cursor)[0]], .none, CGPoint(x: 40, y: 45), labels, "send"),
+        (click(.cursor), .none, atSend, labels, "send"), (click(.cursor), .none, nil, labels, nil),
+        ([.moveCursor(.point(CGPoint(x: 900, y: 900))), click(.cursor)[0]], .none, atSend, labels, nil),
+        ([.releaseMouse(.left)], .none, atSend, labels, "send"), (click(.point(atSend)), .none, nil, labels, "send"),
+        // a drag released on a button presses it
+        ([.drag(from: .point(.zero), to: .label(2))], .none, nil, labels, "send"),
+        ([.drag(from: .point(.zero), to: .point(atSend))], .none, nil, labels, "send"),
+        ([.drag(from: .label(2), to: .point(CGPoint(x: 900, y: 900)))], .none, nil, labels, nil),
+        // Space presses a focused button, but not with a modifier or in a text field
+        ([.focusElement(.label(2)), .pressKey(KeyChord(.space))], .none, nil, labels, "send"),
+        ([.pressKey(KeyChord(.space))], .none, nil, focusedSend, "send"),
+        ([.pressKey(KeyChord(.space, [.command]))], .none, nil, focusedSend, nil),
+        ([.focusElement(.label(4)), .pressKey(KeyChord(.space))], .none, nil, focusedSend, nil),
+    ]
+    for (actions, overlay, cursor, labels, expected) in table {
+        #expect(IrreversibleGuard.held(actions, labels: labels, goal: "tidy up", overlay: overlay, cursor: cursor) == expected,
+                "\(actions) / \(overlay) / \(String(describing: cursor))")
+    }
+}
+
+@Test func aPressOnAGuardedTitleNeedsTheGoalOrAYes() {
+    // (title, goal, confirmed, the verb refused or nil)
+    let table: [(String?, String, Set<String>, String?)] = [
+        ("Send", "reply to Anna", [], "send"), ("Send", "send the reply", [], nil), ("Send", "reply to Anna", ["send"], nil),
+        ("Send", "reply to Anna", ["delete"], "send"), ("Place order", "buy a lamp", ["buy"], "place order"),
+        ("Reload", "reply to Anna", [], nil), ("Sender", "reply to Anna", [], nil), (nil, "reply to Anna", [], nil),
+    ]
+    for (title, goal, confirmed, expected) in table {
+        #expect(IrreversibleGuard.unconfirmed(title: title, guard: PressGuard(goal: goal, confirmed: confirmed)) == expected,
+                "\(String(describing: title)) / \(goal) / \(confirmed)")
     }
 }
 

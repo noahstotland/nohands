@@ -468,3 +468,28 @@ private let reload = UIElementInfo(id: 1, frame: CGRect(x: 100, y: 100, width: 8
     stopped.withLock { $0 = true }
     #expect(await task.value == ActionExecutor.cancelled && ax.selectedTabs.isEmpty)
 }
+
+@MainActor @Test func aModelStepCannotPressAGuardedTitleItDidNotName() async {
+    let click: [Action] = [.click(.point(CGPoint(x: 5, y: 5)), button: .left, count: 1)]
+    let space: [Action] = [.pressKey(KeyChord(.space))]
+    // (actions, title under the pointer, focused button, confirmed verbs, step failure, input calls)
+    let table: [([Action], String?, String?, Set<String>, String?, [String])] = [
+        (click, "Send", nil, [], "send not confirmed, look again", []), (click, "Send", nil, ["send"], nil, ["click:5,5"]),
+        (click, nil, nil, [], nil, ["click:5,5"]), (click, "Reload", nil, [], nil, ["click:5,5"]),
+        (space, nil, "Send", [], "send not confirmed, look again", []), (space, nil, "Send", ["send"], nil, ["press"]),
+        ([.releaseMouse(.left)], "Delete", nil, [], "delete not confirmed, look again", []),
+        ([.drag(from: .point(.zero), to: .point(CGPoint(x: 9, y: 9)))], "Send", nil, [], "send not confirmed, look again", []),
+    ]
+    for (actions, title, focused, confirmed, failure, calls) in table {
+        let (x, i, e, _) = make()
+        e.titleAtPoint = title
+        e.focusedTitle = focused
+        x.pressGuard = PressGuard(goal: "reply to Anna", confirmed: confirmed)
+        #expect(await x.execute(actions) == failure, "\(actions) / \(String(describing: title))")
+        #expect(i.calls.filter { !$0.hasPrefix("move") } == calls, "\(actions) / \(String(describing: title))")
+    }
+    // a spoken command carries no guard: the same click goes through
+    let (x, i, e, _) = make()
+    e.titleAtPoint = "Send"
+    #expect(await x.execute(click) == nil && i.calls == ["click:5,5"])
+}

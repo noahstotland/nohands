@@ -138,6 +138,7 @@ extension ActionExecutor {
                 return "no '\(name)' in menubar"
             }
             if m.disabled { return "'\(name)' is disabled" }
+            if let refusal = pressRefusal(title: m.name) { return refusal }
             return outcome(await harness.act(.click(ref: m.ref, button: .left, count: 1)))
         case .menuItem(let name, let exact):
             guard let last = MenuMatch.leaf(of: name) else { return "no menu item called \(name)" }
@@ -162,6 +163,7 @@ extension ActionExecutor {
             // agent-desktop falls back to a contains match; an exact step may press only the title it named.
             if exactOnly, MenuMatch.plain(m.name) != MenuMatch.plain(last) { return "no menu item called \(last)" }
             if m.disabled { return "menu item \(last) is disabled" }
+            if let refusal = pressRefusal(title: m.name) { return refusal }
             return outcome(await harness.act(.click(ref: m.ref, button: .left, count: 1)))
         case .closeApp(let app):
             if let harness { return outcome(await harness.act(.closeApp(app))) }
@@ -257,12 +259,20 @@ extension ActionExecutor {
             }
             let a = endpoint(from), b = endpoint(to)
             if let m = a.failure ?? b.failure { return m }
+            // A release on a guarded button presses it: checked before anything moves.
+            if let xy = b.xy {
+                if let refusal = pressRefusal(at: xy) { return refusal }
+            } else if let ref = b.ref, let refusal = pressRefusal(title: labelSnapshot?.values.first(where: { $0.ref == ref })?.title) {
+                return refusal
+            }
             let m = outcome(await harness.act(.drag(fromRef: a.ref, fromXY: a.xy, toRef: b.ref, toXY: b.xy)))
             if m == nil, usedOverlay { hideStaleOverlay() }
             return m
         }
         guard case .point(let p1) = resolveMove(from) else { return "can't resolve drag start" }
         guard case .point(let p2) = resolveMove(to) else { return "can't resolve drag end" }
+        // Checked before the button goes down: a release on a guarded button presses it.
+        if let refusal = pressRefusal(at: p2) { return refusal }
         // Finder and most apps ignore a drag that arrives in one jump: press, wait, move in steps, wait, release.
         try input.moveMouse(to: p1)
         dragInFlight = true
