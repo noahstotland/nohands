@@ -10,11 +10,11 @@ A menu-bar macOS app that operates the whole computer by voice alone (dictation,
 ## 2. Non-goals
 
 - Wake word. The app always listens; "go to sleep" / "wake up" gate it (optional attention word, NH-12).
-- Vision fallback (shipped later, NH-41), LLM polish of dictation, custom vocabulary, Intel, notarization.
+- Vision fallback (shipped later, NH-41), LLM polish of dictation, custom vocabulary (shipped later, NH-56), Intel, notarization.
 
 ## 3. Architecture
 
-Mic (16 kHz mono, echo cancellation unless `echoCancellation` is false) → Silero VAD → Parakeet TDT v2 → mode machine → dictation formatter, or command grammar (unmatched text goes to the Claude resolver) → action executor.
+Mic (16 kHz mono, echo cancellation unless `echoCancellation` is false) → Silero VAD → Parakeet TDT v2 → vocabulary rewrite (`vocabulary` config key) → mode machine → dictation formatter, or command grammar (unmatched text is checked against `macros` names, then goes to the Claude resolver) → action executor. With `speakFeedback` not `off`, a task's finish line is spoken (through the capture engine, so echo cancellation removes it) and a transcript that repeats it is dropped before routing; a stop phrase is never dropped.
 
 - **One vocabulary.** `Action` is the enum every stage produces or consumes. A new capability adds a case in grammar, LLM decoder and executor.
 - **Grammar first, LLM second.** The common path is local (< 1 ms) and works offline. An untypeable `spell` phrase is rejected, not sent to the LLM.
@@ -26,7 +26,7 @@ Mic (16 kHz mono, echo cancellation unless `echoCancellation` is false) → Sile
 - `dictation`: everything is typed except "stop dictating", "command mode", "scratch that", "delete word", "delete that" and the text edits (`select the last sentence`, `delete <words>`, `replace x with y`, `go to the end of the line`, `uppercase that`; a phrase edit whose words are not in the field is typed as dictation).
 - `sleep`: everything ignored except "wake up".
 
-The menu bar shows `CMD` / `DICT` / `ZZZ`. The menu has Start at Login, Status Bar, Model (`Claude|Local|Off`, no restart, saves `intentBackend`), Open config.json…, Recent commands (last 50) and View Logs…. The log is `~/.config/nohands/command-log.json`, local only, mode 600.
+The menu bar shows `CMD` / `DICT` / `ZZZ`. The menu has Start at Login, Status Bar, Packs (turn an installed pack on or off, remove it, Browse… and Check for pack updates for the registry; install from a file with `nohands-cli pack add`, see `docs/app-packs.md`), Model (`Claude|Local|Off`, no restart, saves `intentBackend`), Speak Feedback (`Off|Outcomes|All`, no restart, saves `speakFeedback`), Open config.json…, Recent commands (last 50, with Clear Log, which deletes `command-log.json`, and Keep Command Log, which stops new entries, no restart, saves `commandLog`) and View Logs…. The log is `~/.config/nohands/command-log.json`, local only, mode 600.
 
 ## 5. Command grammar and dictation
 
@@ -55,7 +55,7 @@ Input is lowercased and stripped of `.,!?`. In a number slot "to"/"too" mean 2 a
 | `hide` / `hide grid` / `hide numbers` / `cancel` | `.hideOverlay` |
 | `open <app name>` | `.openApp(name)` |
 | `start dictating`, `dictation mode`, `stop dictating`, `command mode`, `go to sleep`, `wake up` | `.setMode(...)` |
-| anything else (except a `spell` with an unknown word, which is rejected on the HUD and never sent to the LLM) | unmatched → LLM |
+| anything else (except a `spell` with an unknown word, which is rejected on the HUD and never sent to the LLM) | unmatched → macro name (command mode, whole phrase) → LLM |
 
 
 Spoken tokens → characters: `period` `.`, `comma` `,`, `question mark` `?`, `exclamation point|mark` `!`, `colon` `:`, `semicolon` `;`, `dash` ` - `, `hyphen` `-`, `open quote` `"`, `close quote` `"`, `open paren` `(`, `close paren` `)`, `new line` `\n`, `new paragraph` `\n\n`. No space before `.,?!:;)`; space after them when followed by a word; capitalize the first letter of the utterance and of any word following `.`, `?`, `!`, or a newline. Across utterances, `DictationSession` inserts a leading space when the previous insertion ended in a word character and the new text starts with one. Parakeet already emits punctuation and casing; the formatter preserves it and only adds what is spoken.

@@ -37,7 +37,7 @@ public enum TaskOutcome: Equatable, Sendable {
     static let questionLimit = 80
     static let answerLimit = 200
     /// How long a step held for a spoken yes, or a question the model asked, waits for the answer.
-    nonisolated static let answerTimeout: Duration = .seconds(30)
+    nonisolated static let answerTimeout: Duration = ConfirmAnswer.timeout
 
     private let config: AppConfig
     private let resolver: any IntentResolving
@@ -46,6 +46,8 @@ public enum TaskOutcome: Equatable, Sendable {
     private let overlay: any OverlayPresenting
     /// Takes the vision fallback's picture; nil (flag off, local backend) means no step ever gets one.
     private let screenshots: (any ScreenshotProviding)?
+    /// Saved routes (NH-46); nil (the CLI, most tests) means no task is hinted with a route or saves one.
+    private let routes: (any RouteStoring)?
     /// Test hook: shortens the capture deadline.
     var captureDeadline = TaskRunner.captureDeadline
     /// The capture being waited for, if any. `cancel()` resumes it so a hung capture cannot hold up a stop.
@@ -81,6 +83,22 @@ public enum TaskOutcome: Equatable, Sendable {
     private(set) var cancelled = false
     /// While a plan runs, the element cap for each observation (the model is not sent those lists); nil otherwise.
     private var planLimit: Int?
+    /// The steps of the current (or last) `run`, kept so `finish` can hand them to the next request as an `EarlierTask`.
+    private var history: [StepRecord] = []
+    /// The last screen the task read, for the same reason.
+    private var lastSeen: ScreenObservation?
+    /// What a follow-up can refer to: set when a run ends `done`, `stuck` or `stopped`, nil when it ends `ignored` or
+    /// `failed`. Its goal chains the earlier goal with the follow-up's words, so a second follow-up still sees the first.
+    public private(set) var lastTask: EarlierTask?
+    private var runGoal = ""
+    /// The route this task was hinted with, and the one it saved (NH-46); both nil at the start of every task. "Forget
+    /// that route" drops both.
+    public private(set) var lastMatched: Route?
+    public private(set) var lastSaved: Route?
+    /// Whether the current run follows an earlier task: a follow-up neither gets a route nor saves one.
+    private var runIsFollowUp = false
+    /// Per step of `history`, the title each label number had on that step's screen, so a route is saved by name.
+    private var stepNames: [[Int: String]] = []
     /// Steps whose actions were executed in the current (or last) `run`.
     public private(set) var stepsRun = 0
     /// Each step's settle wait in ms, in the order `onStep` reported them, for the current (or last) `run`.
@@ -93,6 +111,12 @@ public enum TaskOutcome: Equatable, Sendable {
     /// The prompt's status as the task goes: each step as it starts, a step's failure, and the finish line. The
     /// pipeline puts it on the prompt's row; the CLI prints it.
     public var onStatus: ((PromptStatus) -> Void)?
+    /// Called when the task starts waiting for an answer: the question the model asked, or the irreversible step it
+    /// holds for a spoken yes. The pipeline speaks it at the `all` level (NH-60); the board shows the same words.
+    public var onPrompt: ((FeedbackCue) -> Void)?
+    /// True once a step of the current (or last) `run` read text the user did not say (clipboard, a field, the page,
+    /// notifications) or rewrote the selection: its finish line may repeat that text, so it is spoken only at `all`.
+    public private(set) var readText = false
     /// The steps so far as data, for the corner panel: emitted when the run starts (empty), when a step starts, when
     /// it ends and when the run ends stuck. The CLI leaves it nil.
     public var onTrail: ((TaskTrail) -> Void)?
@@ -108,8 +132,10 @@ public enum TaskOutcome: Equatable, Sendable {
                 sleep: @escaping @Sendable (Duration) async -> Void = { try? await Task.sleep(for: $0) },
                 now: @escaping @Sendable () -> ContinuousClock.Instant = { .now },
                 harness: (any DesktopHarness)? = nil,
-                screenshots: (any ScreenshotProviding)? = nil) {
+                screenshots: (any ScreenshotProviding)? = nil,
+                routes: (any RouteStoring)? = nil) {
         self.config = config
+        self.routes = config.routeMemory ? routes : nil
         self.screenshots = config.visionEnabled ? screenshots : nil
         self.harness = harness
         self.resolver = resolver
@@ -136,20 +162,34 @@ public enum TaskOutcome: Equatable, Sendable {
 
     private var isCancelled: Bool { cancelled || Task.isCancelled }
 
-    public func run(goal: String, mode: Mode) async -> TaskOutcome {
+    /// `earlier` is the task this one follows up on (see `FollowUp.memory`); it goes on every request, and a follow-up
+    /// is never planned (the plan prompt cannot see the earlier task).
+    public func run(goal: String, mode: Mode, earlier: EarlierTask? = nil) async -> TaskOutcome {
         cancelled = false
+        // Media budget and site routes read the earlier goal as well.
+        let context = earlier.map { "\($0.goal) \(goal)" } ?? goal
+        runGoal = earlier.map { FollowUp.chained(earlier: $0.goal, goal: goal, limit: EarlierTask.goalLimit) } ?? goal
+        // The done-only-when-playing check follows the earlier goal unless the new words ask to pause, stop or mute.
+        let playbackGoal = FollowUp.playbackGoal(earlier: earlier?.goal, goal: goal)
+        lastTask = nil
+        lastMatched = nil
+        lastSaved = nil
+        runIsFollowUp = earlier != nil
+        stepNames = []
         planLimit = nil
         stepsRun = 0
+        readText = false
         settleTimes = []
         // A goal about playing media gets a longer budget: stream sites throw overlays and pop-unders first.
-        let maxSteps = max(1, MediaGoal.matches(goal) ? config.maxMediaTaskSteps : config.maxTaskSteps)
+        let maxSteps = max(1, MediaGoal.matches(context) ? config.maxMediaTaskSteps : config.maxTaskSteps)
         trail = TaskTrail(maxSteps: maxSteps)
         setPhase(.reading)   // before the first screen read, which can take a second or two
         ledger = TabLedger()
         markTaskTab = false
         atTaskStart = true
         observer.resetBrowserTokens()
-        var history: [StepRecord] = []
+        history = []
+        lastSeen = nil
         var repeats = RepeatDetector(limit: 3)
         var askedAgainForMedia = false
         // Observe once. Settle first only when that walk just exposed a Chromium page tree (it fills in ~0.5 s
@@ -174,11 +214,15 @@ public enum TaskOutcome: Equatable, Sendable {
         var (observation, labels) = first.result
         await annotateTabs(&observation)
         var settled = settleStart.duration(to: .now)
+        // A saved route that fits this goal goes on every request as a hint; matching reads the in-memory list only.
+        if let routes, earlier == nil {
+            lastMatched = RouteMemory.match(goal: goal, currentHost: RouteMemory.host(of: observation.url), in: routes.routes)
+        }
 
         // A goal that looks multi-step may get a plan the model writes once; code then runs and checks it, and the
         // loop below takes over on any miss. Every step still goes through the guards below.
         var engine: PlanEngine?
-        if PlanGate.mayPlan(goal: goal) {
+        if earlier == nil, PlanGate.mayPlan(goal: goal) {
             setPhase(.planning)
             if let plan = await askForPlan(goal) {
                 engine = PlanEngine(plan: plan)
@@ -205,7 +249,9 @@ public enum TaskOutcome: Equatable, Sendable {
                     endPlan(&observation, &labels)
                 }
             }
-            var request = StepRequest(goal: goal, step: n, maxSteps: maxSteps, history: history, observation: observation)
+            lastSeen = observation
+            var request = StepRequest(goal: goal, step: n, maxSteps: maxSteps, history: history, observation: observation,
+                                      earlier: earlier, pastRoute: lastMatched)
             var step: IntentStep
             if let planned {
                 step = planned
@@ -243,6 +289,7 @@ public enum TaskOutcome: Equatable, Sendable {
                 let question = Self.clipped(step.intent, to: Self.questionLimit)
                 if isCancelled { return await finish(.stopped) }
                 onStatus?(.running("step \(n) · ? \(question)"))
+                onPrompt?(.question(question))
                 trail.begin(number: n, intent: question)
                 trail.phase = .reading
                 onTrail?(trail)
@@ -254,7 +301,7 @@ public enum TaskOutcome: Equatable, Sendable {
                 stepsRun = n
                 trail.end(number: n, failure: nil)
                 onTrail?(trail)
-                history.append(StepRecord(intent: question, actions: [], userAnswer: String(said.prefix(Self.answerLimit))))
+                record(StepRecord(intent: question, actions: [], userAnswer: String(said.prefix(Self.answerLimit))))
                 if n < maxSteps {
                     settleStart = ContinuousClock.now
                     pendingSurfaces = harness?.takeOpenSurfaces() ?? []
@@ -277,6 +324,8 @@ public enum TaskOutcome: Equatable, Sendable {
             // On a step that carried a picture, a point is in the picture's pixels: map it to the screen, and run
             // nothing if it is outside the picture or the photographed window has since moved.
             // A click by name is pointed at the element list the model read (list-dependent, so not in History).
+            // The name each label has on this screen, for a saved route (the numbers mean nothing on a later screen).
+            let titles = routes == nil ? [:] : labels.mapValues(\.title)
             var actions = ElementNames.bind(step.actions, labels: labels, menuBarTitles: observation.menuBarTitles, goal: goal)
             var pointFailure: String?
             if case .image(let shot)? = request.vision, ScreenshotGeometry.holdsPoint(actions) {
@@ -304,25 +353,50 @@ public enum TaskOutcome: Equatable, Sendable {
                                         badgesShowing: observation.overlay == "labels") { failure = blocked }
             else {
                 // An irreversible button the request did not name waits for a spoken yes; anything else, silence or
-                // a stop ends the task before the step runs.
-                if let verb = IrreversibleGuard.held(actions, labels: labels, goal: goal) {
+                // a stop ends the task before the step runs. The screen can change during the wait, so after a yes it
+                // is read again: the step runs on the fresh labels only when the ones it uses are unchanged.
+                var runLabels = labels
+                var confirmed = Set<String>()
+                var changed = false
+                let pointer = executor.input.currentMouseLocation()
+                if let verb = IrreversibleGuard.held(actions, labels: labels, goal: goal, overlay: overlay.state, cursor: pointer) {
                     onStatus?(.running("step \(n) · say yes to \(verb)"))
+                    onPrompt?(.confirm(verb: verb))
                     let reply = await awaitAnswer(.confirm, timeout: Self.answerTimeout)
                     if isCancelled { return await finish(.stopped) }
                     guard let reply, ConfirmAnswer.isYes(reply, attention: config.attentionGate) else {
                         return await finish(.stopped, hud: "stopped: \(verb) not confirmed")
                     }
+                    confirmed = Set(verb.components(separatedBy: " and "))
                     onStatus?(.running("step \(n) · \(step.intent)"))
+                    let fresh = await observeTimed(mode: mode).result.labels
+                    if isCancelled { return await finish(.stopped) }
+                    // Only the verbs just confirmed may be on the new screen's buttons; a new one is asked about next step.
+                    let again = IrreversibleGuard.held(actions, labels: fresh, goal: goal, overlay: overlay.state, cursor: pointer)
+                    let asked = Set((again ?? "").components(separatedBy: " and ")).subtracting([""])
+                    if Self.sameLabels(actions, old: labels, fresh: fresh, overlay: overlay.state), asked.isSubset(of: confirmed) {
+                        runLabels = fresh
+                    } else {
+                        changed = true
+                    }
                 }
-                let shown = overlay.state
-                failure = await executeCancellable(actions, labels: labels, tabs: observation.tabs)
-                // Only a step that ran clean left the task's page in front; a failed one may not have navigated.
-                if failure == nil, step.actions.contains(where: Self.navigates) { markTaskTab = true }
-                // Badges or a grid are only valid for the screen they were drawn on: once a step has acted, hide
-                // them so the next observation walks the screen afresh (a `.label` click leaves them up, and the
-                // badge map would otherwise be reused). One this step just drew (e.g. "show numbers") stays, and a step
-                // with no actions (or only `look`) changed nothing.
-                if !step.actions.isEmpty && !step.actions.allSatisfy({ $0 == .look }) && shown != .none && overlay.state == shown { overlay.hide() }
+                if changed {
+                    failure = ActionExecutor.elementChanged
+                } else {
+                    let shown = overlay.state
+                    if actions.contains(where: \.readsText) { readText = true }
+                    // Each press reads the live title of what it lands on and refuses a guarded one nobody confirmed.
+                    executor.pressGuard = PressGuard(goal: goal, confirmed: confirmed)
+                    failure = await executeCancellable(actions, labels: runLabels, tabs: observation.tabs)
+                    executor.pressGuard = nil
+                    // Only a step that ran clean left the task's page in front; a failed one may not have navigated.
+                    if failure == nil, step.actions.contains(where: Self.navigates) { markTaskTab = true }
+                    // Badges or a grid are only valid for the screen they were drawn on: once a step has acted, hide
+                    // them so the next observation walks the screen afresh (a `.label` click leaves them up, and the
+                    // badge map would otherwise be reused). One this step just drew (e.g. "show numbers") stays, and a step
+                    // with no actions (or only `look`) changed nothing.
+                    if !step.actions.isEmpty && !step.actions.allSatisfy({ $0 == .look }) && shown != .none && overlay.state == shown { overlay.hide() }
+                }
             }
             stepsRun = n
             // A step cut short by stop stays running, so the panel shows it as stopped, not failed.
@@ -342,21 +416,24 @@ public enum TaskOutcome: Equatable, Sendable {
             if step.status == .done && failure == nil {
                 let finished = TaskOutcome.done(step.intent)
                 let hud = readings.first.map { "\(step.intent) — \($0.prefix(80))" }
-                guard MediaSignal.wantsPlayback(goal: goal) else { return await finish(finished, hud: hud) }
+                // The kept history ends with this step, so a follow-up sees what was clicked last.
+                let doneRecord = StepRecord(intent: step.intent, actions: step.actions)
+                guard MediaSignal.wantsPlayback(goal: playbackGoal) else { record(doneRecord, names: titles); return await finish(finished, hud: hud) }
                 // A goal to play something is done when it plays, not when the page loaded: look once more at the
                 // screen after this step's actions. A visible Play button sends the model round once more.
                 settleStart = ContinuousClock.now
                 pendingSurfaces = harness?.takeOpenSurfaces() ?? []
                 (observation, labels) = await settle(mode: mode, readings: readings, found: found)
                 settled = settleStart.duration(to: .now)
+                lastSeen = observation
                 if isCancelled { return await finish(.stopped) }
-                guard observation.media == .paused else { return await finish(finished, hud: hud) }
+                guard observation.media == .paused else { record(doneRecord, names: titles); return await finish(finished, hud: hud) }
+                record(StepRecord(intent: step.intent, actions: step.actions, failure: Self.notPlaying), names: titles)
                 if askedAgainForMedia || n == maxSteps { return await finish(.stuck(Self.notPlaying)) }
                 askedAgainForMedia = true
-                history.append(StepRecord(intent: step.intent, actions: step.actions, failure: Self.notPlaying))
                 continue
             }
-            history.append(StepRecord(intent: step.intent, actions: step.actions, failure: failure))
+            record(StepRecord(intent: step.intent, actions: step.actions, failure: failure), names: titles)
             if n < maxSteps {
                 settleStart = ContinuousClock.now
                 pendingSurfaces = harness?.takeOpenSurfaces() ?? []
@@ -366,6 +443,59 @@ public enum TaskOutcome: Equatable, Sendable {
             }
         }
         return await finish(.stuck(Self.stepLimit))
+    }
+
+    /// Whether every label number `actions` use still has the same title and role on `fresh` as on `old`. A grid cell
+    /// (`numbered` while a grid is shown) names a place, not a label.
+    static func sameLabels(_ actions: [Action], old: [Int: UIElementInfo], fresh: [Int: UIElementInfo], overlay: OverlayState) -> Bool {
+        var used = Set<Int>()
+        func add(_ n: Int) { used.insert(n) }
+        func target(_ t: MoveTarget) {
+            switch t {
+            case .label(let n): add(n)
+            case .numbered(let n): if case .grid = overlay {} else { add(n) }
+            default: break
+            }
+        }
+        func element(_ t: ElementTarget) { if case .label(let n) = t { add(n) } }
+        for action in actions {
+            switch action {
+            case .click(.label(let n), _, _): add(n)
+            case .click(.numbered(let n), _, _): target(.numbered(n))
+            case .moveCursor(let t): target(t)
+            case .drag(let a, let b): target(a); target(b)
+            case .setValue(let t, _), .typeInto(let t, _), .clearField(let t), .selectOption(let t, _), .setChecked(let t, _),
+                 .setExpanded(let t, _), .focusElement(let t), .scrollTo(let t), .scrollIn(let t, _, _), .readValue(let t): element(t)
+            case .waitFor(.element(let t, _), _): element(t)
+            default: break
+            }
+        }
+        return used.allSatisfy { n in
+            guard let a = old[n], let b = fresh[n] else { return old[n] == nil && fresh[n] == nil }
+            return a.title == b.title && a.role == b.role
+        }
+    }
+
+    /// Adds a step to `history`; `names` are the label titles on its screen (see `stepNames`).
+    private func record(_ step: StepRecord, names: [Int: String] = [:]) {
+        history.append(step)
+        stepNames.append(names)
+    }
+
+    /// Saves the task as a route when it ended `done` after at least `RouteMemory.minSteps` clean steps; a follow-up
+    /// saves nothing. The store writes in the background, so this never waits for or fails the task.
+    private func saveRoute() {
+        guard let routes, !runIsFollowUp else { return }
+        guard let route = RouteMemory.route(goal: runGoal, url: lastSeen?.url, history: history, names: stepNames,
+                                            savedAt: Date()) else { return }
+        routes.save(route)
+        lastSaved = route
+    }
+
+    /// The routes "forget that route" drops: the one this task was hinted with and the one it saved. Cleared by the call.
+    func takeRoutesToForget() -> [Route] {
+        defer { lastMatched = nil; lastSaved = nil }
+        return [lastMatched, lastSaved].compactMap { $0 }
     }
 
     /// Asks the resolver for a plan and keeps it only if it passes `TaskPlan.validated`. Any error, including an
@@ -634,6 +764,19 @@ public enum TaskOutcome: Equatable, Sendable {
 
     static func stoppedHUD(_ intent: String) -> String { intent.isEmpty ? PipelineText.stopped : "stopped: \(intent)" }
 
+    /// What a follow-up sees of a run that ended `done`, `stuck` or `stopped`; nil for `ignored` and `failed`.
+    nonisolated static func earlierTask(goal: String, history: [StepRecord], outcome: TaskOutcome, seen: ScreenObservation?) -> EarlierTask? {
+        let result: String
+        switch outcome {
+        case .done(let text): result = "done: " + clipped(text, to: EarlierTask.resultLimit)
+        case .stuck(let text): result = "stuck: " + clipped(text, to: EarlierTask.resultLimit)
+        case .stopped: result = "stopped"
+        case .ignored, .failed: return nil
+        }
+        return EarlierTask(goal: goal, history: history, result: result, endedApp: seen?.app ?? "",
+                           endedWindow: seen?.windowTitle ?? "", endedURL: seen?.url)
+    }
+
     /// The finish line as a prompt status: the outcome's kind, `text`, and how many steps ran.
     static func finalStatus(_ outcome: TaskOutcome, text: String, steps: Int) -> PromptStatus {
         let line = steps > 0 ? "\(text) (\(steps) step\(steps == 1 ? "" : "s"))" : text
@@ -665,6 +808,8 @@ public enum TaskOutcome: Equatable, Sendable {
         if case .done = outcome {} else { executor.releaseAll() }
         observer.resetBrowserTokens()
         planLimit = nil
+        lastTask = Self.earlierTask(goal: runGoal, history: history, outcome: outcome, seen: lastSeen)
+        if case .done = outcome { saveRoute() }
         if case .stuck(let why) = outcome { trail.ending = why == Self.stepLimit ? .stepCap : .stuck }
         trail.phase = nil
         onTrail?(trail)
@@ -672,7 +817,8 @@ public enum TaskOutcome: Equatable, Sendable {
         // The HUD is already up; ending the traced session is quick bookkeeping.
         if let id = sessionID, let harness {
             sessionID = nil
-            await harness.endSession(id)
+            // A spoken "stop" cancels this task; a child task would inherit that and kill `session end` before it ran.
+            await Task { await harness.endSession(id) }.value
         }
         return outcome
     }

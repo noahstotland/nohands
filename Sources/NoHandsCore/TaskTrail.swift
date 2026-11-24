@@ -36,9 +36,12 @@ public struct TaskTrail: Equatable, Sendable {
     public var ending: Ending?
     /// Nil when the task is not running.
     public var phase: TaskPhase?
+    /// The rows are choices to pick from (a file list), not steps taken: no step count, and the prompt is the footer.
+    public let choices: Bool
 
-    public init(maxSteps: Int) {
+    public init(maxSteps: Int, choices: Bool = false) {
         self.maxSteps = maxSteps
+        self.choices = choices
     }
 
     /// Appends a running step.
@@ -134,7 +137,7 @@ public enum TaskPanelText {
         let lines = shown.map { line($0, final: final, status: row.status) }
 
         var progress: TaskPanelContent.Progress?
-        if let last = steps.last {
+        if let last = steps.last, !trail.choices {
             progress = stepLabel(last.number)
         }
 
@@ -153,7 +156,7 @@ public enum TaskPanelText {
         case _ where final:
             footer = status
         default:
-            footer = phaseLine(trail).map { StatusLine(text: $0, tone: .active) }
+            footer = trail.choices ? status : phaseLine(trail).map { StatusLine(text: $0, tone: .active) }
         }
         return TaskPanelContent(
             phrase: row.text, earlierSteps: steps.count - shown.count, lines: lines, progress: progress,

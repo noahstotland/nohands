@@ -1,5 +1,6 @@
 import Foundation
 import AppKit
+import os
 import NoHandsCore
 
 /// mic -> VAD -> assembler -> (bounded queue, newest 4: early and full jobs) -> ASR -> (serial job stream) -> ModeMachine -> executor / resolver.
@@ -31,6 +32,13 @@ import NoHandsCore
         var goal: String
         var transcript: String
         var trace: LatencyTrace
+        /// Set for a rewrite of the selection: it waits on the model like a task, so it holds the task slot (a spoken
+        /// stop cancels it and other speech waits) but needs no runner.
+        var rewrite: RewriteInstruction?
+        /// Set when the utterance named a macro: `goal` is its name and the steps run inside the same `activeTask`.
+        var macro: Macro?
+        /// Set for a fixed phrase marked as asking first: it waits in the task slot for a spoken yes (NH-149).
+        var confirm: HeldPhrase?
     }
 
     private let config: AppConfig
@@ -42,16 +50,45 @@ import NoHandsCore
     private var runner: TaskRunner?
     /// The runner a switch asked for while a task was running; it takes over when the task loop is between runs.
     private var pendingRunner: TaskRunner?
+    /// The last task a follow-up ("no, the other one") may refer to, and when it ended. Grammar commands leave it
+    /// alone; a task that is not a follow-up, a mode change and a backend switch replace or clear it.
+    private var lastTask: EarlierTask?
+    private var lastTaskEnded = ContinuousClock.now
+    /// Bumped by `replaceRunner`; a task that started under another value must not keep its result as memory.
+    private var runnerGeneration = 0
     private let harness: (any DesktopHarness)?
     private let executor: ActionExecutor
     private let overlay: any OverlayPresenting
     private let ax: any ElementProviding
     /// Where each command that ran is recorded for the View Logs window; nil records nothing.
     private let commandLog: CommandLogStore?
+    /// Saved routes (NH-46), handed to every runner this pipeline builds; "forget all routes" clears it.
+    private let routes: (any RouteStoring)?
     /// Which model a task is attributed to in the log. The app sets it when it builds or switches the resolver.
     public var resolverKind: CommandLogEntry.Resolver = .claude
 
     private var modeMachine: ModeMachine
+    /// Pause after a macro's grammar step, so an app the step opened can come forward. Tests set it to zero.
+    var macroStepPause: Duration = .milliseconds(500)
+    /// The app in front, read when a phrase is routed and again when a held phrase gets its yes. Tests set it.
+    var frontmostBundleID: @MainActor () -> String? = { NSWorkspace.shared.frontmostApplication?.bundleIdentifier }
+    /// How long a held phrase waits for its yes. Tests shorten it.
+    var confirmTimeout: Duration = ConfirmAnswer.timeout
+    /// A held phrase waiting for its yes: `busy()` hands the next utterance to it.
+    private struct ConfirmWait {
+        var id: Int
+        var wait: CheckedContinuation<ConfirmResult, Never>
+    }
+    private var confirmWait: ConfirmWait?
+    private var confirmWaitID = 0
+    /// A held phrase owns the next utterance from the moment its task starts, even before it reaches the wait.
+    private var confirming = false
+    /// A reply that came in before the wait began.
+    private var confirmEarlyAnswer: ConfirmResult?
+    private enum ConfirmResult { case yes, no, timeout, stopped }
+    /// The grammar the merge window asks off the main actor. Behind a lock so a pack reload can swap it; the mode
+    /// machine holds its own copy, swapped with it on the main actor.
+    private let mergeGrammar: OSAllocatedUnfairLock<CommandGrammar>
     private var vad: VoiceActivity?
     private var mic: MicrophoneCapture?
     private var tasks: [Task<Void, Never>] = []
@@ -71,14 +108,84 @@ import NoHandsCore
     private var activeTask: Task<Void, Never>?
     /// The newest utterance heard while a task ran; handled after the task ends.
     private var heldJob: Job?
-    /// Held jobs a stop phrase discarded; reported ("dropped") once the stopped task has unwound.
-    private var droppedJobs: [Job] = []
     /// A held job is replayed after the task only if it was spoken within this window.
     static let heldJobMaxAge: Duration = .seconds(60)
     /// Prompt rows are numbered in the order heard.
     private var nextPromptID = 0
     /// The row the merge window opened for words still being spoken; the job they become takes it over.
     private var listeningID: Int?
+
+    /// A list of files a spoken "open file" found, waiting for a number (NH-58). It opens only from a grammar command
+    /// with no task running, and any task, pause or other command closes it.
+    private struct OpenPick {
+        var pick: FilePick
+        var text: String
+        var timer: Task<Void, Never>
+    }
+    private var openPick: OpenPick?
+    /// How long a file list waits for a pick. Tests shorten it.
+    var pickTimeout: Duration = FilePick.timeout
+
+    // MARK: - Spoken feedback (NH-60)
+
+    /// What NoHands says out loud. Changed live by the menu (`setSpeakLevel`) and by a voice phrase.
+    public private(set) var speakLevel: SpeakLevel
+    /// Called when a voice phrase changed the level, so the app can save it and refresh the menu.
+    public var onSpeakLevelChange: ((SpeakLevel) -> Void)?
+    /// Builds the speaker on the first line said; nil builds the real one (tests give a fake).
+    var speakerFactory: (@MainActor () -> any FeedbackSpeaking)?
+    /// Created on the first line said at a level other than off, and dropped when the level goes back to off.
+    private var speaker: (any FeedbackSpeaking)?
+    /// Rows whose finish line has been said, so a row is spoken once.
+    private var spokenRows: Set<Int> = []
+
+    /// Applies `level` from the next line on. Off cuts what is playing and drops the speaker.
+    public func setSpeakLevel(_ level: SpeakLevel) {
+        speakLevel = level
+        if level == .off { speaker?.cut(); speaker = nil }
+    }
+
+    /// A voice phrase asked for `level`: apply it, tell the app, and say so (the way to hear it work).
+    private func spokenFeedbackRequested(_ level: SpeakLevel) {
+        setSpeakLevel(level)
+        onSpeakLevelChange?(level)
+        if level != .off { speak(level == .all ? "Spoken feedback all." : "Spoken feedback on.", kind: "confirmation") }
+    }
+
+    /// Says what `cue` is at the current level, if anything. `row` marks a task-slot finish line, said once per row.
+    private func say(_ cue: FeedbackCue, kind: String, row: Int? = nil) {
+        guard speakLevel != .off, let line = SpokenFeedback.line(for: cue, level: speakLevel) else { return }
+        if let row, !spokenRows.insert(row).inserted { return }
+        speak(line, kind: kind)
+    }
+
+    /// Never in dictation (the words would be typed), sleep or while paused. Logged by kind and length; the words only
+    /// with the private marker.
+    private func speak(_ line: String, kind: String) {
+        guard !stopped, modeMachine.mode == .command, speakLevel != .off else { return }
+        let voice = speaker ?? speakerFactory?() ?? FeedbackSpeaker(capture: { [weak self] in self?.mic })
+        speaker = voice
+        voice.speak(line)
+        PipelineLog.info("spoke \(kind), \(line.count) chars", detail: line)
+    }
+
+    /// What the user said while NoHands may be talking. A stop phrase cuts the speech and carries on to act as it
+    /// always does, before any echo check. Anything else that repeats the spoken line is NoHands' own voice heard back:
+    /// dropped (true). Anything else cuts the speech and is handled.
+    private func ownVoiceHeard(_ text: String, trace: LatencyTrace) -> Bool {
+        guard let speaker else { return false }
+        if attention.isStop(text) { speaker.cut(); return false }
+        guard SelfEcho.isEcho(transcript: text, utteranceEnd: trace.utteranceEnd ?? .now, spoken: speaker.current) else {
+            speaker.cut()
+            return false
+        }
+        if let row = listeningID {   // the merge window showed the words: that row must not stay "listening"
+            overlay.report(row, text: text, status: .ignored(""))
+            listeningID = nil
+        }
+        PipelineLog.utterance(trace: trace, transcript: text, outcome: "ignore(own voice)", detail: "ignore(own voice)")
+        return true
+    }
 
     private func newPromptID() -> Int {
         nextPromptID += 1
@@ -107,40 +214,60 @@ import NoHandsCore
     public init(config: AppConfig, transcriber: any Transcribing, resolver: (any IntentResolving)?,
                 executor: ActionExecutor, overlay: any OverlayPresenting, ax: any ElementProviding = AXQuery(),
                 observer: ScreenObserver? = nil, taskRunner: TaskRunner? = nil, harness: (any DesktopHarness)? = nil,
-                commandLog: CommandLogStore? = nil) {
+                commandLog: CommandLogStore? = nil, routes: (any RouteStoring)? = nil) {
         self.config = config
+        self.speakLevel = config.speakFeedback
         self.commandLog = commandLog
+        self.routes = routes
         self.attention = config.attentionGate
         self.transcriber = transcriber
         let observer = observer ?? ScreenObserver(ax: ax, maxElements: config.observedElementCap, harness: harness,
                                                   snapshotTimeoutMs: config.agentDesktopSnapshotMs)
         self.runner = taskRunner ?? resolver.map {
             TaskRunner(config: config, resolver: $0, executor: executor, observer: observer, overlay: overlay, harness: harness,
-                       screenshots: config.visionEnabled ? WindowScreenshotter(ax: ax) : nil)
+                       screenshots: config.visionEnabled ? WindowScreenshotter(ax: ax) : nil, routes: routes)
         }
         self.executor = executor
+        executor.useRewriter(config: config)
         self.overlay = overlay
         self.ax = ax
         self.harness = harness
-        self.modeMachine = ModeMachine(grammar: CommandGrammar(config: config.grammarConfig), attention: config.attentionGate)
+        let grammar = CommandGrammar(config: config.grammarConfig)
+        self.mergeGrammar = OSAllocatedUnfairLock(initialState: grammar)
+        self.modeMachine = ModeMachine(grammar: grammar, attention: config.attentionGate, macros: config.macros)
         executor.onModeChange = { [weak self] mode in
             guard let self else { return }
             self.modeMachine.apply(mode: mode)
+            if mode != .command { self.speaker?.cut() }
             self.publishStatus()
         }
+        executor.onSpokenFeedbackChange = { [weak self] level in self?.spokenFeedbackRequested(level) }
+    }
+
+    /// Looks pack phrases up in `packs` from the next utterance on. An utterance already being routed finishes on the
+    /// old set: routing runs on the main actor, as this does.
+    public func setPacks(_ packs: PackSet) {
+        let grammar = mergeGrammar.withLock { state -> CommandGrammar in
+            state = state.with(packs: packs)
+            return state
+        }
+        modeMachine.use(grammar: grammar)
     }
 
     /// Moves new tasks to another backend from the next command on, without stopping the microphone. Builds a runner
     /// like `init` does (screenshots follow `config.visionEnabled`); a task already running finishes on its own
     /// runner, and a command held behind it goes to the new one. Other settings in `config` are not re-read.
     public func switchBackend(config: AppConfig, resolver: any IntentResolving, observer: ScreenObserver) {
+        executor.useRewriter(config: config)
         replaceRunner(TaskRunner(config: config, resolver: resolver, executor: executor, observer: observer,
                                  overlay: overlay, harness: harness,
-                                 screenshots: config.visionEnabled ? WindowScreenshotter(ax: ax) : nil))
+                                 screenshots: config.visionEnabled ? WindowScreenshotter(ax: ax) : nil, routes: routes))
     }
 
     /// Takes `new` at once when no task is running; otherwise holds it (the newest wins) until the task loop is between runs.
     func replaceRunner(_ new: TaskRunner) {
+        lastTask = nil
+        runnerGeneration += 1
         if activeTask == nil { runner = new; pendingRunner = nil } else { pendingRunner = new }
     }
 
@@ -162,7 +289,7 @@ import NoHandsCore
     /// Skips the merge window: a complete grammar command in command mode, a stop phrase in any mode, and the
     /// dictation commands (escape phrases, "scratch that", "delete word", text edits) in dictation mode. Internal so tests build their MergeBuffer the same way.
     /// With the attention word on, a command mode grammar command counts only after the word ("computer, go back").
-    nonisolated static func isComplete(_ transcript: String, mode: Mode, grammar: CommandGrammar,
+    nonisolated static func isComplete(_ transcript: String, mode: Mode, grammar: CommandGrammar, macros: Macros = Macros(),
                                        attention: AttentionGate = .off, frontmost: String? = nil,
                                        textFocused: @Sendable () -> Bool = { false }) -> Bool {
         if attention.isStop(transcript) { return true }
@@ -171,7 +298,8 @@ import NoHandsCore
             // "spell" always waits the merge window: a pause mid-spelling must not type half and send the rest to the model.
             func complete(_ phrase: String) -> Bool {
                 CommandGrammar.normalize(phrase).first != "spell"
-                    && parsed(phrase, grammar: grammar, frontmost: frontmost, textFocused: textFocused) != nil
+                    && (parsed(phrase, grammar: grammar, frontmost: frontmost, textFocused: textFocused) != nil
+                        || macros.match(phrase) != nil)   // a macro name is whole, like a grammar command
             }
             switch attention.check(transcript) {
             case .off: return complete(transcript)
@@ -190,6 +318,7 @@ import NoHandsCore
                                               textFocused: @Sendable () -> Bool = { false }) -> Bool {
         var phrase = transcript
         if case .addressed(let rest) = attention.check(transcript) { phrase = rest }
+        if CommandGrammar.opensRewrite(phrase) { return true }
         return parsed(phrase, grammar: grammar, frontmost: frontmost, textFocused: textFocused)?.carriesSpokenText ?? true
     }
 
@@ -206,8 +335,11 @@ import NoHandsCore
     }
 
     /// The ASR loop: transcribes jobs one at a time, so an early pass always finishes before the full pass of its
-    /// segment. Internal so tests can drive it with a fake transcriber.
-    nonisolated static func runASR(_ jobs: AsyncStream<ASRJob>, transcriber: any Transcribing, merge: MergeBuffer) async {
+    /// segment. Internal so tests can drive it with a fake transcriber. Every transcript goes through `vocabulary`
+    /// before anything else sees it, except a stop or a mode phrase, which is passed on as heard (`Vocabulary.rewrite`).
+    nonisolated static func runASR(_ jobs: AsyncStream<ASRJob>, transcriber: any Transcribing, merge: MergeBuffer,
+                                   vocabulary: Vocabulary = Vocabulary(), attention: AttentionGate = .off) async {
+        func corrected(_ heard: String) -> String { vocabulary.rewrite(heard, attention: attention) }
         var ledger = EarlyCloseLedger()
         for await job in jobs {
             var trace = LatencyTrace()
@@ -218,7 +350,7 @@ import NoHandsCore
                 // The utterance is still open: a pass that is skipped, fails or hears nothing changes nothing.
                 guard let audio = ledger.audio(forEarly: job.segment) else { continue }
                 do {
-                    let text = try await transcriber.transcribe(audio)
+                    let text = corrected(try await transcriber.transcribe(audio))
                     trace.asrDone = .now
                     // Record only an accepted early close; a rejected one leaves the whole segment to the full pass.
                     if !text.isEmpty, await merge.earlyTranscript(text, trace: trace) {
@@ -233,7 +365,7 @@ import NoHandsCore
                     continue
                 }
                 do {
-                    let text = try await transcriber.transcribe(audio)
+                    let text = corrected(try await transcriber.transcribe(audio))
                     trace.asrDone = .now
                     if text.isEmpty {
                         await merge.speechAbandoned()
@@ -275,16 +407,18 @@ import NoHandsCore
         let (utterances, uttCont) = AsyncStream<ASRJob>.makeStream(bufferingPolicy: .bufferingNewest(4))
         let (jobs, jobCont) = AsyncStream<Job>.makeStream(bufferingPolicy: .bufferingNewest(2))
 
-        let grammar = CommandGrammar(config: config.grammarConfig)
+        let mergeGrammar = self.mergeGrammar
         let attention = self.attention
+        let vocabulary = config.vocabulary
+        let macros = config.macros
         let front = FrontmostApp.shared   // a pack phrase closes the merge window early, like a global one
         let ax = self.ax   // asked only for a text edit that names words in the field
         let merge = MergeBuffer(
             merger: UtteranceMerger(windowMs: config.mergeWindowMs, unfinishedWindowMs: config.mergeWindowUnfinishedMs),
             gate: attention,
-            isComplete: { Self.isComplete($0, mode: $1, grammar: grammar, attention: attention, frontmost: front.bundleID,
+            isComplete: { Self.isComplete($0, mode: $1, grammar: mergeGrammar.withLock { $0 }, macros: macros, attention: attention, frontmost: front.bundleID,
                                           textFocused: { ax.isTextFocused() }) },
-            carriesSpokenText: { Self.carriesSpokenText($0, grammar: grammar, attention: attention, frontmost: front.bundleID,
+            carriesSpokenText: { Self.carriesSpokenText($0, grammar: mergeGrammar.withLock { $0 }, attention: attention, frontmost: front.bundleID,
                                                         textFocused: { ax.isTextFocused() }) },
             onHold: { [weak self] text in
                 Task { @MainActor in self?.listening(text) }
@@ -347,7 +481,7 @@ import NoHandsCore
             uttCont.finish()
         }
         let asrTask = Task.detached {
-            await Self.runASR(utterances, transcriber: transcriber, merge: merge)
+            await Self.runASR(utterances, transcriber: transcriber, merge: merge, vocabulary: vocabulary, attention: attention)
             jobCont.finish()
         }
         // The single serial consumer: each job is fully handled (including awaiting the executor) before the next.
@@ -376,15 +510,17 @@ import NoHandsCore
     /// Stops the microphone and drops any queued audio. Safe to call repeatedly.
     public func stop() {
         stopGeneration += 1
+        lastTask = nil
         stopped = true
+        closePick(.stopped(PipelineText.cancelled))
+        speaker?.cut()
         mic?.stop()
         mic = nil
         for t in tasks { t.cancel() }
         tasks = []
         executor.releaseAll()   // release a held mouse button and drop any grid/labels overlay
-        for job in [heldJob].compactMap({ $0 }) + droppedJobs { reportDropped(job, log: false) }
+        if let heldJob { reportDropped(heldJob, log: false) }
         heldJob = nil
-        droppedJobs = []
         modeMachine.forgetDictationRecord()   // "scratch that" after a pause must not delete text it never typed
         runner?.cancel()
         activeTask?.cancel()    // also covers a cancel() that lands before run() starts (run() clears its flag)
@@ -429,6 +565,7 @@ import NoHandsCore
     /// Routes one transcript and executes it. Internal so tests can drive the pipeline without audio.
     /// Returns once the utterance is handled; an LLM utterance only starts a task (see `waitForTask()`).
     func handle(transcript text: String, trace: LatencyTrace) async {
+        if ownVoiceHeard(text, trace: trace) { return }
         // The words the merge window was showing become this prompt's row; otherwise it gets a new one.
         let job = Job(id: listeningID ?? newPromptID(), transcript: text, trace: trace, shown: listeningID != nil)
         listeningID = nil
@@ -448,6 +585,7 @@ import NoHandsCore
     private func busy(_ job: Job) {
         guard !stopped else { return }
         if attention.isStop(job.transcript) {
+            executor.releaseHeldButton()
             if let held = heldJob {
                 // Shown as stopped, not dropped: the corner panel must stay clear after a stop (`TaskPanelText`).
                 overlay.report(held.id, text: held.transcript, status: .stopped(PipelineText.dropped))
@@ -458,6 +596,13 @@ import NoHandsCore
             activeTask?.cancel()   // the task's row shows "stopped" when the runner unwinds
             overlay.report(job.id, text: job.transcript, status: .stopped(PipelineText.stopping))
             PipelineLog.utterance(trace: job.trace, transcript: job.transcript, outcome: "stop", detail: "stop")
+        } else if confirming {
+            // A held fixed phrase: these words are its answer and are never routed as a command. Anything but a yes
+            // (an unaddressed reply with the attention word on included) drops the phrase.
+            let yes = ConfirmAnswer.isYes(job.transcript, attention: config.attentionGate)
+            overlay.report(job.id, text: job.transcript, status: .done(job.transcript))
+            PipelineLog.utterance(trace: job.trace, transcript: job.transcript, outcome: "answer", detail: "answer")
+            endConfirmWait(yes ? .yes : .no)
         } else if let runner, runner.awaitedAnswer == .question {
             // A question the model asked: stray speech is dropped and the question keeps waiting; an addressed
             // utterance is the answer, without the attention word.
@@ -508,20 +653,27 @@ import NoHandsCore
         let text = job.transcript
         var trace = job.trace
         let maxAge = held ? Self.heldJobMaxAge : StaleJobPolicy.defaultMaxAge
+        // A stop phrase lets go of a held mouse button, with or without a task, even when the job is stale (it keeps
+        // the grid up; `cancel` still hides it).
+        if attention.isStop(text) { executor.releaseHeldButton() }
         if let spoke = trace.speechEnd, StaleJobPolicy.isStale(age: spoke.duration(to: .now), maxAge: maxAge) {
             PipelineLog.warning("busy: skipped (stale) utterance (older than \(maxAge))")
             overlay.report(job.id, text: text, status: .dropped(held ? PipelineText.dropped : PipelineText.skippedBusy))
             return nil
         }
+        if await answersPick(job) { return nil }
         lastTranscript = text
+        // A stop phrase lets go of a held mouse button, with or without a task (it keeps the grid up; `cancel` still hides it).
         let modeBefore = modeMachine.mode
-        // Edits that name words in the field need to know a text field has focus; any other phrase never asks.
+        // Edits that name words in the field, and rewrites of the selection, need to know a text field has focus; any
+        // other phrase never asks. Dictation types rewrite phrases as words, so only command mode asks for those.
         var textFocused = false
-        if ModeMachine.namesTextEdit(text, attention: attention) {
+        if ModeMachine.namesTextEdit(text, attention: attention)
+            || (modeBefore == .command && ModeMachine.namesRewrite(text, attention: attention)) {
             let ax = self.ax
             textFocused = await Task.detached { ax.isTextFocused() }.value
         }
-        var routing = modeMachine.route(text, frontmost: NSWorkspace.shared.frontmostApplication?.bundleIdentifier,
+        var routing = modeMachine.route(text, frontmost: frontmostBundleID(),
                                         textFocused: textFocused)
         // Words typed in dictation mode are typing, not a command; its own commands ("stop dictating") are commands.
         // A phrase edit with no text field is typed as words, so it is typing too.
@@ -529,10 +681,19 @@ import NoHandsCore
         if modeBefore == .dictation, case .execute(let actions) = routing, case .typeText = actions.first { isCommand = false }
         // A stop phrase with no task running must not start one (held jobs never get here: busy() intercepts them).
         if case .resolveWithLLM(let phrase) = routing, StopWords.isStop(phrase) { routing = .ignore(reason: "stop") }
+        if modeMachine.mode != modeBefore { lastTask = nil }   // a mode switch or sleep ends the conversation
+        if modeMachine.mode != .command { speaker?.cut() }
         var outcome = PipelineText.summary(routing)                    // public: kinds only
         var detail = PipelineText.summary(routing, detailed: true)     // private: with payloads
 
         switch routing {
+        case .macro(let macro):
+            overlay.report(job.id, text: text, status: .heard)
+            guard canExecute else {
+                overlay.report(job.id, text: text, status: .dropped(PipelineText.cancelled))
+                outcome += " (cancelled)"; detail += " (cancelled)"; break
+            }
+            return PendingTask(id: job.id, goal: macro.name, transcript: text, trace: trace, macro: macro)
         case .ignore(let reason):
             // Nothing on the board (this also keeps sleep silent), unless the merge window already put the words
             // there: that row must not stay "listening".
@@ -541,14 +702,26 @@ import NoHandsCore
             overlay.report(job.id, text: text, status: .failed(message))
             recordCommand(CommandLogEntry(date: Date(), phrase: text, resolver: .grammar, steps: [],
                                           outcome: .failed(message), durationMs: 0))
+        case .confirm(let held):
+            overlay.report(job.id, text: text, status: .heard)
+            guard canExecute else {
+                overlay.report(job.id, text: text, status: .dropped(PipelineText.cancelled))
+                outcome += " (cancelled)"; detail += " (cancelled)"; break
+            }
+            return PendingTask(id: job.id, goal: held.phrase, transcript: text, trace: trace, confirm: held)
         case .execute(let actions):
             overlay.report(job.id, text: text, status: .heard)
             guard canExecute else {
                 overlay.report(job.id, text: text, status: .dropped(PipelineText.cancelled))
                 outcome += " (cancelled)"; detail += " (cancelled)"; break
             }
+            // A rewrite waits on the model: it runs in the task slot, where a spoken stop can cancel it.
+            if actions.count == 1, case .rewriteText(let how) = actions[0] {
+                return PendingTask(id: job.id, goal: "", transcript: text, trace: trace, rewrite: how)
+            }
             let began = Date(), clock = ContinuousClock.now
-            let failure = await executor.execute(actions)
+            let failure = await executor.execute(actions, files: .spoken)
+            let offer = failure == nil ? executor.takeFileOffer() : nil
             // An edit moved the caret or the text: "scratch that" no longer matches the screen. Dictation that an edit
             // fell back to typing is the exception, the record is right.
             let typedAsWords = executor.editTypedOtherwise
@@ -557,17 +730,24 @@ import NoHandsCore
             }
             // Dictation typed as the fallback is the speaker's words, not a command: it never goes in the command log.
             if isCommand, !typedAsWords {
-                recordCommand(.grammar(date: began, phrase: text, action: PipelineText.describe(actions), failure: failure,
+                recordCommand(.grammar(date: began, phrase: text, action: PipelineText.describe(actions),
+                                       failure: failure.map(FileRefusal.redacted),
                                        durationMs: CommandLogEntry.milliseconds(clock.duration(to: .now))))
             }
             let reading = executor.takeReadings().first   // "is it playing" answers on the row
             if let failure {
                 overlay.report(job.id, text: text, status: .failed(failure))
                 outcome += " FAILED"
-                detail += " FAILED(\(failure))"
+                detail += " FAILED(\(FileRefusal.redacted(failure)))"
+            } else if let offer {
+                showPick(of: offer, for: job)
+                detail += " (\(offer.count) files)"
             } else {
-                overlay.report(job.id, text: text, status: .done(reading ?? ""))
+                let opened = actions.contains { if case .openFile = $0 { true } else { false } }
+                overlay.report(job.id, text: text, status: .done(reading ?? (opened ? "opened" : "")))
             }
+        case .forgetRoutes(let all):
+            overlay.report(job.id, text: text, status: .done(forgetRoutes(all: all)))
         case .resolveWithLLM(let phrase):
             overlay.report(job.id, text: text, status: .heard)
             if runner == nil {
@@ -593,14 +773,24 @@ import NoHandsCore
     /// Runs `first` in `activeTask`, then the held job (if any) inside the same task so it stays serialized; a held
     /// job that routes to the LLM runs as the next task.
     private func startTask(_ first: PendingTask) {
-        guard runner != nil else { return }
+        guard runner != nil || first.rewrite != nil || first.macro != nil || first.confirm != nil else { return }
+        closePick(.ignored(PipelineText.dropped))
+        if first.confirm != nil { confirming = true }
         activeTask = Task { [self] in
             var next: PendingTask? = first
             while let pending = next {
                 next = nil
+                speaker?.cut()   // a new task starts: the last line is old news
                 applyPendingRunner()
-                guard let runner else { break }
-                await runTask(pending, runner: runner)
+                if let how = pending.rewrite {
+                    await runRewrite(pending, how)
+                } else if let held = pending.confirm {
+                    await runConfirm(held, pending: pending)
+                } else if let macro = pending.macro {
+                    await runMacro(macro, pending: pending)
+                } else if let runner {
+                    await runTask(pending, runner: runner)
+                } else { break }
                 applyPendingRunner()
                 while next == nil, canExecute, let held = heldJob {
                     heldJob = nil
@@ -608,27 +798,80 @@ import NoHandsCore
                 }
             }
             // Still held here means the task was stopped: it must never run (e.g. in the next task).
-            let lost = [heldJob].compactMap { $0 } + droppedJobs
+            let lost = heldJob
             heldJob = nil
-            droppedJobs = []
-            if !stopped { for job in lost { reportDropped(job) } }
+            if let lost, !stopped { reportDropped(lost) }
             applyPendingRunner()
             activeTask = nil
         }
     }
 
-    private func runTask(_ pending: PendingTask, runner: TaskRunner) async {
-        // The runner's step and finish lines go on this prompt's row.
+    /// Runs a rewrite of the selection and shows how it ended on its row. The command log and the logs get counts only:
+    /// the selected text and the answer are model input and output the user has not read.
+    private func runRewrite(_ pending: PendingTask, _ how: RewriteInstruction) async {
         let id = pending.id, text = pending.transcript
-        runner.onStatus = { [weak self] status in self?.overlay.report(id, text: text, status: status) }
+        executor.onRewriteStart = { [weak self] in self?.overlay.report(id, text: text, status: .running(PipelineText.rewriting)) }
+        let began = Date(), clock = ContinuousClock.now
+        let failure = await executor.execute([.rewriteText(how)])
+        executor.onRewriteStart = nil
+        let report = executor.takeRewrite()
+        let durationMs = CommandLogEntry.milliseconds(clock.duration(to: .now))
+        let result: CommandLogEntry.Outcome
+        let kind: String
+        if failure == ActionExecutor.cancelled {
+            overlay.report(id, text: text, status: .stopped(PipelineText.stopped))
+            result = .stopped; kind = "stopped"
+        } else if let failure {
+            overlay.report(id, text: text, status: .failed(failure))
+            say(.status(.failed(failure), carriesPrivateText: true), kind: "status", row: id)
+            result = .failed(failure); kind = "failed"
+        } else {
+            let preview = PromptStatus.done(report?.preview ?? "")
+            overlay.report(id, text: text, status: preview)
+            say(.status(preview, carriesPrivateText: true), kind: "status", row: id)   // the rewritten text is private
+            result = .done; kind = "done"
+        }
+        let action = report.map { "rewrote \($0.from) → \($0.to) characters" } ?? "rewrite \(how.kind)"
+        recordCommand(CommandLogEntry(date: began, phrase: text, resolver: .grammar,
+                                      steps: [.init(number: 1, action: action, result: result, startedAt: began, durationMs: durationMs)],
+                                      outcome: result, durationMs: durationMs))
+        var trace = pending.trace
+        trace.actionsDone = .now
+        PipelineLog.utterance(trace: trace, transcript: text, outcome: "rewrite(\(how.kind), \(kind))", detail: "rewrite(\(how.kind), \(kind)) \(action)")
+        publishStatus()
+    }
+
+    /// `row` is the words on the prompt's row when they are not `pending.transcript` (a macro step: the row shows the
+    /// macro's name, the log the step); `relabel` rewrites each line the runner reports, nil hides it.
+    @discardableResult
+    private func runTask(_ pending: PendingTask, runner: TaskRunner, row: String? = nil,
+                         relabel: @escaping (PromptStatus) -> PromptStatus? = { $0 }) async -> TaskOutcome {
+        // The runner's step and finish lines go on this prompt's row.
+        let id = pending.id, text = row ?? pending.transcript
+        runner.onStatus = { [weak self, weak runner] status in
+            guard let shown = relabel(status), let self else { return }
+            self.overlay.report(id, text: text, status: shown)
+            self.say(.status(shown, carriesPrivateText: runner?.readText ?? true), kind: "status", row: id)
+        }
+        runner.onPrompt = { [weak self] cue in self?.say(cue, kind: "prompt") }
         runner.onTrail = { [weak self] trail in self?.overlay.report(id, trail: trail) }
         let kind = resolverKind
         _ = await runner.takeUsage()   // a cancelled earlier task's calls must not count here
         let began = Date(), clock = ContinuousClock.now
-        let outcome = await runner.run(goal: pending.goal, mode: modeMachine.mode)
+        let earlier = FollowUp.memory(lastTask, endedAt: lastTaskEnded, now: .now, windowMs: config.followUpWindowMs, goal: pending.goal)
+        let generation = runnerGeneration, stops = stopGeneration
+        let outcome = await runner.run(goal: pending.goal, mode: modeMachine.mode, earlier: earlier)
+        if generation != runnerGeneration || stops != stopGeneration {
+            lastTask = nil   // a backend switch or a pause during the run ends the conversation
+        } else if let kept = runner.lastTask {
+            lastTask = kept; lastTaskEnded = .now
+        } else if earlier == nil {
+            lastTask = nil   // a new request that was ignored or failed replaces the old memory; a follow-up leaves it (and its end time)
+        }
         recordTask(pending, runner: runner, outcome: outcome, kind: kind, began: began,
                    durationMs: CommandLogEntry.milliseconds(clock.duration(to: .now)), usage: await runner.takeUsage())
         runner.onStatus = nil
+        runner.onPrompt = nil
         runner.onTrail = nil
         let sessionUsage = ClaudeUsageMeter.shared.total
         if kind == .claude, sessionUsage.calls > 0 { PipelineLog.info("claude: session \(sessionUsage.logFragment)") }
@@ -642,6 +885,282 @@ import NoHandsCore
                               outcome: "task(\(Self.kind(outcome)), steps=\(steps)\(settle))",
                               detail: "task(\(Self.kind(outcome, detailed: true)), steps=\(steps)\(settle))")
         publishStatus()
+        return outcome
+    }
+
+    /// Holds a fixed phrase marked as asking first until a spoken yes, in the task slot. Only a yes runs it; any other
+    /// reply, 30 s of silence and a stop drop it. Each ending is one row and one command-log entry.
+    private func runConfirm(_ held: HeldPhrase, pending: PendingTask) async {
+        let id = pending.id, text = pending.transcript
+        overlay.report(id, text: text, status: .running(PipelineText.sayYes(to: held.phrase)))
+        say(.confirm(verb: held.phrase), kind: "confirm")
+        let began = Date(), clock = ContinuousClock.now
+        let result = await awaitConfirm()
+        var status: PromptStatus
+        var logged: CommandLogEntry.Outcome
+        var kind: String
+        var ran = false   // the phrase went to the executor: its log entry is a grammar command
+        switch result {
+        case .stopped:
+            status = .stopped(PipelineText.stopped); logged = .stopped; kind = "stopped"
+        case .no:
+            status = .dropped(PipelineText.notConfirmed); logged = .ignored(PipelineText.notConfirmed); kind = "dropped"
+        case .timeout:
+            status = .dropped(PipelineText.noYes); logged = .ignored(PipelineText.noYes); kind = "dropped"
+        case .yes:
+            var failure = notInFront(held)
+            if failure == nil {
+                if canExecute { ran = true; failure = await executor.execute(held.actions, files: .spoken) }
+                else { failure = ActionExecutor.cancelled }
+            }
+            if failure == ActionExecutor.cancelled {
+                status = .stopped(PipelineText.stopped); logged = .stopped; kind = "stopped"
+            } else if let failure {
+                status = .failed(failure); logged = .failed(failure); kind = "failed"
+            } else {
+                status = .done(executor.takeReadings().first ?? ""); logged = .done; kind = "done"
+            }
+        }
+        overlay.report(id, text: text, status: status)
+        say(.status(status, carriesPrivateText: false), kind: "status", row: id)
+        let durationMs = CommandLogEntry.milliseconds(clock.duration(to: .now))
+        if ran, logged != .stopped {
+            var failure: String?
+            if case .failed(let why) = logged { failure = FileRefusal.redacted(why) }
+            recordCommand(.grammar(date: began, phrase: text, action: PipelineText.describe(held.actions), failure: failure,
+                                   durationMs: durationMs))
+        } else {
+            recordCommand(CommandLogEntry(date: began, phrase: text, resolver: .grammar, steps: [], outcome: logged,
+                                          durationMs: durationMs))
+        }
+        var trace = pending.trace
+        trace.actionsDone = .now
+        PipelineLog.utterance(trace: trace, transcript: text, outcome: "confirm(\(kind))", detail: "confirm(\(held.phrase), \(kind))")
+        publishStatus()
+    }
+
+    /// Waits for the next utterance (`busy()` hands it over), the timeout or the task's cancellation, whichever is
+    /// first. A cancelled task never gets a yes.
+    private func awaitConfirm() async -> ConfirmResult {
+        confirming = true
+        defer { confirming = false; confirmEarlyAnswer = nil }
+        guard canExecute else { return .stopped }
+        if let early = confirmEarlyAnswer { return early }
+        confirmWaitID += 1
+        let id = confirmWaitID
+        let timeout = confirmTimeout
+        var timer: Task<Void, Never>?
+        let result = await withTaskCancellationHandler {
+            await withCheckedContinuation { (wait: CheckedContinuation<ConfirmResult, Never>) in
+                confirmWait = ConfirmWait(id: id, wait: wait)
+                timer = Task { @MainActor [weak self] in
+                    try? await Task.sleep(for: timeout)
+                    self?.endConfirmWait(.timeout, id: id)
+                }
+            }
+        } onCancel: {
+            Task { @MainActor [weak self] in self?.endConfirmWait(.stopped, id: id) }
+        }
+        timer?.cancel()
+        return canExecute ? result : .stopped
+    }
+
+    private func endConfirmWait(_ result: ConfirmResult, id: Int? = nil) {
+        guard let current = confirmWait else {
+            if id == nil, confirming, confirmEarlyAnswer == nil { confirmEarlyAnswer = result }
+            return
+        }
+        guard id == nil || id == current.id else { return }
+        confirmWait = nil
+        current.wait.resume(returning: result)
+    }
+
+    /// Why a held pack phrase must not run: its app is no longer the one in front. nil when it may.
+    private func notInFront(_ held: HeldPhrase) -> String? {
+        guard let bundleID = held.bundleID, frontmostBundleID() != bundleID else { return nil }
+        let name = NSWorkspace.shared.runningApplications.first { $0.bundleIdentifier == bundleID }?.localizedName
+            ?? bundleID.split(separator: ".").last.map(String.init) ?? bundleID
+        return "\(name) is no longer in front: say it again"
+    }
+
+    /// Runs a macro's steps in order on one row, inside `activeTask`: a stop reaches it through `busy()` like any task.
+    /// The first step that fails, is not understood, changes the mode or is stopped ends it.
+    private func runMacro(_ macro: Macro, pending: PendingTask) async {
+        let id = pending.id, text = pending.transcript, total = macro.steps.count
+        func at(_ n: Int, _ detail: String) -> String { "step \(n) of \(total) · \(detail)" }
+        var result = PromptStatus.done("done · \(total) steps")
+        var sawText = false   // a step read text the user did not say: the finish line is private
+        for (index, step) in macro.steps.enumerated() {
+            let n = index + 1
+            guard canExecute else { result = .stopped("stopped at step \(n) of \(total)"); break }
+            overlay.report(id, text: text, status: .running(at(n, step)))
+            var textFocused = false
+            if ModeMachine.namesTextEdit(step) {
+                let ax = self.ax
+                textFocused = await Task.detached { ax.isTextFocused() }.value
+            }
+            let phrase = "\(macro.name) › \(step)"
+            let routing = modeMachine.routeStep(step, frontmost: frontmostBundleID(),
+                                                textFocused: textFocused)
+            var failure: String?
+            switch routing {
+            case .execute(let actions):
+                if actions.contains(where: \.readsText) { sawText = true }
+                let began = Date(), clock = ContinuousClock.now
+                failure = await executor.execute(actions, files: .macro)
+                recordCommand(.grammar(date: began, phrase: phrase, action: PipelineText.describe(actions),
+                                       failure: failure.map(FileRefusal.redacted),
+                                       durationMs: CommandLogEntry.milliseconds(clock.duration(to: .now))))
+                _ = executor.takeReadings()   // a reading ("is it playing") belongs to this step, not the next spoken command
+                if failure == nil, n < total { try? await Task.sleep(for: macroStepPause) }
+            case .resolveWithLLM(let goal):
+                if let runner {
+                    var task = pending
+                    task.goal = goal; task.transcript = phrase; task.macro = nil
+                    let outcome = await runTask(task, runner: runner, row: text) { status in
+                        if case .running(let detail) = status { .running(at(n, detail)) } else { nil }
+                    }
+                    if runner.readText { sawText = true }
+                    switch outcome {
+                    case .done: break
+                    case .stopped: failure = ActionExecutor.cancelled
+                    case .stuck(let why), .failed(let why): failure = why
+                    case .ignored: failure = PipelineText.didntCatch
+                    }
+                } else {
+                    failure = noResolverHint()
+                }
+            case .reject(let message): failure = message
+            case .forgetRoutes(let all): _ = forgetRoutes(all: all)
+            case .confirm(let held):
+                overlay.report(id, text: text, status: .running(at(n, PipelineText.sayYes(to: held.phrase))))
+                say(.confirm(verb: held.phrase), kind: "confirm")
+                switch await awaitConfirm() {
+                case .stopped: failure = ActionExecutor.cancelled
+                case .no, .timeout: failure = PipelineText.notConfirmed
+                case .yes:
+                    failure = notInFront(held)
+                    if failure == nil, canExecute {
+                        let began = Date(), clock = ContinuousClock.now
+                        failure = await executor.execute(held.actions, files: .macro)
+                        recordCommand(.grammar(date: began, phrase: phrase, action: PipelineText.describe(held.actions),
+                                               failure: failure.map(FileRefusal.redacted),
+                                               durationMs: CommandLogEntry.milliseconds(clock.duration(to: .now))))
+                        _ = executor.takeReadings()
+                        if failure == nil, n < total { try? await Task.sleep(for: macroStepPause) }
+                    }
+                }
+            case .ignore, .macro: failure = PipelineText.didntCatch
+            }
+            if let failure {
+                let ended = failure == ActionExecutor.cancelled || !canExecute
+                result = ended ? .stopped("stopped at step \(n) of \(total)") : .failed(at(n, failure))
+                break
+            }
+            if modeMachine.mode != .command { lastTask = nil; result = .failed(at(n, "changed mode")); break }
+        }
+        overlay.report(id, text: text, status: result)
+        say(.status(result, carriesPrivateText: sawText), kind: "status", row: id)
+        let kind: String
+        switch result {
+        case .done: kind = "done"
+        case .stopped: kind = "stopped"
+        default: kind = "failed"
+        }
+        var trace = pending.trace
+        trace.actionsDone = .now
+        PipelineLog.utterance(trace: trace, transcript: text, outcome: "macro(\(kind))", detail: "macro(\(result.text))")
+        publishStatus()
+    }
+
+    /// "Forget that route" drops the route the last task was hinted with and the one it saved; "forget all routes" empties
+    /// the store. Returns the row's text. The file is rewritten in the background.
+    private func forgetRoutes(all: Bool) -> String {
+        let dropped = runner?.takeRoutesToForget() ?? []
+        if all {
+            routes?.removeAll()
+            return "forgot all routes"
+        }
+        return routes?.remove(dropped) == true ? "forgot that route" : "no route to forget"
+    }
+
+    // MARK: - File list (NH-58)
+
+    /// Shows the hits as numbered rows under the prompt and waits for a number. The row keeps its place on the board.
+    private func showPick(of ranked: [FileHit], for job: Job) {
+        let pick = FilePick(ranked: ranked, rowID: job.id, timeout: pickTimeout)
+        let timer = Task { @MainActor [weak self] in
+            try? await Task.sleep(until: pick.deadline, clock: .continuous)
+            guard !Task.isCancelled, self?.openPick?.pick.rowID == pick.rowID else { return }
+            self?.closePick(.ignored(PipelineText.noPick))
+        }
+        openPick = OpenPick(pick: pick, text: job.transcript, timer: timer)
+        overlay.report(job.id, trail: pick.trail)
+        overlay.report(job.id, text: job.transcript, status: .running(pick.prompt))
+    }
+
+    /// Takes the open list away and clears its rows from the corner panel; the caller reports how it ended.
+    private func takePick() -> OpenPick? {
+        guard let taken = openPick else { return nil }
+        taken.timer.cancel()
+        openPick = nil
+        overlay.report(taken.pick.rowID, trail: TaskTrail(maxSteps: 0))
+        return taken
+    }
+
+    private func closePick(_ status: PromptStatus) {
+        guard let taken = takePick() else { return }
+        overlay.report(taken.pick.rowID, text: taken.text, status: status)
+    }
+
+    /// True when the utterance was the answer to an open file list, or stray speech the list ignores. A stop phrase
+    /// closes the list and goes on to the normal stop path (false); so does anything that is not a number.
+    private func answersPick(_ job: Job) async -> Bool {
+        guard let current = openPick else { return false }
+        let text = job.transcript
+        // A stop is checked first, never read as a number, and never gated by the attention word.
+        if attention.isStop(text) { closePick(.stopped(PipelineText.cancelled)); return false }
+        if .now >= current.pick.deadline { closePick(.ignored(PipelineText.noPick)); return false }
+        if isUnaddressed(text) {
+            if job.shown { overlay.report(job.id, text: text, status: .ignored("")) }
+            PipelineLog.utterance(trace: job.trace, transcript: text, outcome: "ignore(not addressed)", detail: "ignore(not addressed)")
+            return true
+        }
+        var reply = text
+        if case .addressed(let rest) = attention.check(text) { reply = rest }
+        switch current.pick.reply(reply) {
+        case .cancel:
+            closePick(.stopped(PipelineText.cancelled))
+            return false
+        case .passThrough:
+            closePick(.ignored(PipelineText.dropped))
+            return false
+        case .retry:
+            overlay.report(job.id, text: text, status: .ignored(current.pick.retryPrompt))
+            overlay.report(current.pick.rowID, text: current.text, status: .running(current.pick.retryPrompt))
+            PipelineLog.utterance(trace: job.trace, transcript: text, outcome: "pick(retry)", detail: "pick(retry)")
+            return true
+        case .open(let index):
+            _ = takePick()
+            overlay.report(job.id, text: text, status: .heard)
+            guard canExecute else {
+                overlay.report(job.id, text: text, status: .dropped(PipelineText.cancelled))
+                overlay.report(current.pick.rowID, text: current.text, status: .stopped(PipelineText.cancelled))
+                return true
+            }
+            let began = Date(), clock = ContinuousClock.now
+            let failure = await executor.openPicked(current.pick.hits[index])
+            recordCommand(.grammar(date: began, phrase: text, action: "open file pick \(index + 1)",
+                                   failure: failure.map(FileRefusal.redacted),
+                                   durationMs: CommandLogEntry.milliseconds(clock.duration(to: .now))))
+            let shown: PromptStatus = failure.map { .failed($0) } ?? .done("opened")
+            overlay.report(job.id, text: text, status: shown)
+            overlay.report(current.pick.rowID, text: current.text, status: shown)
+            let outcome = failure == nil ? "pick(open)" : "pick(open) FAILED"
+            PipelineLog.utterance(trace: job.trace, transcript: text, outcome: outcome, detail: outcome)
+            publishStatus()
+            return true
+        }
     }
 
     private func recordCommand(_ entry: CommandLogEntry) {

@@ -23,8 +23,14 @@ public enum MenuBarGuard {
     /// A failure message when a click lands on a menu-bar item the goal does not allow; nil when allowed.
     public static func blocked(_ actions: [Action], labels: [Int: UIElementInfo], menuBarTitles: [String], goal: String,
                                badgesShowing: Bool) -> String? {
-        guard !badgesShowing else { return nil }
         let bar = items(menuBarTitles)
+        // `click_in` names an item and no number the user picked, so the badge exception does not apply.
+        for case .clickIn(.menubar, let name) in actions {
+            if let e = LabelAssigner.find(named: name, in: bar), !allows(title: e.title, goal: goal) {
+                return "\"\(e.title)\" is a menu bar item, not a page element"
+            }
+        }
+        guard !badgesShowing else { return nil }
         for case .click(let target, _, _) in actions {
             switch target {
             case .label(let n):

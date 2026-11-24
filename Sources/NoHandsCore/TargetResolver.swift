@@ -27,6 +27,9 @@ public enum TargetResolver {
         case .numbered(let n): return numbered(n, overlay: overlay, screens: screens)
         case .element(let name): return element(name, in: elements, screens: screens, labels: labels)
         case .relative(let dx, let dy): return .point(CGPoint(x: cursor.x + CGFloat(dx), y: cursor.y + CGFloat(dy)))
+        case .screenCenter:
+            guard let screen = screens.first(where: { $0.contains(cursor) }) ?? screens.first else { return .failure("no screen") }
+            return .point(CGPoint(x: screen.midX, y: screen.midY))
         }
     }
 

@@ -1,4 +1,5 @@
 import Testing
+import Foundation
 @testable import NoHandsCore
 
 @Test func commandModeRoutesGrammarThenLLM() {
@@ -174,4 +175,44 @@ import Testing
     #expect(m.route("delete the old files") == .resolveWithLLM("delete the old files"))
     #expect(m.route("delete the old files", textFocused: true) == .execute([.editText(.deletePhrase("the old files"), otherwise: nil)]))
     #expect(m.route("select the last sentence") == .execute([.editText(.select(.sentence, last: true), otherwise: nil)]))
+}
+
+@Test func macroNameRoutesInCommandModeOnly() throws {
+    let macros = try AppConfig.load(from: Data(#"{"macros":{"night game":["open chrome","click"]}}"#.utf8), environment: [:]).macros
+    let night = Routing.macro(Macro(name: "night game", steps: ["open chrome", "click"]))
+    // (attention word, mode, said, routes)
+    let table: [(String, Mode, String, Routing)] = [
+        ("", .command, "Night game.", night),
+        ("", .command, "night game please", .resolveWithLLM("night game please")),
+        ("", .command, "click", .execute([.click(.cursor, button: .left, count: 1)])),            // the grammar wins
+        ("computer", .command, "computer, night game", night),
+        ("computer", .command, "night game", .ignore(reason: "not addressed")),
+        ("", .dictation, "night game", .execute([.typeText("Night game")])),
+        ("", .sleep, "night game", .ignore(reason: "sleeping")),
+    ]
+    for (word, mode, said, expected) in table {
+        var m = ModeMachine(mode: mode, attention: AttentionGate(configured: word), macros: macros)
+        #expect(m.route(said) == expected, "\(word) \(mode) \(said)")
+    }
+    var m = ModeMachine(attention: AttentionGate(configured: "computer"), macros: macros)
+    #expect(m.routeStep("night game") == .resolveWithLLM("night game"))   // a step never expands a macro or needs the word
+    #expect(m.routeStep("click") == .execute([.click(.cursor, button: .left, count: 1)]))
+}
+
+@Test func forgetRoutePhrasesRouteInCommandModeOnly() {
+    // (attention word, mode, said, routes)
+    let table: [(String, Mode, String, Routing)] = [
+        ("", .command, "Forget that route.", .forgetRoutes(all: false)),
+        ("", .command, "forget all routes", .forgetRoutes(all: true)),
+        ("computer", .command, "computer, forget that route", .forgetRoutes(all: false)),
+        ("computer", .command, "forget all routes", .ignore(reason: "not addressed")),
+        ("", .command, "forget that route please", .resolveWithLLM("forget that route please")),
+        ("", .command, "forget the route", .resolveWithLLM("forget the route")),
+        ("", .dictation, "forget all routes", .execute([.typeText("Forget all routes")])),
+        ("", .sleep, "forget all routes", .ignore(reason: "sleeping")),
+    ]
+    for (word, mode, said, expected) in table {
+        var m = ModeMachine(mode: mode, attention: AttentionGate(configured: word))
+        #expect(m.route(said) == expected, "\(word) \(mode) \(said)")
+    }
 }

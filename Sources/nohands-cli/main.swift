@@ -29,7 +29,23 @@ func usage() -> Never {
       nohands-cli observe            (waits 3 s, prints the task-loop observation of the frontmost app)
       nohands-cli parse "<text>" [--app <bundle id>]
                                      (dry run: prints the grammar's actions, or "no match -> LLM"; executes nothing;
-                                      --app parses with that app in front, so its pack applies)
+                                      --app parses with that app in front, so its pack, built in or installed, applies)
+      nohands-cli pack add <file>    (checks the pack file, shows what it does, and installs it only if you answer y)
+      nohands-cli pack list          (installed packs: id, version, on or off, phrases, notes)
+      nohands-cli pack remove <id>   (removes an installed pack)
+      nohands-cli pack builtin <id>  (prints a built-in pack as a pack file, as a template)
+      nohands-cli pack new [--app <name or bundle id>] [--out <file>]
+                                     (reads the app's top-level menu items, waits 3 s without --app to read the app in
+                                      front, and writes a draft pack file, listing what it left out; never overwrites a
+                                      file or installs: edit it, then pack add)
+      nohands-cli pack search [words]  (fetches the pack registry's signed list and shows the packs that match; the
+                                      network is used only when you run this, install or update)
+      nohands-cli pack install <id>  (fetches that pack from the registry, shows what it does, installs only if you answer y)
+      nohands-cli pack update [<id>] (for each installed pack with a newer registry version, shows what changed and
+                                      updates it only if you answer y)
+      nohands-cli registry keygen <path>  (publishers: makes a signing key file, mode 600; prints the public key)
+      nohands-cli registry sign <index.json> --key <path> [--packs <dir>]
+                                     (publishers: checks the index, and the pack files in <dir>, and prints the signed file)
       nohands-cli menu "<words>"     (waits 2 s, then prints the frontmost app's menu item those words name and presses it)
       nohands-cli menu --list        (waits 3 s, prints the frontmost app's menu items, without the Apple menu)
       nohands-cli run "<phrase>"...  (waits 2 s, executes each phrase in order, 0.8 s apart)
@@ -330,13 +346,18 @@ var exitStatus: Int32 = 0
         case "parse":
             guard rest.count == 1 || (rest.count == 3 && rest[1] == "--app") else { usage() }
             let bundleID: String? = rest.count == 3 ? rest[2] : nil
-            if let actions = CommandGrammar().parse(rest[0], frontmost: bundleID) {
-                print("\(actions)")
-            } else if let message = CommandGrammar().rejection(rest[0]) {
+            let grammar = CommandGrammar(packs: PackSet(installed: (try? PackStore().loadEnabled()) ?? []))
+            if let match = grammar.match(rest[0], frontmost: bundleID) {
+                print("\(match.actions)\(match.confirm == nil ? "" : " (asks first)")")
+            } else if let message = grammar.rejection(rest[0]) {
                 print("rejected: \(message)")
             } else {
                 print("no match -> LLM")
             }
+        case "pack":
+            await packCommand(rest)
+        case "registry":
+            registryCommand(rest)
         case "menu":
             guard rest.count == 1 else { usage() }
             guard Permissions.accessibilityGranted(prompt: false) else {
@@ -363,9 +384,10 @@ var exitStatus: Int32 = 0
             }
             var parsed: [[Action]] = []
             for phrase in rest {
-                guard let actions = CommandGrammar().parse(phrase) else { fail("not a command: \(phrase)") }
-                print("actions: \(actions)")
-                parsed.append(actions)
+                guard let match = CommandGrammar().match(phrase) else { fail("not a command: \(phrase)") }
+                guard match.confirm == nil else { fail("asks first: not run from the CLI") }
+                print("actions: \(match.actions)")
+                parsed.append(match.actions)
             }
             let config = try loadConfig()
             let harness = await loadHarness(config)

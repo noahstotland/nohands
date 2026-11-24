@@ -40,6 +40,15 @@ public final class MicrophoneCapture: @unchecked Sendable {
     private var generation = 0                               // guarded by lock; bumped by every start/stop
     private var observer: NSObjectProtocol?                  // guarded by lock
     private var echoUnavailable = false                      // guarded by lock; set once macOS refuses voice processing
+    private var echoActive = false                           // guarded by lock; voice processing is on for the running engine
+    // Playback (NH-60), confined to `playbackQueue`:
+    private let playbackQueue = DispatchQueue(label: "nohands.mic.playback", qos: .userInitiated)
+    private var player: AVAudioPlayerNode?
+    /// Serializes every change to the engine's graph (the rebuild in `installTapAndStart`, the player's attach and
+    /// connect, its detach), which run on different threads. Never held while waiting on another queue.
+    private let graphLock = NSLock()
+    private var playbackConverters: [AVAudioFormat: AVAudioConverter] = [:]
+    private static var playbackFormat: AVAudioFormat? { AVAudioFormat(standardFormatWithSampleRate: 24_000, channels: 1) }
     // Queue-confined:
     private var onChunk: (@Sendable ([Float]) -> Void)?
     private var converter: AVAudioConverter?
@@ -96,7 +105,75 @@ public final class MicrophoneCapture: @unchecked Sendable {
         if let token { NotificationCenter.default.removeObserver(token) }
         engine.inputNode.removeTap(onBus: 0)
         engine.stop()
+        setEchoActive(false)
+        resetPlayback()
         queue.sync { self.onChunk = nil; self.pending.removeAll(); self.converter = nil }
+    }
+
+    /// True while the engine runs with voice processing on, so audio played with `play` is the echo reference and is
+    /// removed from the microphone before VAD.
+    public var echoCancellationActive: Bool { lock.lock(); defer { lock.unlock() }; return running && echoActive }
+
+    private func setEchoActive(_ on: Bool) { lock.lock(); echoActive = on; lock.unlock() }
+
+    /// Plays `buffer` (any PCM format) through the capture engine's output, after anything already queued. Does nothing
+    /// when the engine is not running. `completion` runs once the buffer has played or been cancelled; it also runs
+    /// when nothing could be played. The player node is attached to the main mixer on first use.
+    public func play(_ buffer: AVAudioPCMBuffer, completion: @escaping @Sendable () -> Void) {
+        let box = BufferBox(buffer)
+        playbackQueue.async { [self] in
+            guard isRunning, engine.isRunning, let converted = convertForPlayback(box.buffer) else { completion(); return }
+            let node = attachedPlayer()
+            node.scheduleBuffer(converted, completionCallbackType: .dataPlayedBack) { _ in completion() }
+            if !node.isPlaying { node.play() }
+        }
+    }
+
+    /// Stops what `play` is saying and drops what is queued; each buffer's completion runs.
+    public func cancelPlayback() {
+        playbackQueue.async { [self] in player?.stop() }
+    }
+
+    private func attachedPlayer() -> AVAudioPlayerNode {
+        if let player { return player }
+        let node = AVAudioPlayerNode()
+        graphLock.lock()
+        engine.attach(node)
+        engine.connect(node, to: engine.mainMixerNode, format: Self.playbackFormat)
+        graphLock.unlock()
+        player = node
+        return node
+    }
+
+    /// Drops the player node so the next `play` attaches a fresh one to the rebuilt graph. A line playing is dropped.
+    private func resetPlayback() {
+        playbackQueue.sync {
+            guard let node = player else { return }
+            node.stop()
+            graphLock.lock()
+            engine.detach(node)
+            graphLock.unlock()
+            player = nil
+        }
+    }
+
+    private func convertForPlayback(_ buffer: AVAudioPCMBuffer) -> AVAudioPCMBuffer? {
+        guard let target = Self.playbackFormat, buffer.frameLength > 0 else { return nil }
+        if buffer.format == target { return buffer }
+        let converter = playbackConverters[buffer.format] ?? AVAudioConverter(from: buffer.format, to: target)
+        guard let converter else { return nil }
+        playbackConverters[buffer.format] = converter
+        let capacity = AVAudioFrameCount(Double(buffer.frameLength) * target.sampleRate / buffer.format.sampleRate) + 64
+        guard let out = AVAudioPCMBuffer(pcmFormat: target, frameCapacity: capacity) else { return nil }
+        var supplied = false
+        var error: NSError?
+        let status = converter.convert(to: out, error: &error) { _, inputStatus in
+            if supplied { inputStatus.pointee = .noDataNow; return nil }
+            supplied = true
+            inputStatus.pointee = .haveData
+            return buffer
+        }
+        return status == .error || out.frameLength == 0 ? nil : out
     }
 
     private var isRunning: Bool { lock.lock(); defer { lock.unlock() }; return running }
@@ -134,6 +211,8 @@ public final class MicrophoneCapture: @unchecked Sendable {
     }
 
     private func installTapAndStart(generation gen: Int) throws {
+        graphLock.lock()
+        defer { graphLock.unlock() }
         guard isCurrent(gen) else { return }
         let input = engine.inputNode
         applyVoiceProcessing(input)
@@ -146,6 +225,7 @@ public final class MicrophoneCapture: @unchecked Sendable {
             try? input.setVoiceProcessingEnabled(false)
             try startEngine(input, generation: gen)
         }
+        setEchoActive(input.isVoiceProcessingEnabled)
     }
 
     /// Reads the input format (after voice processing may have changed it), installs the tap and starts the engine.
@@ -179,6 +259,7 @@ public final class MicrophoneCapture: @unchecked Sendable {
         pending.removeAll()
         converter = nil
         let echoWasOn = engine.inputNode.isVoiceProcessingEnabled
+        resetPlayback()   // the graph is rebuilt; a line playing is dropped and the next one attaches afresh
         do {
             try installTapAndStart(generation: gen)
             if isCurrent(gen) {

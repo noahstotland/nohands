@@ -130,27 +130,40 @@ extension ActionExecutor {
             guard let harness else { return Self.needsHarness }
             let app: String? = [.dock, .menuBarExtras].contains(surface) ? nil : ax.frontmostAppName()
             guard let m = await harness.find(app: app, surface: surface, name: name) else { return "no '\(name)' in \(surface.rawValue)" }
+            // The guards checked the name the step sent; `find` may fall back to a contains match ("Safari" finding
+            // "Quit Safari"), so on the menu bar a model step presses only that title, and never an Apple menu item.
+            if surface == .menubar,
+               MenuMatch.isAppleMenuTitle(m.name) || MenuMatch.isLookalike(m.name)
+                || (labelSnapshot != nil && MenuMatch.plain(m.name) != MenuMatch.plain(MenuMatch.leaf(of: name) ?? name)) {
+                return "no '\(name)' in menubar"
+            }
             if m.disabled { return "'\(name)' is disabled" }
+            if let refusal = pressRefusal(title: m.name) { return refusal }
             return outcome(await harness.act(.click(ref: m.ref, button: .left, count: 1)))
-        case .menuItem(let name):
-            let last = name.split(separator: ">").last.map { $0.trimmingCharacters(in: .whitespaces) } ?? name
-            // A model step (the task loop passes labels) presses only the exact title, natively or through agent-desktop; the
-            // user's own "menu <words>" may be closest.
-            switch pressMenuItem(name, exactOnly: labelSnapshot != nil) {
+        case .menuItem(let name, let exact):
+            guard let last = MenuMatch.leaf(of: name) else { return "no menu item called \(name)" }
+            // agent-desktop looks a title up in the whole menu bar and cannot keep to a submenu path, so a path of three or more
+            // parts never falls back to it ("Mailbox > Go to Favorite Mailbox > Sent" must not find "Use This Mailbox For > Sent").
+            let canFallBack = harness != nil && name.split(separator: ">").count < 3
+            // A model step (the task loop passes labels) and an installed pack's step (`exact`) press only the exact title,
+            // natively or through agent-desktop; the user's own "menu <words>" and built-in packs may be closest.
+            let exactOnly = exact || labelSnapshot != nil
+            switch pressMenuItem(name, exactOnly: exactOnly) {
             case .pressed: return nil
             case .disabled(let title): return "menu item \(title) is disabled"
             case .refused(let title):
-                guard harness != nil else { return "couldn't press menu item \(title)" }
+                guard canFallBack else { return "couldn't press menu item \(title)" }
             case .noMatch: break
             }
-            guard let harness, !MenuMatch.isAppleMenuTitle(last) else { return "no menu item called \(last)" }
+            guard canFallBack, let harness, !MenuMatch.isAppleMenuTitle(last) else { return "no menu item called \(last)" }
             guard let m = await harness.find(app: ax.frontmostAppName(), surface: .menubar, name: last) else {
                 return "no menu item called \(last)"
             }
-            if MenuMatch.isAppleMenuTitle(m.name) { return "no menu item called \(last)" }
-            // agent-desktop falls back to a contains match; a model step may press only the title it named.
-            if labelSnapshot != nil, MenuMatch.plain(m.name) != MenuMatch.plain(last) { return "no menu item called \(last)" }
+            if MenuMatch.isAppleMenuTitle(m.name) || MenuMatch.isLookalike(m.name) { return "no menu item called \(last)" }
+            // agent-desktop falls back to a contains match; an exact step may press only the title it named.
+            if exactOnly, MenuMatch.plain(m.name) != MenuMatch.plain(last) { return "no menu item called \(last)" }
             if m.disabled { return "menu item \(last) is disabled" }
+            if let refusal = pressRefusal(title: m.name) { return refusal }
             return outcome(await harness.act(.click(ref: m.ref, button: .left, count: 1)))
         case .closeApp(let app):
             if let harness { return outcome(await harness.act(.closeApp(app))) }
@@ -225,7 +238,17 @@ extension ActionExecutor {
         }
     }
 
+    /// Pauses that a spoken stop does not cut short: a drag runs to its release, so it never stops with the button down.
+    private static func pause(_ interval: Duration) async {
+        await Task.detached { try? await Task.sleep(for: interval) }.value
+    }
+
+    private static let dragSteps = 10
+
     private func drag(from: MoveTarget, to: MoveTarget) async throws -> String? {
+        // The labels or grid are stale once something has moved ("click 12" hides them the same way).
+        var usedOverlay = false
+        for case .numbered in [from, to] where overlayShown { usedOverlay = true }
         if let harness {
             func endpoint(_ t: MoveTarget) -> (ref: String?, xy: CGPoint?, failure: String?) {
                 if case .label(let n) = t, let e = labelSnapshot?[n], let ref = e.ref { return (ref, nil, nil) }
@@ -236,14 +259,39 @@ extension ActionExecutor {
             }
             let a = endpoint(from), b = endpoint(to)
             if let m = a.failure ?? b.failure { return m }
-            return outcome(await harness.act(.drag(fromRef: a.ref, fromXY: a.xy, toRef: b.ref, toXY: b.xy)))
+            // A release on a guarded button presses it: checked before anything moves.
+            if let xy = b.xy {
+                if let refusal = pressRefusal(at: xy) { return refusal }
+            } else if let ref = b.ref, let refusal = pressRefusal(title: labelSnapshot?.values.first(where: { $0.ref == ref })?.title) {
+                return refusal
+            }
+            let m = outcome(await harness.act(.drag(fromRef: a.ref, fromXY: a.xy, toRef: b.ref, toXY: b.xy)))
+            if m == nil, usedOverlay { hideStaleOverlay() }
+            return m
         }
         guard case .point(let p1) = resolveMove(from) else { return "can't resolve drag start" }
         guard case .point(let p2) = resolveMove(to) else { return "can't resolve drag end" }
+        // Checked before the button goes down: a release on a guarded button presses it.
+        if let refusal = pressRefusal(at: p2) { return refusal }
+        // Finder and most apps ignore a drag that arrives in one jump: press, wait, move in steps, wait, release.
         try input.moveMouse(to: p1)
+        dragInFlight = true
+        defer { dragInFlight = false }
         try input.mouseDown(.left, at: p1)
-        try input.moveMouse(to: p2)
-        try input.mouseUp(.left, at: p2)
+        do {
+            await Self.pause(.milliseconds(100))
+            for i in 1...Self.dragSteps {
+                let t = CGFloat(i) / CGFloat(Self.dragSteps)
+                try input.moveMouse(to: CGPoint(x: p1.x + (p2.x - p1.x) * t, y: p1.y + (p2.y - p1.y) * t))
+                await Self.pause(.milliseconds(15))
+            }
+            await Self.pause(.milliseconds(50))
+            try input.mouseUp(.left, at: p2)
+        } catch {
+            input.releaseAll()   // a drag that fails half way must not leave the button down
+            throw error
+        }
+        if usedOverlay { hideStaleOverlay() }
         return nil
     }
 

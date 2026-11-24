@@ -1146,5 +1146,44 @@
         "actions": []
       }
     ]
+  },
+  {
+    "say": "open the quarterly report document",
+    "app": "Finder",
+    "overlay": "none",
+    "accept": [
+      {
+        "actions": [
+          {
+            "kind": "open_file",
+            "text": "quarterly report",
+            "option": "document"
+          }
+        ]
+      },
+      {
+        "actions": [
+          {
+            "kind": "open_file",
+            "text": "quarterly report"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "say": "open my downloads folder",
+    "app": "Finder",
+    "overlay": "none",
+    "accept": [
+      {
+        "actions": [
+          {
+            "kind": "open_file",
+            "value": "downloads"
+          }
+        ]
+      }
+    ]
   }
 ]

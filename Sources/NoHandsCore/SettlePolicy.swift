@@ -20,21 +20,21 @@ public enum SettlePolicy: Int, Comparable, Sendable {
     private static func level(_ action: Action) -> SettlePolicy {
         switch action {
         case .wait, .look, .checkMedia, .listTabs, .volume, .ignore, .readClipboard, .readValue, .readNotifications, .clipboardSet,
-             .readPage:
+             .readPage, .setSpokenFeedback:
             return .none
         case .typeText(let text), .typeInto(_, let text):
             // A newline in typed text is a real Return press (TextSegmenter), so it can submit and load a page.
             return text.contains(where: \.isNewline) ? .full : .oneLook
         case .setValue, .clearField, .scroll, .scrollIn, .scrollTo, .focusElement, .moveCursor,
-             .moveWindow, .setChecked, .waitFor, .findOnPage, .media, .editText:
+             .moveWindow, .setChecked, .waitFor, .findOnPage, .media, .editText, .rewriteText:
             return .oneLook
         case .pressKey(let chord):
             // Return submits; Command, Control and Option chords can switch tabs, reload or go back.
             let loads = chord.key == .return || !chord.modifiers.isDisjoint(with: [.command, .control, .option])
             return loads ? .full : .oneLook
-        case .openURL, .openApp, .click, .search, .searchSite, .menuItem, .clickIn, .windowAction, .selectOption,
+        case .openURL, .openApp, .openFile, .click, .search, .searchSite, .menuItem, .clickIn, .windowAction, .selectOption,
              .setExpanded, .drag, .closeApp, .closeTab, .closeWindow, .selectTab, .goToTab, .closeOtherTabs, .pressMouse, .releaseMouse,
-             .showGrid, .zoomGrid, .showLabels, .hideOverlay, .setMode, .dismissNotifications:
+             .showGrid, .zoomGrid, .showLabels, .hideOverlay, .setMode, .dismissNotifications, .system:
             return .full
         }
     }

@@ -53,7 +53,8 @@ private func el(_ id: Int, _ title: String, x: CGFloat = 100) -> UIElementInfo {
 }
 
 @MainActor private func rig(_ resolver: FakeResolver, maxSteps: Int = 12, settleMs: Int = 3000,
-                            vision: FakeScreenshots? = nil, visionFlag: Bool = true,
+                            vision: FakeScreenshots? = nil, visionFlag: Bool = true, routes: FakeRouteStore? = nil, routeMemory: Bool = true,
+                            clock: FakeClock = FakeClock(),
                             sleep: @escaping @Sendable (Duration) async -> Void = { _ in }) -> Rig {
     let input = FakeInput(), ax = FakeElements(), overlay = FakeOverlay(), audio = FakeAudio()
     ax.front = "Safari"
@@ -62,12 +63,13 @@ private func el(_ id: Int, _ title: String, x: CGFloat = 100) -> UIElementInfo {
     config.maxTaskSteps = maxSteps
     config.settleMs = settleMs
     config.visionFallback = visionFlag
+    config.routeMemory = routeMemory
     config.intentBackend = .claude
     config.anthropicAPIKey = "test-key"
     let executor = ActionExecutor(input: input, ax: ax, overlay: overlay, config: config, frontTimeout: .milliseconds(100), audio: audio)
     let runner = TaskRunner(config: config, resolver: resolver, executor: executor,
                             observer: ScreenObserver(ax: ax, maxElements: config.maxObservedElements, audio: audio),
-                            overlay: overlay, sleep: sleep, screenshots: vision)
+                            overlay: overlay, sleep: sleep, now: { clock.now() }, screenshots: vision, routes: routes)
     let log = StatusLog()
     runner.onStatus = { log.texts.append($0.text) }
     runner.onTrail = { log.trails.append($0) }
@@ -280,13 +282,15 @@ private func step(_ intent: String, _ status: StepStatus, _ actions: [Action] = 
 @MainActor @Test func settleWaitsForTwoEqualObservations() async {
     let ax = FakeElements()
     ax.front = "Chrome"
+    let clock = FakeClock()
     let counter = SleepCounter()
     var config = AppConfig(); config.settleMs = 3000
     let overlay = FakeOverlay()
     let executor = ActionExecutor(input: FakeInput(), ax: ax, overlay: overlay, config: config)
     let runner = TaskRunner(config: config, resolver: FakeResolver([step("", .done)]), executor: executor,
                             observer: ScreenObserver(ax: ax, maxElements: 120), overlay: overlay,
-                            sleep: { _ in await counter.tick { n in if n == 1 { ax.elements = [el(1, "Page")] } } })
+                            sleep: { _ in await counter.tick { n in if n == 1 { ax.elements = [el(1, "Page")] } } },
+                            now: { clock.now() })
     let (obs, _) = await runner.settle(mode: .command)
     // obs0 empty, sleep1 -> page appears, obs1 differs; sleep2 obs2 same but 500ms ≥ 300ms → stop.
     #expect(obs.elements.map(\.title) == ["Page"])
@@ -295,13 +299,15 @@ private func step(_ intent: String, _ status: StepStatus, _ actions: [Action] = 
 
 @MainActor @Test func settleStopsAtMax() async {
     let ax = FakeElements()
+    let clock = FakeClock()
     let counter = SleepCounter()
     var config = AppConfig(); config.settleMs = 1000
     let overlay = FakeOverlay()
     let executor = ActionExecutor(input: FakeInput(), ax: ax, overlay: overlay, config: config)
     let runner = TaskRunner(config: config, resolver: FakeResolver([step("", .done)]), executor: executor,
                             observer: ScreenObserver(ax: ax, maxElements: 120), overlay: overlay,
-                            sleep: { _ in await counter.tick { n in ax.elements = [el(1, "t\(n)")] } })
+                            sleep: { _ in await counter.tick { n in ax.elements = [el(1, "t\(n)")] } },
+                            now: { clock.now() })
     _ = await runner.settle(mode: .command)
     #expect(await counter.count == 4)   // 4 × 250 ms = settleMs
 }
@@ -571,17 +577,33 @@ private func harnessSnapshot() -> DesktopSnapshot {
     let r = harnessRig(FakeResolver([step("read it", .done, [.readClipboard])]), harness: h)
     #expect(await r.runner.run(goal: "read the clipboard", mode: .command) == .done("read it"))
     #expect(r.statuses.last == "read it — clipboard: hello world (1 step)")
+    #expect(r.runner.readText)   // the finish line holds what was read: it is spoken only at the `all` level (NH-60)
 }
 
 @MainActor @Test func sessionStartsAndEndsWhenTracing() async {
     let h = FakeHarness(); h.snapshotResults = [harnessSnapshot()]
     let r = harnessRig(FakeResolver([step("done", .done)]), harness: h, trace: true)
     _ = await r.runner.run(goal: "nothing", mode: .command)
+    #expect(!r.runner.readText)
     #expect(h.calls.first == "session:start" && h.calls.last == "session:end:sess-1")
     let h2 = FakeHarness(); h2.snapshotResults = [harnessSnapshot()]
     let r2 = harnessRig(FakeResolver([step("done", .done)]), harness: h2)
     _ = await r2.runner.run(goal: "nothing", mode: .command)
     #expect(!h2.calls.contains { $0.hasPrefix("session") })
+}
+
+@MainActor private final class TaskBox { var task: Task<TaskOutcome, Never>? }
+
+@MainActor @Test func stoppingATracedTaskStillEndsItsSession() async {
+    let h = FakeHarness(); h.snapshotResults = [harnessSnapshot()]
+    let resolver = FakeResolver([step("wait", .continue, [.wait(ms: 5000)])])
+    let r = harnessRig(resolver, harness: h, trace: true)
+    let runner = r.runner, box = TaskBox()
+    resolver.onResolve = { _ in await box.task?.cancel() }
+    box.task = Task { await runner.run(goal: "slow", mode: .command) }
+    #expect(await box.task!.value == .stopped)
+    #expect(h.calls.last == "session:end:sess-1")
+    #expect(h.sessionEndedCancelled == false)
 }
 
 @MainActor @Test func elementChangedFailureIsRecordedForTheModel() async {
@@ -1004,6 +1026,32 @@ private func resolverForSend() -> FakeResolver {
     }
 }
 
+@MainActor @Test func theScreenIsReadAgainAfterAYes() async {
+    // (what the screen shows when the yes comes, the click that landed (nil: none), the failure the model sees next)
+    let table: [([UIElementInfo], String?, String?)] = [
+        ([el(1, "Send")], "click:140,55", nil),
+        ([el(1, "Send", x: 300)], "click:340,55", nil),
+        ([el(1, "Delete")], nil, ActionExecutor.elementChanged),
+        ([], nil, ActionExecutor.elementChanged),
+    ]
+    let holdTimeout: @Sendable (Duration) async -> Void = { d in
+        if d == TaskRunner.answerTimeout { try? await Task.sleep(for: .seconds(30)) }
+    }
+    for (after, click, failure) in table {
+        let steps = [step("send it", .continue, [.click(.label(1), button: .left, count: 1)]), step("give up", .stuck)]
+        let r = rig(FakeResolver(steps), sleep: holdTimeout)
+        r.ax.elements = [el(1, "Send")]
+        let runner = r.runner
+        let task = Task { await runner.run(goal: "reply to Anna", mode: .command) }
+        for _ in 0..<2000 where !runner.isAwaitingAnswer { await Task.yield() }
+        r.ax.elements = after
+        runner.answer("yes")
+        _ = await task.value
+        #expect(r.input.calls.filter { $0.hasPrefix("click") } == (click.map { [$0] } ?? []), "\(after.map(\.title))")
+        #expect(r.resolver.requests[1].history.last?.failure == failure, "\(after.map(\.title))")
+    }
+}
+
 @MainActor @Test func askedQuestionWaitsForTheAnswer() async {
     enum Reply { case say(String), stop, silence }
     let click = Action.click(.label(1), button: .left, count: 1)
@@ -1152,4 +1200,68 @@ private func resolverForSend() -> FakeResolver {
 private actor SleepRecorder {
     var all: [Duration] = []
     func add(_ d: Duration) { all.append(d) }
+}
+
+@MainActor @Test func followUpSeesTheEarlierTaskAndLastTaskTracksTheOutcome() async {
+    let click = Action.click(.cursor, button: .left, count: 1)
+    let earlier = EarlierTask(goal: "play the latest video", history: [StepRecord(intent: "open channel", actions: [click])], result: "done: playing")
+    let r = rig(FakeResolver([step("open it", .continue, [click]), step("playing", .done, [click])]))
+    r.resolver.planResult = .success(TaskPlan(steps: [PlanStep(intent: "x", kind: .waitForMedia, check: PlanCheck(kind: .mediaPlaying, text: ""))]))
+    _ = await r.runner.run(goal: "no, the other one on youtube please", mode: .command, earlier: earlier)
+    // Every request carries it, a follow-up is never planned, and the kept goal chains the two requests.
+    #expect(r.resolver.requests.count == 2 && r.resolver.requests.allSatisfy { $0.earlier == earlier })
+    #expect(r.resolver.planGoals.isEmpty)
+    #expect(r.runner.lastTask?.goal == "play the latest video; then: no, the other one on youtube please")
+    #expect(r.runner.lastTask?.result == "done: playing" && r.runner.lastTask?.history.count == 2 && r.runner.lastTask?.history.last?.intent == "playing")
+    // (steps, stop mid-task, expected `lastTask?.result`): kept after done, stuck and stop; cleared after ignore and failure.
+    let table: [(Result<IntentStep, IntentError>, Bool, String?)] = [
+        (.success(step("ok", .done)), false, "done: ok"), (.success(step("hmm", .stuck)), false, "stuck: hmm"),
+        (.success(step("go", .continue, [click])), true, "stopped"),
+        (.success(step("nah", .ignore)), false, nil), (.failure(.timeout), false, nil),
+    ]
+    let runner = r.runner
+    for (result, stop, kept) in table {
+        r.resolver.steps = [result]; r.resolver.requests = []
+        if stop { r.resolver.onResolve = { @Sendable _ in await runner.cancel() } } else { r.resolver.onResolve = nil }
+        _ = await r.runner.run(goal: "do it", mode: .command)
+        #expect(r.runner.lastTask?.result == kept, "\(result)")
+    }
+}
+
+@MainActor @Test func aDoneTaskSavesItsRouteByNameAndTheStoredRouteReachesTheRequest() async {
+    let reload = Action.click(.label(1), button: .left, count: 1)
+    let twoSteps = [step("press reload", .continue, [reload]), step("type it", .done, [.typeText("secret words")])]
+    let earlier = EarlierTask(goal: "reload page", history: [], result: "done: ok")
+    // (name, steps, earlier, routeMemory, stop mid-task, saved?)
+    let table: [(String, [IntentStep], EarlierTask?, Bool, Bool, Bool)] = [
+        ("done, two clean steps", twoSteps, nil, true, false, true),
+        ("one step", [step("press reload", .done, [reload])], nil, true, false, false),
+        ("stuck", [twoSteps[0], step("hmm", .stuck)], nil, true, false, false),
+        ("stopped", twoSteps, nil, true, true, false),
+        ("follow-up", twoSteps, earlier, true, false, false),
+        ("route memory off", twoSteps, nil, false, false, false),
+    ]
+    for (name, steps, earlier, on, stop, saved) in table {
+        let store = FakeRouteStore()
+        let r = rig(FakeResolver(steps), routes: store, routeMemory: on)
+        let runner = r.runner
+        if stop { r.resolver.onResolve = { @Sendable n in if n == 2 { await runner.cancel() } } }
+        _ = await r.runner.run(goal: "reload the page", mode: .command, earlier: earlier)
+        #expect(store.routes.count == (saved ? 1 : 0), "\(name)")
+        #expect((r.runner.lastSaved != nil) == saved, "\(name)")
+        guard saved, let route = store.routes.first else { continue }
+        // By element name, with the typed words left out.
+        #expect(route.goal == "reload the page" && route.steps.map(\.actions) == [["click \"Reload\""], ["type_text"]], "\(name)")
+        #expect(!(try! RouteMemory.encoded([route])).contains(Data("secret".utf8)), "\(name)")
+    }
+    // A stored match goes on every request and is what "forget that route" drops; a follow-up gets none.
+    let past = Route(goal: "reload the page", host: nil, steps: [RouteStep(intent: "press reload", actions: ["click \"Reload\""])], savedAt: Date())
+    for followUp in [false, true] {
+        let store = FakeRouteStore()
+        store.routes = [past]
+        let r = rig(FakeResolver(twoSteps), routes: store)
+        _ = await r.runner.run(goal: "reload the page", mode: .command, earlier: followUp ? earlier : nil)
+        #expect(r.resolver.requests.map(\.pastRoute) == Array(repeating: followUp ? nil : past, count: 2), "follow-up: \(followUp)")
+        #expect(r.runner.lastMatched == (followUp ? nil : past))
+    }
 }

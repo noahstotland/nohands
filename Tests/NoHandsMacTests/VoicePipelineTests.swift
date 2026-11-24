@@ -42,21 +42,22 @@ private let reloadButton = UIElementInfo(id: 1, frame: CGRect(x: 100, y: 100, wi
     var typed: [String] { input.calls.filter { $0.hasPrefix("type:") } }
 }
 
-@MainActor private func rig(withResolver: Bool = true, attentionWord: String = "",
-                            commandLog: CommandLogStore? = nil,
+@MainActor private func rig(withResolver: Bool = true, attentionWord: String = "", macros: String = "{}",
+                            commandLog: CommandLogStore? = nil, routes: FakeRouteStore? = nil,
                             sleep: @escaping @Sendable (Duration) async -> Void = { _ in }) -> Rig {
     let input = FakeInput(), ax = FakeElements(), overlay = FakeOverlay()
     let executor = ActionExecutor(input: input, ax: ax, overlay: overlay, config: AppConfig(), frontTimeout: .milliseconds(100))
     let resolver = withResolver ? FakeResolver() : nil
-    var config = AppConfig()
+    var config = try! AppConfig.load(from: Data(#"{"macros":\#(macros)}"#.utf8), environment: [:])
     config.attentionWord = attentionWord
     let observer = ScreenObserver(ax: ax, maxElements: config.maxObservedElements)
     let runner = resolver.map {
-        TaskRunner(config: config, resolver: $0, executor: executor, observer: observer, overlay: overlay, sleep: sleep)
+        TaskRunner(config: config, resolver: $0, executor: executor, observer: observer, overlay: overlay, sleep: sleep, routes: routes)
     }
     let p = VoicePipeline(config: config, transcriber: NullTranscriber(), resolver: resolver,
                           executor: executor, overlay: overlay, ax: ax, observer: observer, taskRunner: runner,
-                          commandLog: commandLog)
+                          commandLog: commandLog, routes: routes)
+    p.macroStepPause = .zero
     return Rig(pipeline: p, input: input, ax: ax, overlay: overlay, resolver: resolver, executor: executor, observer: observer, runner: runner)
 }
 
@@ -201,6 +202,7 @@ private func step(_ intent: String, _ status: StepStatus, _ actions: [Action] = 
     #expect(r.pipeline.isTaskActive)                       // handle returned while the task runs
     await entered.wait()                                   // step 2 is resolving
     await r.pipeline.handle(transcript: "stop", trace: trace())
+    #expect(r.input.calls.contains("releaseAll"))          // the stop let go of a held button at once, before the runner unwinds
     release.open()
     await r.pipeline.waitForTask()
     #expect(r.pipeline.lastTaskOutcome == .stopped)
@@ -208,6 +210,36 @@ private func step(_ intent: String, _ status: StepStatus, _ actions: [Action] = 
     #expect(r.input.calls.contains("releaseAll"))
     #expect(r.overlay.statuses.last == "stopped (1 step)")
     #expect(!r.pipeline.isTaskActive)
+}
+
+@MainActor @Test func aRewriteHoldsTheTaskSlotAndAStopCancelsItBeforeAnythingIsTyped() async {
+    let url = FileManager.default.temporaryDirectory.appendingPathComponent("nohands-log-\(UUID().uuidString).json")
+    defer { try? FileManager.default.removeItem(at: url) }
+    let log = CommandLogStore(url: url)
+    let hello = FocusedText(value: "Hello there.", selection: TextSpan(location: 12, length: 0), line: nil, rangeSettable: true)
+    // (spoken stop during the wait?, status the row ends on, typed, what the command log says)
+    let table: [(Bool, String, [String], CommandLogEntry.Outcome, String)] = [
+        (false, "Hi.", ["type:Hi."], .done, "rewrote 12 → 3 characters"),
+        (true, "stopped", [], .stopped, "rewrite shorter"),
+    ]
+    for (stop, status, typed, outcome, action) in table {
+        let r = rig(commandLog: log)
+        r.ax.fieldFocused = true; r.ax.field = hello
+        let entered = Gate()
+        r.executor.rewriter = FakeRewriter(.success("Hi.")) {
+            entered.open()
+            for _ in 0..<300 where stop && !Task.isCancelled { try? await Task.sleep(for: .milliseconds(10)) }
+        }
+        await r.pipeline.handle(transcript: "make that shorter", trace: trace())
+        #expect(r.pipeline.isTaskActive, "\(action)")                  // the wait holds the task slot, not the consumer
+        await entered.wait()
+        if stop { await r.pipeline.handle(transcript: "stop", trace: trace()) }
+        await r.pipeline.waitForTask()
+        #expect(r.typed == typed && r.overlay.statuses.last == status, "\(action)")
+        // Counts only: neither the text nor the answer is in the command log.
+        let entry = log.log.entries.first
+        #expect(entry?.outcome == outcome && entry?.steps.first?.action == action && !r.pipeline.isTaskActive, "\(action)")
+    }
 }
 
 @MainActor @Test func utteranceDuringTaskIsHeldThenRun() async {
@@ -318,7 +350,7 @@ private func step(_ intent: String, _ status: StepStatus, _ actions: [Action] = 
     }
     #expect(r.resolver?.calls == 0)
     #expect(r.overlay.reports.isEmpty && r.overlay.huds.isEmpty)
-    #expect(r.input.calls.isEmpty)
+    #expect(r.input.calls == ["releaseAll", "releaseAll", "releaseAll"])   // each stop lets go of a held button, nothing else
 }
 
 @MainActor @Test func jobHeldAfterStopNeverReplaysInNextTask() async {
@@ -490,5 +522,249 @@ private func step(_ intent: String, _ status: StepStatus, _ actions: [Action] = 
         await r.pipeline.handle(transcript: "make it smaller", trace: trace())
         await r.pipeline.waitForTask()
         #expect(b.calls == (stop ? 1 : 2) && a.calls == 1, "after, stop: \(stop)")
+    }
+}
+
+private let nightGame = #"{"night game":["click","play the newest video","scroll down"]}"#
+
+@MainActor @Test func macroRunsItsStepsInOrderOnOneRow() async {
+    let r = rig(macros: nightGame)
+    r.resolver?.scripted = [step("type a", .done, [.typeText("a")])]
+    await r.pipeline.handle(transcript: "Night game.", trace: trace())
+    await r.pipeline.waitForTask()
+    #expect(r.input.calls.filter { $0 != "releaseAll" } == ["click:10,20", "type:a", "scroll"])
+    #expect(Set(r.overlay.reports.map(\.id)).count == 1)
+    #expect(r.overlay.statuses.contains("step 2 of 3 · play the newest video"))
+    #expect(r.overlay.statuses.contains("step 2 of 3 · step 1 · type a"))   // the runner's line, relabelled
+    #expect(r.overlay.statuses.last == "done · 3 steps")
+}
+
+@MainActor @Test func stopPhraseEndsAMacroAtItsStep() async {
+    let r = rig(macros: nightGame)
+    let entered = Gate(), release = Gate()
+    r.resolver?.onResolve = { _ in entered.open(); await release.wait() }
+    await r.pipeline.handle(transcript: "night game", trace: trace())
+    await entered.wait()                                   // step 2 is resolving
+    await r.pipeline.handle(transcript: "stop", trace: trace())
+    release.open()
+    await r.pipeline.waitForTask()
+    #expect(r.input.calls.filter { $0 != "releaseAll" } == ["click:10,20"])   // step 3 never ran
+    #expect(r.overlay.reports.first { $0.id == 1 && $0.status == .stopped("stopped at step 2 of 3") } != nil)
+    #expect(!r.pipeline.isTaskActive)
+}
+
+@MainActor @Test func aFailingStepEndsTheMacroAndNamesTheStep() async {
+    // (resolver, what the row ends on)
+    let table: [(Result<[Action], IntentError>?, String)] = [
+        (.failure(.timeout), "step 2 of 3 · timed out"),
+        (nil, "step 2 of 3 · \(PipelineText.llmOff)"),         // LLM off: the grammar step still ran
+    ]
+    for (result, last) in table {
+        let r = rig(withResolver: result != nil, macros: nightGame)
+        if let result { r.resolver?.result = result }
+        await r.pipeline.handle(transcript: "night game", trace: trace())
+        await r.pipeline.waitForTask()
+        #expect(r.overlay.statuses.last == last)
+        #expect(r.input.calls.filter { $0 != "releaseAll" } == ["click:10,20"], "\(last)")
+        #expect(r.overlay.reports.last?.status == .failed(last))
+    }
+}
+
+@MainActor @Test func forgetPhrasesDropTheLastRoutesOrAllOfThem() async {
+    let click = Action.click(.cursor, button: .left, count: 1)
+    let past = Route(goal: "other goal", host: nil, steps: [RouteStep(intent: "x", actions: ["click"])], savedAt: .distantPast)
+    // (phrase, the row it ends on, routes left of the other one and this task's)
+    let table: [(String, String, Int)] = [
+        ("forget that route", "forgot that route", 1), ("forget all routes", "forgot all routes", 0),
+        ("night game", "done · 1 step", 0),   // a macro step saying "forget all routes" does what the spoken phrase does
+    ]
+    for (phrase, row, left) in table {
+        let store = FakeRouteStore()
+        store.routes = [past]
+        let r = rig(macros: #"{"night game":["forget all routes"]}"#, routes: store)
+        r.resolver?.scripted = [step("a", .continue, [click]), step("b", .done, [click])]
+        await r.pipeline.handle(transcript: "tidy up the desk", trace: trace())
+        await r.pipeline.waitForTask()
+        #expect(store.routes.count == 2, "\(phrase)")   // the other route and this task's
+        await r.pipeline.handle(transcript: phrase, trace: trace())
+        await r.pipeline.waitForTask()
+        #expect(r.overlay.reports.last?.status.text.hasPrefix(row) == true, "\(phrase): \(r.overlay.reports.last?.status.text ?? "")")
+        #expect(store.routes.count == left, "\(phrase)")
+        if phrase == "forget that route" {
+            await r.pipeline.handle(transcript: phrase, trace: trace())   // nothing left to drop
+            #expect(r.overlay.reports.last?.status.text == "no route to forget")
+        }
+    }
+}
+
+// MARK: - Spoken feedback (NH-60)
+
+@MainActor private final class FakeSpeaker: FeedbackSpeaking {
+    var said: [String] = []
+    var cuts = 0
+    var current: SpokenLine?
+    func speak(_ text: String) { said.append(text); current = SpokenLine(text: text, start: .now) }
+    func cut() { cuts += 1; if current?.end == nil { current?.end = .now } }
+}
+
+/// A rig whose pipeline speaks at `level` through a fake speaker, built only when a line is first said.
+@MainActor private func talking(_ level: SpeakLevel, attentionWord: String = "",
+                                sleep: @escaping @Sendable (Duration) async -> Void = { _ in }) -> (Rig, FakeSpeaker, built: () -> Int) {
+    let r = rig(attentionWord: attentionWord, sleep: sleep), fake = FakeSpeaker()
+    var built = 0
+    r.pipeline.speakerFactory = { built += 1; return fake }
+    r.pipeline.setSpeakLevel(level)
+    return (r, fake, { built })
+}
+
+@MainActor @Test func aTasksFinishLineIsSpokenOnceAtTheLevelAndNeverWhenOffOrAway() async {
+    // (level, what the task ends as, what the model does last, what is said)
+    let table: [(SpeakLevel, IntentError?, [Action], [String])] = [
+        (.off, nil, [], []),
+        (.outcomes, nil, [], ["Done: open the menu."]),
+        (.outcomes, .timeout, [], ["Timed out."]),
+        (.outcomes, nil, [.setMode(.dictation)], []),   // the words would be typed
+        (.all, nil, [.setMode(.sleep)], []),
+    ]
+    for (level, failure, actions, said) in table {
+        let (r, fake, built) = talking(level)
+        if let failure { r.resolver?.result = .failure(failure) } else { r.resolver?.scripted = [step("open the menu", .done, actions)] }
+        await r.pipeline.handle(transcript: "play the newest video", trace: trace())
+        await r.pipeline.waitForTask()
+        #expect(fake.said == said, "\(level) \(actions)")
+        if level == .off { #expect(built() == 0) }   // nothing is created while off
+    }
+}
+
+@MainActor @Test func aStopPhraseCutsTheSpeechEvenIfItEchoesAndStillCancelsTheTask() async {
+    let (r, fake, _) = talking(.outcomes)
+    await r.pipeline.handle(transcript: "spoken feedback on", trace: trace())   // a line is playing (and the speaker exists)
+    fake.current = SpokenLine(text: "stop", start: .now.advanced(by: .seconds(-1)))   // and it holds the word
+    let entered = Gate(), release = Gate()
+    r.resolver?.scripted = [step("type a", .continue, [.typeText("a")]), step("type b", .done, [.typeText("b")])]
+    r.resolver?.onResolve = { n in if n == 2 { entered.open(); await release.wait() } }
+    await r.pipeline.handle(transcript: "play the newest video", trace: trace())
+    await entered.wait()
+    let before = fake.cuts
+    await r.pipeline.handle(transcript: "stop", trace: trace())
+    #expect(fake.cuts == before + 1)   // cut, not dropped as an echo of its own word
+    release.open()
+    await r.pipeline.waitForTask()
+    #expect(r.pipeline.lastTaskOutcome == .stopped && r.typed == ["type:a"])
+    #expect(fake.said == ["Spoken feedback on."])   // a stopped task says nothing more
+}
+
+@MainActor @Test func aQuestionIsSpokenAtAllAndItsEchoIsNeverTheAnswer() async {
+    let (r, fake, _) = talking(.all, sleep: { d in if d == TaskRunner.answerTimeout { try? await Task.sleep(for: .seconds(30)) } })
+    r.resolver?.scripted = [step("Which game?", .ask), step("type a", .done, [.typeText("a")])]
+    await r.pipeline.handle(transcript: "play the newest video", trace: trace())
+    for _ in 0..<400 where r.runner?.awaitedAnswer != .question { try? await Task.sleep(for: .milliseconds(5)) }
+    #expect(fake.said == ["Which game?"])
+    let cuts = fake.cuts
+    await r.pipeline.handle(transcript: "which game", trace: trace())   // its own voice, heard back
+    #expect(r.runner?.awaitedAnswer == .question && fake.cuts == cuts)
+    await r.pipeline.handle(transcript: "the knicks one", trace: trace())   // the user: cuts the speech and answers
+    await r.pipeline.waitForTask()
+    #expect(fake.cuts > cuts)
+    #expect(r.resolver?.requests.dropFirst().first?.history.first?.userAnswer == "the knicks one")
+}
+
+@MainActor @Test func aLineHeardBackAtItsEndIsMeasuredFromTheVoiceNotTheVadsSilenceWait() async {
+    // The line ended 1.5 s ago and its echo stopped 0.2 s after that; the VAD closes the utterance only now.
+    // (voiceEnd, speechEnd, dropped as the line's own voice)
+    let table: [(Duration?, Duration, Bool)] = [(.seconds(-1.3), .zero, true), (nil, .zero, false)]
+    for (voiceEnd, speechEnd, dropped) in table {
+        let (r, fake, _) = talking(.all, sleep: { d in if d == TaskRunner.answerTimeout { try? await Task.sleep(for: .seconds(30)) } })
+        r.resolver?.scripted = [step("Which game?", .ask), step("type a", .done, [.typeText("a")])]
+        await r.pipeline.handle(transcript: "play the newest video", trace: trace())
+        for _ in 0..<400 where r.runner?.awaitedAnswer != .question { try? await Task.sleep(for: .milliseconds(5)) }
+        fake.current = SpokenLine(text: "Which game?", start: .now.advanced(by: .seconds(-4)), end: .now.advanced(by: .seconds(-1.5)))
+        let cuts = fake.cuts
+        var t = trace()
+        t.speechEnd = .now.advanced(by: speechEnd)
+        t.voiceEnd = voiceEnd.map { .now.advanced(by: $0) }
+        await r.pipeline.handle(transcript: "which game", trace: t)
+        #expect((fake.cuts == cuts) == dropped, "voiceEnd \(String(describing: voiceEnd))")
+        await r.pipeline.handle(transcript: "the knicks one", trace: trace())
+        await r.pipeline.waitForTask()
+    }
+}
+
+@MainActor @Test func theVoicePhrasesChangeTheLevelAtOnce() async {
+    // (phrase, level after, what is said)
+    let table: [(String, SpeakLevel, [String])] = [
+        ("spoken feedback on", .outcomes, ["Spoken feedback on."]), ("spoken feedback all", .all, ["Spoken feedback all."]),
+        ("turn off spoken feedback", .off, []),
+    ]
+    for (phrase, level, said) in table {
+        let (r, fake, _) = talking(.outcomes)
+        var heard: [SpeakLevel] = []
+        r.pipeline.onSpeakLevelChange = { heard.append($0) }
+        await r.pipeline.handle(transcript: phrase, trace: trace())
+        #expect(r.pipeline.speakLevel == level && heard == [level] && fake.said == said, "\(phrase)")
+    }
+}
+
+// MARK: - Spoken yes before a fixed phrase (NH-149)
+
+/// Mail in front with the built-in packs: "send message" asks first. "press" counts the key chords that ran.
+@MainActor private func mailRig(attentionWord: String = "", macros: String = "{}") -> Rig {
+    let r = rig(attentionWord: attentionWord, macros: macros)
+    r.pipeline.setPacks(.builtIns)
+    r.pipeline.frontmostBundleID = { "com.apple.mail" }
+    r.pipeline.confirmTimeout = .milliseconds(60)
+    return r
+}
+@MainActor private final class FrontApp { var id = "com.apple.mail" }
+private func presses(_ r: Rig) -> Int { r.input.calls.filter { $0 == "press" }.count }
+@MainActor private func lastStatus(_ r: Rig, row: Int = 1) -> String? { r.overlay.reports.last { $0.id == row }?.status.text }
+
+@MainActor @Test func aHeldPhraseRunsOnlyOnAYes() async {
+    // (attention word, phrase, reply or nil for silence, key presses, the row's last words)
+    let table: [(String, String, String?, Int, String)] = [
+        ("", "send message", "yes", 1, "done"), ("", "send message", "confirm", 1, "done"),
+        ("", "send message", "do it", 1, "done"), ("", "send message", "please yes", 1, "done"),
+        ("jarvis", "jarvis send message", "jarvis yes", 1, "done"),
+        ("", "send message", "yeah", 0, PipelineText.notConfirmed),
+        ("", "send message", "yes send it", 0, PipelineText.notConfirmed),
+        ("", "send message", "next message", 0, PipelineText.notConfirmed),   // the reply is never run as a command
+        ("jarvis", "jarvis send message", "yes", 0, PipelineText.notConfirmed),   // unaddressed: no yes
+        ("", "send message", nil, 0, PipelineText.noYes),
+        ("", "send message", "stop", 0, PipelineText.stopped),
+    ]
+    for (word, phrase, reply, count, ending) in table {
+        let r = mailRig(attentionWord: word)
+        await r.pipeline.handle(transcript: phrase, trace: trace())
+        if let reply { await r.pipeline.handle(transcript: reply, trace: trace()) }
+        await r.pipeline.waitForTask()
+        #expect(presses(r) == count, "\(phrase) / \(reply ?? "silence")")
+        #expect(r.overlay.statuses.contains(PipelineText.sayYes(to: "send message")))
+        #expect(lastStatus(r)?.hasSuffix(ending) == true, "\(reply ?? "silence"): \(lastStatus(r) ?? "")")
+        #expect(!r.pipeline.isTaskActive)
+    }
+}
+
+@MainActor @Test func aHeldPhraseDoesNotRunWhenTheAppInFrontChanged() async {
+    let r = mailRig()
+    let front = FrontApp()
+    r.pipeline.frontmostBundleID = { front.id }
+    await r.pipeline.handle(transcript: "send message", trace: trace())
+    front.id = "com.apple.finder"
+    await r.pipeline.handle(transcript: "yes", trace: trace())
+    await r.pipeline.waitForTask()
+    #expect(presses(r) == 0)
+    #expect(lastStatus(r)?.hasSuffix("is no longer in front: say it again") == true)
+}
+
+@MainActor @Test func aMacroStepThatAsksWaitsAndANoEndsTheMacro() async {
+    let macros = #"{"mail run":["send message","next message"]}"#
+    for (reply, count, ending) in [("yes", 2, "done · 2 steps"), ("no", 0, "step 1 of 2 · not confirmed"), ("stop", 0, "stopped at step 1 of 2")] {
+        let r = mailRig(macros: macros)
+        await r.pipeline.handle(transcript: "mail run", trace: trace())
+        for _ in 0..<500 where !r.overlay.statuses.contains("step 1 of 2 · say yes to send message") { await Task.yield() }
+        await r.pipeline.handle(transcript: reply, trace: trace())
+        await r.pipeline.waitForTask()
+        #expect(r.overlay.statuses.contains("step 1 of 2 · say yes to send message"))
+        #expect(presses(r) == count && lastStatus(r) == ending, "\(reply): \(lastStatus(r) ?? "")")
     }
 }

@@ -2,7 +2,7 @@
 
 **Date:** 2026-11-15  **Ticket:** [NH-81](https://github.com/noahstotland/nohands/issues/81)
 **Status:** Shipped
-**Shipped:** in PR #141, as specified
+**Shipped:** in PR #141, with differences: [as-built](../as-built/2026-11-15-nh-81-slack-commands.md)
 
 ## Intent
 

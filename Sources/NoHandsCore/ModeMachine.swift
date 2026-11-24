@@ -6,19 +6,46 @@ public enum Routing: Equatable, Sendable {
     case ignore(reason: String)
     /// The grammar recognised the phrase but it can't be run (a `spell` with an unknown word). Shown, never sent to the model.
     case reject(String)
+    /// The whole phrase is a macro's name (command mode only; the grammar is asked first). The pipeline runs its steps.
+    case macro(Macro)
+    /// "forget that route" (`all: false`) or "forget all routes" (`all: true`): route memory is the pipeline's, not the
+    /// executor's. Command mode only; never sent to the model.
+    case forgetRoutes(all: Bool)
+    /// A marked phrase: it runs only after a spoken yes. The pipeline holds it in the task slot.
+    case confirm(HeldPhrase)
+}
+
+/// A fixed phrase waiting for a spoken yes: what to read back, what to run, and the app it was heard in (nil for a
+/// global phrase) so it does not run in another one.
+public struct HeldPhrase: Equatable, Sendable {
+    public let phrase: String
+    public let actions: [Action]
+    public let bundleID: String?
+
+    public init(phrase: String, actions: [Action], bundleID: String?) {
+        self.phrase = phrase
+        self.actions = actions
+        self.bundleID = bundleID
+    }
 }
 
 public struct ModeMachine: Sendable {
     public private(set) var mode: Mode
-    private let grammar: CommandGrammar
+    private var grammar: CommandGrammar
     private let attention: AttentionGate
+    private let macros: Macros
     private var session = DictationSession()
 
-    public init(grammar: CommandGrammar = CommandGrammar(), mode: Mode = .command, attention: AttentionGate = .off) {
+    public init(grammar: CommandGrammar = CommandGrammar(), mode: Mode = .command, attention: AttentionGate = .off,
+                macros: Macros = Macros()) {
         self.grammar = grammar
+        self.macros = macros
         self.mode = mode
         self.attention = attention
     }
+
+    /// Routes the next utterance with `grammar`; the mode and any dictation session carry on.
+    public mutating func use(grammar: CommandGrammar) { self.grammar = grammar }
 
     /// Forces the mode (e.g. an LLM-produced `.setMode`). Idempotent: re-applying the current mode changes
     /// nothing, so an ongoing dictation session is not reset. Entering dictation starts a fresh session.
@@ -62,6 +89,12 @@ public struct ModeMachine: Sendable {
     /// whether there is one before routing, and not for any other utterance).
     public static func namesTextEdit(_ transcript: String, attention: AttentionGate = .off) -> Bool {
         CommandGrammar.parseEdit(addressed(transcript, attention: attention), textFocused: true) != nil
+    }
+
+    /// True when the words are a rewrite of the selection, which works only in a focused text field (so the caller asks
+    /// the front app whether there is one). Not a dictation command: dictation types these words.
+    public static func namesRewrite(_ transcript: String, attention: AttentionGate = .off) -> Bool {
+        CommandGrammar.parseRewrite(addressed(transcript, attention: attention), textFocused: true) != nil
     }
 
     /// Drops the "scratch that" record. The pipeline calls it on pause: what was routed may never have been typed,
@@ -127,15 +160,30 @@ public struct ModeMachine: Sendable {
         }
     }
 
-    private mutating func routeCommand(_ transcript: String, frontmost bundleID: String?, textFocused: Bool) -> Routing {
+    /// Routes one macro step: command mode, no attention word (the user wrote it without), and never a macro lookup.
+    /// A step that is a macro's name was refused at load; this is the second guard.
+    public mutating func routeStep(_ step: String, frontmost bundleID: String? = nil, textFocused: Bool = false) -> Routing {
+        guard !CommandGrammar.normalize(step).isEmpty else { return .ignore(reason: "empty") }
+        guard mode == .command else { return .ignore(reason: "not in command mode") }
+        return routeCommand(step, frontmost: bundleID, textFocused: textFocused, lookUpMacro: false)
+    }
+
+    private mutating func routeCommand(_ transcript: String, frontmost bundleID: String?, textFocused: Bool,
+                                       lookUpMacro: Bool = true) -> Routing {
         let phrase = CommandGrammar.normalize(transcript).joined(separator: " ")
-        guard let actions = grammar.parse(transcript, frontmost: bundleID, textFocused: textFocused) else {
+        if let all = CommandGrammar.forgetsRoutes(phrase) { return .forgetRoutes(all: all) }
+        guard let match = grammar.match(transcript, frontmost: bundleID, textFocused: textFocused) else {
             if let message = grammar.rejection(transcript) { return .reject(message) }
+            if lookUpMacro, let macro = macros.match(transcript) { return .macro(macro) }
             return .resolveWithLLM(phrase)
         }
+        let actions = match.actions
         for case .setMode(let m) in actions {
             mode = m
             if m == .dictation { session = DictationSession() }
+        }
+        if let key = match.confirm, !actions.contains(where: { if case .setMode = $0 { true } else { false } }) {
+            return .confirm(HeldPhrase(phrase: key, actions: actions, bundleID: match.bundleID))
         }
         return .execute(actions)
     }

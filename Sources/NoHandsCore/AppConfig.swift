@@ -61,6 +61,9 @@ public struct AppConfig: Codable, Equatable, Sendable {
     /// Turn on the system's voice processing (echo cancellation) on the microphone, so audio the Mac's own
     /// speakers play is removed before VAD and ASR. Capture goes on without it if macOS refuses.
     public var echoCancellation: Bool = true
+    /// What NoHands says out loud: `off`, `outcomes` (a task's finish line) or `all` (also questions and readings).
+    /// Unlike the other keys it takes effect without a restart when the menu or a voice phrase changes it.
+    public var speakFeedback: SpeakLevel = .off
     /// Optional attention word (up to three words). When set, command mode acts only on utterances that start
     /// with it; everything else is ignored silently. Empty means off. `load` stores it normalized, or empty when
     /// it cannot be used (more than three words, or a stop phrase).
@@ -68,6 +71,21 @@ public struct AppConfig: Codable, Equatable, Sendable {
     /// Task loop, Claude backend only: send a picture of the focused window on steps where the accessibility tree
     /// failed (see `visionEnabled`). Off by default; needs the Screen Recording permission.
     public var visionFallback: Bool = false
+    /// How long (ms) after a task ends that "no, the other one" and similar requests refer back to it. 0 turns it off.
+    public var followUpWindowMs: Int = 30000
+    /// Remember the steps of tasks that ended `done` and hint them to the model when a similar goal comes in (NH-46).
+    /// Off, nothing is matched or saved and an existing routes file is left as it is.
+    public var routeMemory: Bool = true
+    /// Record each command in the command log (NH-156). Off, nothing new is recorded; existing entries stay until cleared.
+    public var commandLog: Bool = true
+    /// The pack registry URL (NH-85): nil is the default (none set yet), `""` turns the registry off. Read through `packRegistry`.
+    public var packRegistryURL: String?
+    /// Base64 of the registry's 32-byte Ed25519 public key; required for any URL other than the default.
+    public var packRegistryKey: String?
+    /// The user's own words: misheard spellings swapped for the right ones in every transcript (see `Vocabulary`).
+    public private(set) var vocabulary = Vocabulary()
+    /// The user's named step sequences, run by saying the name (see `Macros`).
+    public private(set) var macros = Macros()
 
     public static let defaultOllamaURL = "http://127.0.0.1:11434"
     public static let efforts = ["low", "medium", "high", "xhigh", "max"]
@@ -81,7 +99,8 @@ public struct AppConfig: Codable, Equatable, Sendable {
         case maxTaskSteps, maxMediaTaskSteps, llmDeadlineMs, settleMs, maxObservedElements
         case localLlmDeadlineMs, localMaxObservedElements
         case desktopHarness, agentDesktopPath, agentDesktopTimeoutMs, agentDesktopSnapshotMs, agentDesktopHeadedFallback, agentDesktopTrace
-        case echoCancellation, attentionWord, visionFallback
+        case echoCancellation, speakFeedback, attentionWord, visionFallback, vocabulary, macros, followUpWindowMs, routeMemory, commandLog
+        case packRegistryURL, packRegistryKey
     }
 
     public init(from decoder: Decoder) throws {
@@ -117,8 +136,24 @@ public struct AppConfig: Codable, Equatable, Sendable {
         d.agentDesktopHeadedFallback = try c.decodeIfPresent(Bool.self, forKey: .agentDesktopHeadedFallback) ?? d.agentDesktopHeadedFallback
         d.agentDesktopTrace = try c.decodeIfPresent(Bool.self, forKey: .agentDesktopTrace) ?? d.agentDesktopTrace
         d.echoCancellation = try c.decodeIfPresent(Bool.self, forKey: .echoCancellation) ?? d.echoCancellation
+        // Lenient: a missing key, an unknown string or a non-string is `off`.
+        d.speakFeedback = ((try? c.decodeIfPresent(String.self, forKey: .speakFeedback)) ?? nil).flatMap(SpeakLevel.init(rawValue:)) ?? .off
         d.attentionWord = try c.decodeIfPresent(String.self, forKey: .attentionWord) ?? d.attentionWord
         d.visionFallback = try c.decodeIfPresent(Bool.self, forKey: .visionFallback) ?? d.visionFallback
+        d.followUpWindowMs = try c.decodeIfPresent(Int.self, forKey: .followUpWindowMs) ?? d.followUpWindowMs
+        d.packRegistryURL = try c.decodeIfPresent(String.self, forKey: .packRegistryURL)
+        d.packRegistryKey = try c.decodeIfPresent(String.self, forKey: .packRegistryKey)
+        // Lenient: a value that is not a bool keeps the default.
+        d.routeMemory = (try? c.decodeIfPresent(Bool.self, forKey: .routeMemory)) ?? d.routeMemory
+        d.commandLog = (try? c.decodeIfPresent(Bool.self, forKey: .commandLog)) ?? d.commandLog
+        // Lenient: a `vocabulary` that is not a list is ignored and counted as one skipped entry; each bad entry is skipped inside `Vocabulary`.
+        if c.contains(.vocabulary) {
+            d.vocabulary = (try? c.decode(Vocabulary.self, forKey: .vocabulary)) ?? Vocabulary(skipped: 1)
+        }
+        // Same for `macros`: anything but an object counts as one skipped macro.
+        if c.contains(.macros) {
+            d.macros = (try? c.decode(Macros.self, forKey: .macros)) ?? Macros(skipped: 1)
+        }
         self = d
     }
 
@@ -144,6 +179,7 @@ public struct AppConfig: Codable, Equatable, Sendable {
         config.maxObservedElements = min(max(config.maxObservedElements, 10), 300)
         config.localLlmDeadlineMs = min(max(config.localLlmDeadlineMs, 2000), 120000)
         config.localMaxObservedElements = min(max(config.localMaxObservedElements, 10), 300)
+        config.followUpWindowMs = min(max(config.followUpWindowMs, 0), 120000)
         config.agentDesktopTimeoutMs = min(max(config.agentDesktopTimeoutMs, 1000), 60000)
         config.agentDesktopSnapshotMs = min(max(config.agentDesktopSnapshotMs, 500), 10000)
         config.anthropicKeySource = (config.anthropicAPIKey ?? "").isEmpty ? nil : .file
@@ -161,6 +197,19 @@ public struct AppConfig: Codable, Equatable, Sendable {
         g.moveStepPx = moveStepPx
         g.scrollStepLines = scrollStepLines
         return g
+    }
+
+    /// The configured pack registry: none set, off, a checked https URL, or why the URL was refused.
+    public var packRegistry: PackRegistry.Setting { PackRegistry.setting(urlString: packRegistryURL) }
+
+    /// The keys that may vouch for the configured registry: the built-in keys for the default, the user's key for a
+    /// custom URL (none when it is missing or malformed), and none when the registry is off or refused.
+    public var packRegistryTrustedKeys: [PackRegistry.TrustedKey] {
+        switch packRegistry {
+        case .none: return PackRegistry.defaultKeys
+        case .url(let url): return PackRegistry.trustedKeys(url: url, customKey: packRegistryKey)
+        case .off, .invalid: return []
+        }
     }
 
     public var attentionGate: AttentionGate { AttentionGate(configured: attentionWord) }

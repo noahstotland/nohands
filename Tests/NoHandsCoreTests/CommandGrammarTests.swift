@@ -207,7 +207,7 @@ let g = CommandGrammar()
         ("scroll to top gear", [.findOnPage("top gear", movePointer: true)]),
         ("find", [.pressKey(KeyChord(.f, [.command]))]),               // bare find stays command-F
         ("find the", [.pressKey(KeyChord(.f, [.command]))]),
-        ("scroll to the top", nil), ("scroll to bottom", nil), ("scroll to the top of the page", nil), ("scroll to", nil), ("scroll to the down", nil),
+        ("scroll to", nil), ("scroll to the down", nil), ("scroll to the left", nil),
         ("scroll down", [.scroll(.down, amount: 5)]),
     ]
     for (phrase, expected) in table { #expect(g.parse(phrase) == expected, "\(phrase)") }
@@ -346,4 +346,118 @@ let g = CommandGrammar()
     #expect(g.parse("is it playing") == [.checkMedia])
     #expect(g.parse("stop") == nil)
     #expect(g.parse("stop the music") == nil)
+}
+
+@Test func systemControlPhrases() {
+    let lock = Action.system(.lockScreen), shot = Action.system(.screenshot(.screen))
+    let table: [(String, Action)] = [
+        ("lock screen", lock), ("lock the screen", lock), ("lock computer", lock), ("lock the mac", lock),
+        ("screenshot", shot), ("take a screenshot", shot), ("screenshot screen", shot),
+        ("screenshot selection", .system(.screenshot(.selection))), ("screenshot area", .system(.screenshot(.selection))),
+        ("screenshot window", .system(.screenshot(.window))),
+        ("mission control", .system(.missionControl)), ("open mission control", .system(.missionControl)),
+        ("show desktop", .system(.showDesktop)), ("show the desktop", .system(.showDesktop)),
+        ("next space", .system(.space(.right))), ("previous space", .system(.space(.left))),
+        ("notification center", .system(.notificationCenter)), ("notification centre", .system(.notificationCenter)),
+        ("show notifications", .system(.notificationCenter)),
+        ("empty trash", .system(.emptyTrash)), ("empty the trash", .system(.emptyTrash)),
+        ("open settings for bluetooth", .system(.openSettings(.bluetooth))),
+        ("open settings for the wifi", .system(.openSettings(.wifi))),
+        ("open sound settings", .system(.openSettings(.sound))), ("privacy and security settings", .system(.openSettings(.privacy))),
+        ("login items settings", .system(.openSettings(.loginItems))),
+    ]
+    for (said, action) in table { #expect(g.parse(said) == [action], "\(said)") }
+    // Unchanged phrases, and the stop: none of them is a system command.
+    #expect(g.parse("space") == [.pressKey(KeyChord(.space))])
+    #expect(g.parse("spotlight") == [.pressKey(KeyChord(.space, [.command]))])
+    #expect(g.parse("open system settings") == [.openApp("system settings")])
+    #expect(g.parse("open slack settings") == [.openApp("slack settings")])
+    #expect(g.parse("open settings") == [.openApp("settings")])
+    #expect(CommandGrammar(packs: .builtIns).parse("open settings", frontmost: "com.microsoft.VSCode") == [.pressKey(KeyChord(.comma, [.command]))])
+    #expect(g.parse("hide") == [.hideOverlay])
+    for said in ["stop", "stop screenshot", "lock screen stop", "empty trash and stop"] { #expect(g.parse(said) == nil, "\(said)") }
+}
+
+@Test func darkModeAndDoNotDisturbPhrases() {
+    let table: [([String], [Action]?)] = [
+        (["dark mode", "dark mode on", "turn on dark mode", "turn dark mode on", "switch to dark mode", "turn on the dark mode"], [.system(.appearance(.dark))]),
+        (["light mode", "dark mode off", "turn off dark mode", "turn dark mode off", "switch to light mode", "light mode on"], [.system(.appearance(.light))]),
+        (["toggle dark mode"], [.system(.appearance(.toggle))]),
+        (["do not disturb", "do not disturb on", "turn on do not disturb"], [.system(.doNotDisturb(true))]),
+        (["do not disturb off", "turn off do not disturb"], [.system(.doNotDisturb(false))]),
+        (["open automation settings", "automation settings"], [.system(.openSettings(.automation))]),
+        // Unchanged: neighbours and the stop keep their meaning.
+        (["dictation mode"], [.setMode(.dictation)]), (["command mode"], [.setMode(.command)]),
+        (["spoken feedback on"], [.setSpokenFeedback(.outcomes)]), (["stop", "stop dark mode", "dark mode stop"], nil),
+    ]
+    for (phrases, expected) in table {
+        for phrase in phrases { #expect(g.parse(phrase) == expected, "\(phrase)") }
+    }
+}
+
+@Test func settingsPaneNames() {
+    let table: [(SettingsPane, [String])] = [
+        (.wifi, ["wifi", "wi-fi", "wi fi"]), (.bluetooth, ["bluetooth"]), (.sound, ["sound", "audio"]),
+        (.displays, ["display", "displays"]), (.accessibility, ["accessibility"]),
+        (.privacy, ["privacy", "privacy and security", "security"]), (.loginItems, ["login items", "startup items"]),
+        (.notifications, ["notifications", "notification"]), (.battery, ["battery"]), (.general, ["general"]),
+        (.automation, ["automation", "automation settings"]),
+    ]
+    #expect(Set(table.map(\.0)) == Set(SettingsPane.allCases))
+    for (pane, names) in table {
+        for said in names { #expect(SettingsPane.parse(said.split(separator: " ").map(String.init)) == pane, "\(said)") }
+    }
+    for said in ["slack", "", "settings", "system"] { #expect(SettingsPane.parse(said.split(separator: " ").map(String.init)) == nil, "\(said)") }
+    let open: [(String, SettingsPane)] = [
+        ("open the settings for wifi", .wifi), ("open settings for display please", .displays),
+        ("open settings for privacy & security", .privacy), ("notification settings", .notifications),
+    ]
+    for (said, pane) in open { #expect(g.parse(said) == [.system(.openSettings(pane))], "\(said)") }
+    // An unknown pane after "open settings for" is rejected on the device, never opened and never sent to the model.
+    #expect(g.parse("open settings for slack") == nil)
+    #expect(g.rejection("open settings for slack") == "no settings pane called slack: say open system settings")
+    #expect(g.rejection("open settings for") != nil)
+    #expect(g.rejection("open settings for bluetooth") == nil && g.rejection("open system settings") == nil)
+    // A compound or long request goes to the model as before, with no rejection.
+    for said in ["open settings for bluetooth and turn it off", "open settings for slack and type hello", "open settings for slack bluetooth wifi sound off", "open settings for bluetooth to connect airpods", "open settings for sound to fifty"] {
+        #expect(g.parse(said) == nil && g.rejection(said) == nil, "\(said)")
+    }
+}
+
+@Test func spokenFeedbackPhrasesSetTheLevel() {
+    let table: [(String, [Action]?)] = [
+        ("spoken feedback on", [.setSpokenFeedback(.outcomes)]), ("turn on spoken feedback", [.setSpokenFeedback(.outcomes)]),
+        ("Spoken feedback off.", [.setSpokenFeedback(.off)]), ("turn off spoken feedback", [.setSpokenFeedback(.off)]),
+        ("spoken feedback all", [.setSpokenFeedback(.all)]), ("speak everything", [.setSpokenFeedback(.all)]),
+        // Unchanged: the stop phrases and near neighbours keep their meaning.
+        ("stop", nil), ("stop dictating", [.setMode(.command)]), ("stop the music", nil), ("turn on the lights", nil),
+        ("stop spoken feedback", nil), ("speak", nil),
+    ]
+    for (said, expected) in table { #expect(g.parse(said) == expected, "\(said)") }
+    for said in ["spoken feedback on", "speak everything", "turn off spoken feedback"] { #expect(!StopWords.isStop(said), "\(said)") }
+}
+
+@Test func pointerAndPageControlPhrases() {
+    func key(_ k: Key, _ m: Set<Modifier> = [.command]) -> [Action] { [.pressKey(KeyChord(k, m))] }
+    let drag: [Action] = [.drag(from: .numbered(5), to: .numbered(12))]
+    let hold: [Action] = [.moveCursor(.numbered(12)), .pressMouse(.left)]
+    let center: [Action] = [.moveCursor(.screenCenter)]
+    let table: [(String, [Action]?)] = [
+        ("drag 5 to 12", drag), ("drag from 5 to 12", drag), ("drag five to twelve", drag), ("drag two to three", [.drag(from: .numbered(2), to: .numbered(3))]),
+        ("click 12 and hold", hold), ("click twelve and hold", hold),
+        ("top of page", key(.up)), ("top of the page", key(.up)), ("scroll to the top", key(.up)), ("scroll to top of the page", key(.up)),
+        ("bottom of the page", key(.down)), ("bottom of page", key(.down)), ("scroll to bottom", key(.down)), ("scroll to the bottom of the page", key(.down)),
+        ("zoom in", key(.equal)), ("zoom out", key(.minus)), ("actual size", key(.zero)), ("reset zoom", key(.zero)),
+        ("move to center", center), ("move to the centre", center), ("move to the center of the screen", center),
+        // Unchanged: names, bare directions, the grid, the existing click counts and the caret moves.
+        ("drag the file to the trash", nil), ("drag to 12", nil), ("drag 5", nil), ("drag", nil),
+        ("click save and hold", [.click(.element(named: "save and hold"), button: .left, count: 1)]),
+        ("zoom 35", [.zoomGrid(35)]), ("move to 12", [.moveCursor(.numbered(12))]), ("scroll to the right", nil),
+        ("double click 12", [.click(.numbered(12), button: .left, count: 2)]),
+        ("right click 12", [.click(.numbered(12), button: .right, count: 1)]),
+        ("go to the top of the document", [.editText(.caret(.documentStart), otherwise: nil)]),
+    ]
+    for (phrase, expected) in table { #expect(g.parse(phrase) == expected, "\(phrase)") }
+    // A pack's own phrase still wins in its app.
+    #expect(g.parse("scroll to top", frontmost: "com.apple.Terminal") == key(.home))
 }

@@ -157,3 +157,80 @@ import Foundation
         #expect(c.anthropicKeySource == source, "\(json ?? "nil") \(env)")
     }
 }
+
+@Test func followUpWindowDefaultsAndClamps() throws {
+    let table: [(String?, Int)] = [(nil, 30000), ("{}", 30000), (#"{"followUpWindowMs":0}"#, 0), (#"{"followUpWindowMs":-5}"#, 0),
+                                   (#"{"followUpWindowMs":5000}"#, 5000), (#"{"followUpWindowMs":999999}"#, 120000)]
+    for (json, expected) in table {
+        #expect(try AppConfig.load(from: json.map { Data($0.utf8) }, environment: [:]).followUpWindowMs == expected, "\(json ?? "nil")")
+    }
+}
+
+@Test func vocabularyEntriesAreCleanedAndCounted() throws {
+    let many = (0..<203).map { #"{"hear":"w\#($0)","say":"W"}"# }.joined(separator: ",")
+    let table: [(json: String, kept: [Vocabulary.Entry], skipped: Int)] = [
+        (#"{}"#, [], 0),
+        (#"{"vocabulary":"raptures"}"#, [], 1),
+        (#"{"vocabulary":[{"hear":"raptures","say":"Raptors"}]}"#, [.init(hear: ["raptures"], say: "Raptors")], 0),
+        (#"{"vocabulary":[{"hear":["a b","c"],"say":"X"}]}"#, [.init(hear: ["a b", "c"], say: "X")], 0),
+        (#"{"vocabulary":[{"hear":"x"},{"say":"X"},{"hear":"x","say":""},{"hear":5,"say":"X"},7]}"#, [], 5),
+        (#"{"vocabulary":[{"hear":"stop it","say":"X"},{"hear":"x","say":"never mind"},{"hear":"x","say":"Cancel"}]}"#, [], 3),
+        (#"{"vocabulary":[{"hear":["halt","one","a b c d e f"],"say":"X"}]}"#, [.init(hear: ["one"], say: "X")], 0),
+        (#"{"vocabulary":[{"hear":"x","say":"\#(String(repeating: "y", count: 101))"}]}"#, [], 1),
+        (#"{"vocabulary":[{"hear":"x","say":"a\nb"},{"hear":"x","say":"a\tb"},{"hear":"x","say":"a\u001bb"},{"hear":"x","say":"a\u0085b"}]}"#, [], 4),
+        (#"{"vocabulary":[{"hear":"x","say":"\n Raptors\t"},{"hear":"y","say":"👨‍👩‍👧"}]}"#, [.init(hear: ["x"], say: "Raptors"), .init(hear: ["y"], say: "👨‍👩‍👧")], 0),
+        (#"{"vocabulary":[{"hear":["stop",\#((1...12).map { "\"s\($0)\"" }.joined(separator: ","))],"say":"X"}]}"#, [.init(hear: (1...10).map { "s\($0)" }, say: "X")], 0),
+        (#"{"vocabulary":[\#(many)]}"#, (0..<200).map { .init(hear: ["w\($0)"], say: "W") }, 3),
+    ]
+    for row in table {
+        let v = try AppConfig.load(from: Data(row.json.utf8), environment: [:]).vocabulary
+        #expect(v.entries == row.kept, "\(row.json.prefix(80))")
+        #expect(v.skipped == row.skipped, "\(row.json.prefix(80))")
+    }
+}
+
+@Test func macrosDecodeAndABadValueNeverFailsTheConfig() throws {
+    let table: [(json: String, kept: Int, skipped: Int)] = [
+        (#"{}"#, 0, 0), (#"{"macros":{"night game":["click"]}}"#, 1, 0),
+        (#"{"macros":["click"]}"#, 0, 1), (#"{"macros":"night game"}"#, 0, 1),
+    ]
+    for row in table {
+        let c = try AppConfig.load(from: Data(row.json.utf8), environment: [:])
+        #expect(c.macros.all.count == row.kept && c.macros.skipped == row.skipped, "\(row.json)")
+    }
+    #expect(try AppConfig.load(from: Data(#"{"macros":7,"silenceMs":500}"#.utf8), environment: [:]).silenceMs == 500)
+}
+
+@Test func routeMemoryIsOnUnlessTheConfigSaysFalse() throws {
+    let table: [(String?, Bool)] = [(nil, true), ("{}", true), (#"{"routeMemory":false}"#, false), (#"{"routeMemory":true}"#, true),
+                                    (#"{"routeMemory":"no"}"#, true), (#"{"routeMemory":0}"#, true), (#"{"routeMemory":null}"#, true)]
+    for (json, expected) in table {
+        #expect(try AppConfig.load(from: json.map { Data($0.utf8) }, environment: [:]).routeMemory == expected, "\(json ?? "nil")")
+    }
+}
+
+@Test func commandLogIsOnUnlessTheConfigSaysFalse() throws {
+    let table: [(String?, Bool)] = [(nil, true), (#"{"commandLog":false}"#, false), (#"{"commandLog":true}"#, true),
+                                    (#"{"commandLog":"no"}"#, true), (#"{"commandLog":1}"#, true), (#"{"commandLog":null}"#, true)]
+    for (json, expected) in table {
+        #expect(try AppConfig.load(from: json.map { Data($0.utf8) }, environment: [:]).commandLog == expected, "\(json ?? "nil")")
+    }
+    #expect(try AppConfig.load(from: Data(#"{"commandLog":"no","silenceMs":500}"#.utf8), environment: [:]).silenceMs == 500)
+    let patched = try AppConfig.load(from: CommandLogMenu.merged(existing: Data(#"{"silenceMs":500}"#.utf8), on: false), environment: [:])
+    #expect(patched.silenceMs == 500 && !patched.commandLog)
+}
+
+@Test func packRegistryConfig() throws {
+    let key = Data(repeating: 7, count: 32).base64EncodedString(), url = URL(string: "https://packs.example.org/i.json")!
+    let table: [(String, PackRegistry.Setting, Int)] = [
+        ("{}", .none, PackRegistry.defaultKeys.count),
+        (#"{"packRegistryURL":""}"#, .off, 0),
+        (#"{"packRegistryURL":"https://packs.example.org/i.json"}"#, .url(url), 0),
+        (#"{"packRegistryURL":"https://packs.example.org/i.json","packRegistryKey":"\#(key)"}"#, .url(url), 1),
+        (#"{"packRegistryURL":"http://packs.example.org/i.json","packRegistryKey":"\#(key)"}"#, .invalid("Registry URL must be https"), 0),
+    ]
+    for (json, setting, keys) in table {
+        let c = try AppConfig.load(from: Data(json.utf8), environment: [:])
+        #expect(c.packRegistry == setting && c.packRegistryTrustedKeys.count == keys, "\(json)")
+    }
+}

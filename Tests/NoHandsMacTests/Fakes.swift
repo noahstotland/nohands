@@ -1,4 +1,5 @@
 import Testing
+import os
 import CoreGraphics
 import Foundation
 import NoHandsCore
@@ -15,6 +16,8 @@ final class FakeInput: InputSynthesizing, @unchecked Sendable {
     var mediaKeys: [SystemMediaKey] = []
     func press(_ chord: KeyChord) throws { calls.append("press"); chords.append(chord) }
     func pressMediaKey(_ key: SystemMediaKey) throws { calls.append("mediaKey"); mediaKeys.append(key) }
+    var hardwareArrows: [KeyChord] = []
+    func pressHardwareArrow(_ chord: KeyChord) throws { calls.append("arrow"); hardwareArrows.append(chord) }
     func moveMouse(to point: CGPoint) throws { calls.append("move:\(Int(point.x)),\(Int(point.y))") }
     func click(at point: CGPoint, button: MouseButton, count: Int) throws { calls.append("click:\(Int(point.x)),\(Int(point.y))") }
     func mouseDown(_ button: MouseButton, at point: CGPoint) throws { calls.append("down") }
@@ -116,6 +119,11 @@ final class FakeElements: ElementProviding, @unchecked Sendable {
     func focusedWindowIsFullScreen() -> Bool? { defer { fullScreenAfterFirstRead.map { fullScreen = $0 } }; return fullScreen }
     func focusedElementIsTextInput() -> Bool { textFocused }
     func focusedWindowTitle() -> String? { windowTitle }
+    /// Live titles for the press-time check: the control under the pointer (nil: unknown) and the focused button.
+    var titleAtPoint: String?
+    var focusedTitle: String?
+    func elementTitle(at point: CGPoint) -> String? { titleAtPoint }
+    func focusedElementTitle() -> String? { focusedTitle }
     func webURL() -> String? { url }
     func frontmostAppName() -> String? { front }
     func actionableElements() -> [UIElementInfo] { walk(screens: nil) }
@@ -286,8 +294,10 @@ final class FakeHarness: DesktopHarness, @unchecked Sendable {
     func startSession(name: String) async -> String? {
         lock.withLock { calls.append("session:start"); return sessionID }
     }
+    /// Whether the task that ended the session was already cancelled (a real `session end` would be killed).
+    var sessionEndedCancelled: Bool?
     func endSession(_ id: String) async {
-        lock.withLock { calls.append("session:end:\(id)") }
+        lock.withLock { calls.append("session:end:\(id)"); sessionEndedCancelled = Task.isCancelled }
     }
 }
 
@@ -338,4 +348,33 @@ func isPhaseLine(_ text: String) -> Bool { text.hasPrefix("Reading \u{00B7} ") |
     init(_ items: [MenuEntry]) { self.items = items }
     func entries() -> [MenuEntry] { items }
     func press(_ index: Int) -> Bool { pressed.append(index); return pressWorks }
+}
+
+/// A `TextRewriting` that answers from a script and records what it was asked. `during` runs while the "model" works
+/// (a test changes the field or waits for a spoken stop there).
+final class FakeRewriter: TextRewriting {
+    let answer: Result<String, any Error>
+    let during: @Sendable () async -> Void
+    private let seen = OSAllocatedUnfairLock(initialState: [(text: String, how: RewriteInstruction)]())
+    init(_ answer: Result<String, any Error>, during: @escaping @Sendable () async -> Void = {}) {
+        self.answer = answer; self.during = during
+    }
+    var calls: [(text: String, how: RewriteInstruction)] { seen.withLock { $0 } }
+    func rewrite(_ text: String, _ instruction: RewriteInstruction) async throws -> String {
+        seen.withLock { $0.append((text, instruction)) }
+        await during()
+        return try answer.get()
+    }
+}
+
+/// Route memory held in an array, with no file.
+@MainActor final class FakeRouteStore: RouteStoring {
+    var routes: [Route] = []
+    func save(_ route: Route) { routes = RouteMemory.saving(route, into: routes) }
+    @discardableResult func remove(_ dropped: [Route]) -> Bool {
+        let before = routes.count
+        routes.removeAll { dropped.contains($0) }
+        return routes.count != before
+    }
+    func removeAll() { routes = [] }
 }

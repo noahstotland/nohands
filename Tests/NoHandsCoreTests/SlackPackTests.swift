@@ -27,7 +27,7 @@ private let packOnly: [(String, [Action])] = [
     ("previous unread", chord(.up, [.option, .shift])), ("next unread channel", chord(.down, [.option, .shift])),
     ("unreads", chord(.a, [.command, .shift])), ("mark all read", chord(.escape, [.shift])),
     ("mark as read", chord(.escape, [])), ("attach a file", chord(.o)), ("hide sidebar", chord(.d, [.command, .shift])),
-    ("leave huddle", chord(.h, [.command, .shift])), ("mute huddle", chord(.space, [.command, .shift])),
+    ("leave huddle", chord(.h, [.command, .shift])),
     ("close thread", chord(.period)), ("browse channels", chord(.l, [.command, .shift])),
     ("people", chord(.e, [.command, .shift])), ("home view", chord(.one, [.control])), ("settings", chord(.comma)),
     ("send it", chord(.return, [])),

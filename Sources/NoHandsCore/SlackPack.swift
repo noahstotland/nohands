@@ -27,7 +27,6 @@ extension AppPack {
             (["upload a file", "upload file", "attach a file", "attach file"], chord(.o)),
             (["toggle sidebar", "show sidebar", "hide sidebar"], chord(.d, cmdShift)),
             (["huddle", "start huddle", "join huddle", "leave huddle", "end huddle"], chord(.h, cmdShift)),
-            (["mute huddle", "unmute huddle", "mute myself", "unmute myself"], chord(.space, cmdShift)),
             (["close panel", "close pane", "close thread", "hide right sidebar"], chord(.period)),
             (["close window", "close slack window"], chord(.w)),
             (["browse channels", "channel browser"], chord(.l, cmdShift)),
@@ -38,7 +37,8 @@ extension AppPack {
         ]
         var phrases: [String: [Action]] = [:]
         for (names, actions) in groups { for name in names { phrases[name] = actions } }
+        // Send is irreversible: it asks for a spoken yes first (the built-in guarded-verb rule).
         return AppPack(name: "Slack", bundleIDs: ["com.tinyspeck.slackmacgap"], phrases: phrases,
-                       typingLeads: ["jump to": chord(.k) + [.wait(ms: 300)]])
+                       confirms: ["send", "send message", "send it"], typingLeads: ["jump to": chord(.k) + [.wait(ms: 300)]])
     }()
 }

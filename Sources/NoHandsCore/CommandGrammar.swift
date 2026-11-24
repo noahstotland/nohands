@@ -7,14 +7,26 @@ public struct GrammarConfig: Sendable {
     public init() {}
 }
 
+/// What `parse` found, and whether the phrase asks for a spoken yes before it runs.
+public struct GrammarMatch: Equatable, Sendable {
+    public let actions: [Action]
+    /// The phrase key to read back ("send message") when the table entry that hit is marked; nil otherwise.
+    public let confirm: String?
+    /// The frontmost app's bundle ID when the hit came from its pack.
+    public let bundleID: String?
+}
+
 public struct CommandGrammar: Sendable {
     private let config: GrammarConfig
-    private let packs: [AppPack]
+    private let packs: PackSet
 
-    public init(config: GrammarConfig = GrammarConfig(), packs: [AppPack] = AppPacks.all) {
+    public init(config: GrammarConfig = GrammarConfig(), packs: PackSet = .builtIns) {
         self.config = config
         self.packs = packs
     }
+
+    /// The same grammar looking pack phrases up in `packs`.
+    public func with(packs: PackSet) -> CommandGrammar { CommandGrammar(config: config, packs: packs) }
 
     /// Lowercases, strips ASR punctuation (.,!?), collapses whitespace, splits on spaces.
     public static func normalize(_ transcript: String) -> [String] {
@@ -31,6 +43,9 @@ public struct CommandGrammar: Sendable {
             "command mode": [.setMode(.command)],
             "go to sleep": [.setMode(.sleep)],
             "wake up": [.setMode(.command)],
+            "spoken feedback on": [.setSpokenFeedback(.outcomes)], "turn on spoken feedback": [.setSpokenFeedback(.outcomes)],
+            "spoken feedback off": [.setSpokenFeedback(.off)], "turn off spoken feedback": [.setSpokenFeedback(.off)],
+            "spoken feedback all": [.setSpokenFeedback(.all)], "speak everything": [.setSpokenFeedback(.all)],
 
             "enter": chord(.return), "return": chord(.return),
             "backspace": chord(.delete), "escape": chord(.escape),
@@ -60,6 +75,11 @@ public struct CommandGrammar: Sendable {
             "spotlight": chord(.space, [.command]),
             "delete word": chord(.delete, [.option]),
 
+            "top of page": chord(.up, [.command]), "top of the page": chord(.up, [.command]),
+            "bottom of page": chord(.down, [.command]), "bottom of the page": chord(.down, [.command]),
+            "zoom in": chord(.equal, [.command]), "zoom out": chord(.minus, [.command]),
+            "actual size": chord(.zero, [.command]), "reset zoom": chord(.zero, [.command]),
+
             "play": [.media(.play)], "resume": [.media(.play)],
             "play the music": [.media(.play)],
             "pause": [.media(.pause)], "pause the video": [.media(.pause)], "pause the music": [.media(.pause)],
@@ -72,6 +92,27 @@ public struct CommandGrammar: Sendable {
             "exit full screen": [.media(.exitFullScreen)], "leave full screen": [.media(.exitFullScreen)],
             "mute": [.volume(.mute(true))], "mute sound": [.volume(.mute(true))],
             "unmute": [.volume(.mute(false))], "unmute sound": [.volume(.mute(false))],
+
+            "lock screen": [.system(.lockScreen)], "lock computer": [.system(.lockScreen)], "lock mac": [.system(.lockScreen)],
+            "screenshot": [.system(.screenshot(.screen))], "take screenshot": [.system(.screenshot(.screen))],
+            "screenshot screen": [.system(.screenshot(.screen))],
+            "screenshot selection": [.system(.screenshot(.selection))], "screenshot area": [.system(.screenshot(.selection))],
+            "screenshot window": [.system(.screenshot(.window))],
+            "mission control": [.system(.missionControl)], "show desktop": [.system(.showDesktop)],
+            "next space": [.system(.space(.right))], "previous space": [.system(.space(.left))],
+            "notification center": [.system(.notificationCenter)], "notification centre": [.system(.notificationCenter)],
+            "show notifications": [.system(.notificationCenter)],
+            "empty trash": [.system(.emptyTrash)],
+            "dark mode": [.system(.appearance(.dark))], "dark mode on": [.system(.appearance(.dark))],
+            "turn on dark mode": [.system(.appearance(.dark))], "turn dark mode on": [.system(.appearance(.dark))],
+            "switch to dark mode": [.system(.appearance(.dark))],
+            "light mode": [.system(.appearance(.light))], "dark mode off": [.system(.appearance(.light))],
+            "turn off dark mode": [.system(.appearance(.light))], "turn dark mode off": [.system(.appearance(.light))],
+            "switch to light mode": [.system(.appearance(.light))], "light mode on": [.system(.appearance(.light))],
+            "toggle dark mode": [.system(.appearance(.toggle))],
+            "do not disturb": [.system(.doNotDisturb(true))], "do not disturb on": [.system(.doNotDisturb(true))],
+            "turn on do not disturb": [.system(.doNotDisturb(true))],
+            "do not disturb off": [.system(.doNotDisturb(false))], "turn off do not disturb": [.system(.doNotDisturb(false))],
 
             "is it playing": [.checkMedia], "is the video playing": [.checkMedia],
             "is anything playing": [.checkMedia],
@@ -112,13 +153,19 @@ public struct CommandGrammar: Sendable {
     ]
 
     static func strippedExactMatch(_ tokens: [String]) -> [Action]? {
+        strippedExactKey(tokens).flatMap { exact[$0] }
+    }
+
+    /// The table key left once fillers are dropped, when there is an entry for it.
+    static func strippedExactKey(_ tokens: [String]) -> String? {
         let stripped = tokens.filter { !fillers.contains($0) }
         guard stripped.count < tokens.count, !stripped.isEmpty else { return nil }
-        return exact[stripped.joined(separator: " ")]
+        let key = stripped.joined(separator: " ")
+        return exact[key] == nil ? nil : key
     }
 
     /// Words that never appear in a bare "open <app>" request and signal a compound command.
-    private static let compoundMarkers: Set<String> = [
+    static let compoundMarkers: Set<String> = [
         "and", "then", "on", "in", "to", "go", "search", "for", "with", "at", "type", "click", "press",
     ]
 
@@ -154,34 +201,59 @@ public struct CommandGrammar: Sendable {
     /// reaches a pack. `textFocused` is whether the front app has a text field focused: only then do edits that name
     /// words in the field ("delete the old files") belong to the grammar; without it they go to the model as before.
     public func parse(_ transcript: String, frontmost bundleID: String? = nil, textFocused: Bool = false) -> [Action]? {
+        match(transcript, frontmost: bundleID, textFocused: textFocused)?.actions
+    }
+
+    /// Global phrases that ask for a spoken yes first (keys of the global table).
+    static let confirmed: Set<String> = ["empty trash"]
+
+    /// `parse` with the table entry's mark. Same rules and order as `parse`'s doc.
+    public func match(_ transcript: String, frontmost bundleID: String? = nil, textFocused: Bool = false) -> GrammarMatch? {
         let tokens = Self.normalize(transcript)
         guard !tokens.isEmpty else { return nil }
         let whole = tokens.joined(separator: " ")
-        let pack = StopWords.isStop(transcript) ? nil : bundleID.flatMap(pack(for:))
-        if let hit = pack?.phrases[whole] ?? Self.exact[whole] { return hit }
+        let appID = StopWords.isStop(transcript) ? nil : bundleID
+        let pack = appID.flatMap(packs.phrases(for:))
+        let asks = appID.map(packs.confirms(for:)) ?? []
+        func fromPack(_ key: String, _ actions: [Action]) -> GrammarMatch {
+            GrammarMatch(actions: actions, confirm: asks.contains(key) ? key : nil, bundleID: appID)
+        }
+        func fromGlobal(_ key: String, _ actions: [Action]) -> GrammarMatch {
+            GrammarMatch(actions: actions, confirm: Self.confirmed.contains(key) ? key : nil, bundleID: nil)
+        }
+        func plain(_ actions: [Action]?) -> GrammarMatch? { actions.map { GrammarMatch(actions: $0, confirm: nil, bundleID: nil) } }
+        if let hit = pack?[whole] { return fromPack(whole, hit) }
+        if let hit = Self.exact[whole] { return fromGlobal(whole, hit) }
         let (stripped, dropped) = PhraseLead.strip(tokens)
         if !stripped.isEmpty {
             let phrase = stripped.joined(separator: " ")
-            if let hit = pack?.phrases[phrase] { return hit }
+            if let hit = pack?[phrase] { return fromPack(phrase, hit) }
             // Multi-word only: "open home" stays the Home app, not the Home key.
-            if dropped == .open, stripped.count > 1, let hit = Self.exact[phrase] { return hit }
+            if dropped == .open, stripped.count > 1, let hit = Self.exact[phrase] { return fromGlobal(phrase, hit) }
         }
-        if let pack, let hit = Self.typingLead(tokens, transcript: transcript, pack: pack) { return hit }
+        if let appID, let hit = Self.typingLead(tokens, transcript: transcript, leads: packs.typingLeads(for: appID)) { return plain(hit) }
         if tokens.count > 1, tokens[0] == "menu" {
             let words = Self.rawWords(transcript, matching: tokens) ?? tokens
-            return [.menuItem(words.dropFirst().joined(separator: " "))]
+            return plain([.menuItem(words.dropFirst().joined(separator: " "))])
         }
-        if let hit = Self.parseTab(tokens, transcript: transcript) { return hit }
-        if let edit = Self.parseEdit(transcript, textFocused: textFocused) { return [.editText(edit, otherwise: nil)] }
-        if let hit = Self.parseMedia(tokens) { return hit }
-        if let hit = parsePattern(tokens, transcript: transcript) { return hit }
-        return Self.strippedExactMatch(tokens)
+        if let hit = Self.parseTab(tokens, transcript: transcript) { return plain(hit) }
+        if let edit = Self.parseEdit(transcript, textFocused: textFocused) { return plain([.editText(edit, otherwise: nil)]) }
+        if let how = Self.parseRewrite(transcript, textFocused: textFocused) { return plain([.rewriteText(how)]) }
+        if let hit = Self.parseMedia(tokens) { return plain(hit) }
+        if let request = Self.parseSettings(tokens) {
+            // An unknown pane after "open settings for" is the grammar's own phrase: `rejection` says so; the model never guesses.
+            guard case .pane(let pane) = request else { return nil }
+            return plain([.system(.openSettings(pane))])
+        }
+        if let hit = parsePattern(tokens, transcript: transcript) { return plain(hit) }
+        if let key = Self.strippedExactKey(tokens), let hit = Self.exact[key] { return fromGlobal(key, hit) }
+        return nil
     }
 
     /// A pack's typing lead ("jump to design team"): the lead's actions, then the rest typed in the speaker's words,
     /// minus one leading article and one trailing "channel". An empty rest is the lead's actions alone.
-    private static func typingLead(_ tokens: [String], transcript: String, pack: AppPack) -> [Action]? {
-        for (lead, actions) in pack.typingLeads.sorted(by: { $0.key.count > $1.key.count }) {
+    private static func typingLead(_ tokens: [String], transcript: String, leads: [String: [Action]]) -> [Action]? {
+        for (lead, actions) in leads.sorted(by: { $0.key.count > $1.key.count }) {
             let leadTokens = lead.split(separator: " ").map(String.init)
             guard tokens.starts(with: leadTokens) else { continue }
             var rest = (rawWords(transcript, matching: tokens) ?? tokens).dropFirst(leadTokens.count)
@@ -301,6 +373,56 @@ public struct CommandGrammar: Sendable {
         }
     }
 
+    private static let rewriteSubjects: Set<String> = ["that", "this", "it"]
+    private static let makeStyles: [String: RewriteStyle] = [
+        "shorter": .shorter, "longer": .longer, "clearer": .clearer, "simpler": .simpler, "friendlier": .friendly,
+        "more concise": .concise, "more formal": .formal, "more casual": .casual, "more polite": .polite,
+        "more professional": .professional,
+    ]
+    private static let sayStyles: [String: RewriteStyle] = [
+        "politely": .polite, "formally": .formal, "casually": .casual, "clearly": .clearer, "simply": .simpler,
+        "concisely": .concise, "professionally": .professional,
+    ]
+    private static let maxRewriteWords = 20
+
+    /// Rewrites of the selected text, only when a text field is focused (else nil, so the words go to the model as
+    /// before): "make that shorter", "say it more politely", "fix the grammar", "proofread that", "translate that to
+    /// French", "rewrite that" and "rewrite that as a list". The subject is always that, this or it. nil for anything
+    /// else ("make it bigger", "make the window wider"). Command mode only: dictation types these words.
+    public static func parseRewrite(_ transcript: String, textFocused: Bool) -> RewriteInstruction? {
+        guard textFocused else { return nil }
+        let tokens = normalize(transcript)
+        guard tokens.count >= 2 else { return nil }
+        let subjectAt = { (i: Int) in i < tokens.count && rewriteSubjects.contains(tokens[i]) }
+        let tail = { (from: Int) in tokens.dropFirst(from).joined(separator: " ") }
+        switch tokens[0] {
+        case "make":
+            guard subjectAt(1), let style = makeStyles[tail(2)] else { return nil }
+            return .style(style)
+        case "say":
+            guard subjectAt(1), tokens.count == 4, tokens[2] == "more", let style = sayStyles[tokens[3]] else { return nil }
+            return .style(style)
+        case "fix":
+            guard tokens[1] == "the", tokens.count >= 3, tokens[2] == "grammar" || tokens[2] == "spelling",
+                  tokens.count == 3 || (tokens.count == 5 && tokens[3] == "in" && subjectAt(4)) else { return nil }
+            return .style(.grammar)
+        case "proofread":
+            return tokens.count == 2 && subjectAt(1) ? .style(.grammar) : nil
+        case "translate":
+            guard subjectAt(1), tokens.count >= 4, tokens[2] == "to" || tokens[2] == "into", tokens.count - 3 <= 3,
+                  tokens.dropFirst(3).allSatisfy({ $0.allSatisfy(\.isLetter) }) else { return nil }
+            let words = rawWords(transcript, matching: tokens) ?? tokens
+            return .translate(language: words.dropFirst(3).joined(separator: " "))
+        case "rewrite":
+            guard subjectAt(1) else { return nil }
+            if tokens.count == 2 { return .style(.clearer) }
+            guard tokens.count - 2 <= maxRewriteWords, let words = rawWords(transcript, matching: tokens) else { return nil }
+            return .custom(words.dropFirst(2).joined(separator: " "))
+        default:
+            return nil
+        }
+    }
+
     /// Numbered media phrases: "volume up [n] [percent]", "volume <n> [percent]", "set (the) volume to <n> [percent]",
     /// "turn it up/down [n]" and "skip ahead/forward/back/backward [n [seconds]]". Out-of-range counts are nil (the
     /// model gets them); a set level clamps. A volume step is 10 points.
@@ -342,6 +464,30 @@ public struct CommandGrammar: Sendable {
         return [.volume(.by(sign * (percent ? n : n * 10)))]
     }
 
+    private enum SettingsRequest { case pane(SettingsPane), unknown(String) }
+
+    /// "open settings for <pane>", "open <pane> settings", "<pane> settings" (an article after the lead is optional). After
+    /// "open settings for", filler words ("the", "please") are dropped and `&` reads as "and"; a name that is no pane is
+    /// `.unknown` when it is a short plain name, and nil (the model's) when it holds a compound word ("bluetooth and turn it
+    /// off") or runs past four words. "open <x> settings" with an unknown `<x>` is nil, so it stays an app named that
+    /// ("open system settings").
+    private static func parseSettings(_ tokens: [String]) -> SettingsRequest? {
+        var rest = tokens.map { $0 == "&" ? "and" : $0 }[...]
+        let opened = rest.first == "open"
+        if opened { rest = rest.dropFirst() }
+        func the(_ words: ArraySlice<String>) -> [String] { Array(words.first == "the" ? words.dropFirst() : words) }
+        if opened, the(rest).starts(with: ["settings", "for"]) {
+            let spoken = the(rest).dropFirst(2)
+            let name = Array(spoken.filter { !fillers.contains($0) })
+            if let pane = SettingsPane.parse(name) { return .pane(pane) }
+            // The marker check sees the name before fillers go, or "bluetooth to connect airpods" would lose its "to".
+            guard name.count <= 4, spoken.allSatisfy({ !compoundMarkers.contains($0) }) else { return nil }
+            return .unknown(name.joined(separator: " "))
+        }
+        guard rest.count >= 2, rest.last == "settings" else { return nil }
+        return SettingsPane.parse(the(rest.dropLast())).map(SettingsRequest.pane)
+    }
+
     /// "<n> [percent]": an absolute level, clamped to 0 to 100.
     private static func volumeLevel(_ words: [String]) -> [Action]? {
         guard let n = NumberWords.parse(splitPercent(words).count) else { return nil }
@@ -357,12 +503,42 @@ public struct CommandGrammar: Sendable {
         return (count, false)
     }
 
-    private func pack(for bundleID: String) -> AppPack? { packs.first { $0.bundleIDs.contains(bundleID) } }
+    /// What the global table does with a phrase: an exact entry, or the entry left once filler words are dropped
+    /// ("release the click", "please dictation mode").
+    private static func globalActions(_ phrase: String) -> [Action]? {
+        exact[phrase] ?? strippedExactMatch(phrase.split(separator: " ").map(String.init))
+    }
 
-    /// The HUD line for a `spell` phrase that can't be typed; nil for anything else. Such a phrase is
-    /// the grammar's own, so it must never fall through to the model, which could guess at what to type.
+    /// Whether the global table binds this phrase to a mode change, a mouse release or hiding the overlay: a pack
+    /// may never claim it.
+    static func isReservedGlobal(_ phrase: String) -> Bool {
+        (globalActions(phrase) ?? []).contains { action in
+            switch action {
+            case .setMode, .releaseMouse, .hideOverlay: return true
+            default: return false
+            }
+        }
+    }
+
+    /// Whether `transcript` is a route-forgetting phrase (NH-46): false for "forget that route", true for "forget all
+    /// routes", nil for anything else. The whole phrase only. The pipeline, not the executor, acts on it, so it is not in
+    /// `parse`; `ModeMachine` asks first and a macro cannot take either name.
+    public static func forgetsRoutes(_ transcript: String) -> Bool? {
+        switch normalize(transcript).joined(separator: " ") {
+        case "forget that route": false
+        case "forget all routes": true
+        default: nil
+        }
+    }
+
+    /// The HUD line for a `spell` phrase that can't be typed or an "open settings for" an unknown pane; nil for anything
+    /// else. Such a phrase is the grammar's own, so it must never fall through to the model, which could guess at what
+    /// to type or which pane to open.
     public func rejection(_ transcript: String) -> String? {
         let tokens = Self.normalize(transcript)
+        if case .unknown(let name)? = Self.parseSettings(tokens) {
+            return name.isEmpty ? "say open settings for and a pane, like bluetooth" : "no settings pane called \(name): say open system settings"
+        }
         guard tokens.first == "spell", case .failure(let error) = Speller.spell(Array(tokens.dropFirst())) else { return nil }
         switch error {
         case .empty: return "say spell and then the letters"
@@ -381,6 +557,7 @@ public struct CommandGrammar: Sendable {
             if tokens.count > 1, tokens[1] == "to" { return parseFind(tokens, transcript: transcript, skipping: 2, edgesAreWords: false) }
             return parseScroll(Array(tokens.dropFirst()))
         case "find": return parseFind(tokens, transcript: transcript, skipping: 1, edgesAreWords: true)
+        case "drag": return Self.parseDrag(Array(tokens.dropFirst()))
         case "zoom":
             let rest = Array(tokens.dropFirst())
             guard let n = NumberWords.parse(rest) else { return nil }
@@ -388,6 +565,7 @@ public struct CommandGrammar: Sendable {
         case "open":
             let rest = tokens.dropFirst()
             guard !rest.isEmpty else { return nil }
+            if let file = Self.parseOpenFile(Array(rest)) { return file }
             if let site = Self.parseOpenSite(transcript) { return site }
             // "open chrome and go to youtube" is a multi-step request, not an app name: leave it to the LLM.
             guard rest.allSatisfy({ !Self.compoundMarkers.contains($0) }) else { return nil }
@@ -446,21 +624,34 @@ public struct CommandGrammar: Sendable {
         return words.count == tokens.count ? words : nil
     }
 
-    /// What "scroll to ..." can say that is not words on a page: an end of the page or a direction ("scroll to the down").
-    private static let scrollEdges: Set<String> = [
-        "top", "bottom", "top of page", "bottom of page", "top of the page", "bottom of the page",
-        "up", "down", "left", "right",
-    ]
+    private static let topEdges: Set<String> = ["top", "top of page", "top of the page"]
+    private static let bottomEdges: Set<String> = ["bottom", "bottom of page", "bottom of the page"]
+    /// The directions "scroll to ..." can say that are not words on a page ("scroll to the down"); they go to the model.
+    private static let scrollDirections: Set<String> = ["up", "down", "left", "right"]
+
+    /// "drag <n> to <m>" and "drag from <n> to <m>": two numbers, split at the first "to". nil for anything else
+    /// ("drag the file to the trash", "drag to 12"), which goes to the model.
+    private static func parseDrag(_ words: [String]) -> [Action]? {
+        let rest = words.first == "from" ? Array(words.dropFirst()) : words
+        guard let at = rest.firstIndex(of: "to"),
+              let from = NumberWords.parse(Array(rest[..<at])),
+              let to = NumberWords.parse(Array(rest[(at + 1)...])) else { return nil }
+        return [.drag(from: .numbered(from), to: .numbered(to))]
+    }
 
     /// "find <words>" and "scroll to <words>" (`skipping` is the words of the command itself): scroll the page to them
-    /// and leave the pointer there. Bare "find" and "find the" stay command-F (nil here, then the exact table), and
-    /// `scroll to` an edge or a direction stays with the model.
+    /// and leave the pointer there. Bare "find" and "find the" stay command-F (nil here, then the exact table).
+    /// `scroll to` the top or bottom of the page presses command-up or command-down; a direction stays with the model.
     private func parseFind(_ tokens: [String], transcript: String, skipping: Int, edgesAreWords: Bool) -> [Action]? {
         guard let raw = Self.rawWords(transcript, matching: tokens) else { return nil }
         let spoken = raw.dropFirst(skipping).joined(separator: " ")
         let normalized = PageFind.normalize(spoken)
         guard !normalized.isEmpty else { return nil }
-        if !edgesAreWords, Self.scrollEdges.contains(normalized) { return nil }
+        if !edgesAreWords {
+            if Self.topEdges.contains(normalized) { return [.pressKey(KeyChord(.up, [.command]))] }
+            if Self.bottomEdges.contains(normalized) { return [.pressKey(KeyChord(.down, [.command]))] }
+            if Self.scrollDirections.contains(normalized) { return nil }
+        }
         return [.findOnPage(spoken, movePointer: true)]
     }
 
@@ -475,6 +666,11 @@ public struct CommandGrammar: Sendable {
     }
 
     private func parseClick(_ rest: [String], button: MouseButton, count: Int) -> [Action]? {
+        // "click 12 and hold": the pointer to 12, then the left button down. A name keeps its meaning (the element).
+        if button == .left, count == 1, rest.count > 2, rest.suffix(2) == ["and", "hold"],
+           let n = NumberWords.parse(Array(rest.dropLast(2))) {
+            return [.moveCursor(.numbered(n)), .pressMouse(.left)]
+        }
         if let n = NumberWords.parse(rest) {
             return [.click(.numbered(n), button: button, count: count)]
         }
@@ -495,6 +691,12 @@ public struct CommandGrammar: Sendable {
 
     private func parseMove(_ tokens: [String]) -> [Action]? {
         if tokens.first == "to" {
+            var place = tokens.dropFirst()
+            if place.first == "the" { place = place.dropFirst() }
+            if place.first == "center" || place.first == "centre",
+               place.dropFirst().isEmpty || Array(place.dropFirst()) == ["of", "the", "screen"] {
+                return [.moveCursor(.screenCenter)]
+            }
             guard let n = NumberWords.parse(Array(tokens.dropFirst())) else { return nil }
             return [.moveCursor(.numbered(n))]
         }

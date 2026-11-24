@@ -25,7 +25,7 @@ All agents working on this repo must follow these rules. Repo-specific facts (pr
 - **One ticket = one branch = one PR.** Link the ticket in the PR description. Do not expand scope beyond it.
 - Move the ticket to **In Review** when the PR is open, **Done** when merged.
 - Run the test command from `docs/agents/project.md` before opening a PR.
-- Never commit `.env`, API keys or tokens. Key location and commit format: `docs/agents/project.md`. Key setup: `README.md` § Configuration.
+- Never commit `.env`, API keys or tokens. Key location and commit format: `docs/agents/project.md`. Key setup: `docs/configuration.md`.
 
 ## Testing
 

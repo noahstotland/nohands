@@ -67,6 +67,12 @@ public protocol ElementProviding: Sendable {
     func focusedWindowIsFullScreen() -> Bool?
     /// Whether the focused element takes typed text.
     func focusedElementIsTextInput() -> Bool
+    /// The title of the control under `point` (CG coordinates), read live: the element there, else its nearest titled
+    /// ancestor within a few levels. nil when nothing titled is there or the app does not answer in time.
+    func elementTitle(at point: CGPoint) -> String?
+    /// The title of the frontmost app's focused control when Return or Space would press it (a button, link or menu
+    /// button); nil for anything else or when it cannot be read.
+    func focusedElementTitle() -> String?
 }
 
 /// How a request to act on a browser tab or window went.
@@ -97,6 +103,8 @@ extension ElementProviding {
     public func setSelection(_ span: TextSpan) -> Bool { false }
     public func focusedWindowIsFullScreen() -> Bool? { nil }
     public func focusedElementIsTextInput() -> Bool { false }
+    public func elementTitle(at point: CGPoint) -> String? { nil }
+    public func focusedElementTitle() -> String? { nil }
     public func focusedWindowTitle() -> String? { nil }
     public func webURL() -> String? { nil }
     public func didJustExpose() -> Bool { false }
@@ -157,11 +165,17 @@ extension OverlayController: OverlayPresenting {
     /// Where "menu <words>" looks for the item to press, before agent-desktop.
     let menus: any MenuReading
     let clipboard: any ClipboardAccess
+    /// Set by the task loop for a model step: a press whose live title holds a guarded verb the goal did not name and
+    /// the user did not confirm fails the step (`pressRefusal`). Nil for spoken commands, macros and packs.
+    public var pressGuard: PressGuard?
     public var onModeChange: ((Mode) -> Void)?
+    /// Called when `.setSpokenFeedback` runs.
+    public var onSpokenFeedbackChange: ((SpeakLevel) -> Void)?
     private let frontTimeout: Duration
     private let audio: any AudioOutputProbing
     private let mediaPoll: Duration
     private let volume: any VolumeControlling
+    let system: any SystemControlling
     /// How long a window gets to leave full screen after Escape before the window chord is pressed.
     private let fullScreenSettle: Duration
     /// The accessibility layer the media walk uses: one with a larger budget than `ax`, which does not reach a
@@ -172,6 +186,9 @@ extension OverlayController: OverlayPresenting {
     /// How long an app that just came to the front may take to show a window (a cold launch on a loaded Mac).
     private let windowTimeout: Duration
     private var pressed: Set<MouseButton> = []
+    /// True while a native drag holds the left button; a spoken stop must not release it mid-drag (the drag's own
+    /// mouse-up, or its catch, does).
+    var dragInFlight = false
     /// Label snapshot of the current LLM-derived batch; `.label(n)` resolves only against this.
     var labelSnapshot: [Int: UIElementInfo]?
     /// The `Tabs:` list the current batch was chosen from; tab and window numbers resolve only against this.
@@ -183,6 +200,20 @@ extension OverlayController: OverlayPresenting {
     /// Whether the last `editText` typed its `otherwise` words instead of editing: dictation, not an edit, so the
     /// dictation record ("scratch that") still matches the screen.
     public internal(set) var editTypedOtherwise = false
+    /// Where files are found and how they open (NH-58).
+    let files: any FileSource
+    let fileOpener: any FileOpening
+    /// Who is asking, for the current `execute`: only a spoken command may list several hits.
+    var fileContext = FileContext.model
+    /// The ranked hits a spoken "open file" found when several matched, until `takeFileOffer()`.
+    var fileOffer: [FileHit]?
+    /// Rewrites ask this; nil when the model is off (the failure text then says what to do). See `useRewriter`.
+    var rewriter: (any TextRewriting)?
+    var rewriteUnavailable = ActionExecutor.rewriteNeedsModel
+    /// Called when a rewrite's request goes out, so the pipeline can show "rewriting…".
+    var onRewriteStart: (() -> Void)?
+    /// What the last rewrite changed, until `takeRewrite()`.
+    var rewriteReport: RewriteReport?
 
     public init(input: any InputSynthesizing, ax: any ElementProviding, overlay: any OverlayPresenting,
                 config: AppConfig, frontTimeout: Duration = .seconds(1.5), windowTimeout: Duration = .seconds(6),
@@ -190,7 +221,11 @@ extension OverlayController: OverlayPresenting {
                 audio: any AudioOutputProbing = AudioOutputProbe(), mediaPoll: Duration = .milliseconds(500),
                 mediaAX: (any ElementProviding)? = nil, exposureSettle: Duration = .milliseconds(600),
                 menus: any MenuReading = AXMenuReader(), volume: any VolumeControlling = CoreAudioVolume(),
-                fullScreenSettle: Duration = .milliseconds(800)) {
+                fullScreenSettle: Duration = .milliseconds(800), system: any SystemControlling = MacSystemControl(),
+                files: any FileSource = SpotlightFileSource(), fileOpener: any FileOpening = WorkspaceFileOpener()) {
+        self.system = system
+        self.files = files
+        self.fileOpener = fileOpener
         self.fullScreenSettle = fullScreenSettle
         self.menus = menus
         self.volume = volume
@@ -220,6 +255,9 @@ extension OverlayController: OverlayPresenting {
         return found
     }
 
+    /// A result the model reads as it is ("opened a file"), with no label.
+    func addResult(_ text: String) { readings.append(text) }
+
     func addReading(_ label: String, _ text: String) {
         // A label can come from the page (an element's title), so it can never spell the page reading's `page: `
         // prefix: colons go, and a bare "page" is renamed.
@@ -237,9 +275,12 @@ extension OverlayController: OverlayPresenting {
     /// the prompt's row). Any mouse button pressed by this call is released before a failure is returned.
     /// Returns `cancelled` when the calling task is cancelled before an action.
     @discardableResult
-    public func execute(_ actions: [Action], labels: [Int: UIElementInfo]? = nil, tabs: TabListing? = nil) async -> String? {
+    public func execute(_ actions: [Action], labels: [Int: UIElementInfo]? = nil, tabs: TabListing? = nil,
+                        files context: FileContext = .model) async -> String? {
         pressed = []
         editTypedOtherwise = false
+        fileContext = context
+        fileOffer = nil
         labelSnapshot = labels
         tabSnapshot = tabs
         defer { labelSnapshot = nil; tabSnapshot = nil }
@@ -262,6 +303,17 @@ extension OverlayController: OverlayPresenting {
         return nil
     }
 
+    /// The step's failure when `title`, read just before a press, names a guarded verb nobody allowed or confirmed.
+    func pressRefusal(title: String?) -> String? {
+        guard let pressGuard, let verb = IrreversibleGuard.unconfirmed(title: title, guard: pressGuard) else { return nil }
+        return "\(verb) not confirmed, look again"
+    }
+
+    /// The same, for the control under `point`; reads nothing outside a model step.
+    func pressRefusal(at point: CGPoint) -> String? {
+        pressGuard == nil ? nil : pressRefusal(title: ax.elementTitle(at: point))
+    }
+
     private func run(_ action: Action, isLast: Bool) async -> String? {
         do {
             switch action {
@@ -270,6 +322,9 @@ extension OverlayController: OverlayPresenting {
                 try input.type(text)
                 hideStaleOverlay()
             case .pressKey(let chord):
+                // Return, and Space without modifiers, press the focused button.
+                if pressGuard != nil, chord.key == .return || (chord.key == .space && chord.modifiers.isEmpty),
+                   let refusal = pressRefusal(title: ax.focusedElementTitle()) { return refusal }
                 try input.press(chord)
                 hideStaleOverlay()
             case .click(let target, let button, let count):
@@ -285,6 +340,7 @@ extension OverlayController: OverlayPresenting {
                 }
                 // A numbered element with a ref is clicked semantically; a point click is the fallback.
                 if case .label(let n) = target, let e = labelSnapshot?[n], let ref = e.ref, let harness {
+                    if let refusal = pressRefusal(title: e.title) { return refusal }
                     switch await harness.act(.click(ref: ref, button: button, count: count)) {
                     case .delivered: hideStaleOverlay(); return nil
                     case .failed(let m): return m
@@ -300,6 +356,7 @@ extension OverlayController: OverlayPresenting {
                 switch resolveClick(target, elements: named) {
                 case .failure(let m): return m
                 case .point(let p):
+                    if let refusal = pressRefusal(at: p) { return refusal }
                     try input.click(at: p, button: button, count: count)
                     if usedOverlay { overlay.hide() }
                 }
@@ -309,6 +366,7 @@ extension OverlayController: OverlayPresenting {
                 pressed.insert(b)
             case .releaseMouse(let b):
                 guard let at = input.currentMouseLocation() else { return Self.pointerUnknown }
+                if let refusal = pressRefusal(at: at) { return refusal }
                 try input.mouseUp(b, at: at)
                 pressed.remove(b)
             case .moveCursor(let target):
@@ -338,10 +396,15 @@ extension OverlayController: OverlayPresenting {
                 overlay.hide()
             case .setMode(let mode):
                 onModeChange?(mode)
+            case .setSpokenFeedback(let level):
+                onSpokenFeedbackChange?(level)
             case .openApp(let name):
                 guard ax.activate(appNamed: name) else { return "no app named \(name)" }
                 hideStaleOverlay()
                 if let failure = await waitReady(name, moreActionsFollow: !isLast) { return failure }
+            case .openFile(let request):
+                if let failure = await openFile(request) { return failure }
+                hideStaleOverlay()
             case .openURL(let url, let app):
                 if let failure = await openURLAction(url, app: app, isLast: isLast) { return failure }
             case .moveWindow(let placement):
@@ -395,11 +458,16 @@ extension OverlayController: OverlayPresenting {
                 if let failure = await listTabs() { return failure }
             case .editText(let edit, let otherwise):
                 if let failure = try await editText(edit, otherwise: otherwise) { return failure }
+            case .rewriteText(let how):
+                if let failure = try await rewriteText(how) { return failure }
             case .media(let command):
                 if let failure = try await runMedia(command) { return failure }
                 hideStaleOverlay()
             case .volume(let change):
                 if let failure = changeVolume(change) { return failure }
+            case .system(let command):
+                if let failure = await runSystem(command) { return failure }
+                hideStaleOverlay()
             case .setValue, .typeInto, .clearField, .selectOption, .setChecked, .setExpanded, .focusElement, .scrollTo,
                  .scrollIn, .drag, .clickIn, .menuItem, .closeApp, .windowAction, .clipboardSet, .readClipboard,
                  .readValue, .readNotifications, .dismissNotifications, .waitFor:
@@ -607,6 +675,7 @@ extension OverlayController: OverlayPresenting {
         }
     }
 
+    var overlayShown: Bool { overlay.state != .none }
     func hideStaleOverlay() { if overlay.state != .none { overlay.hide() } }
 
     /// Open `url` in the named browser or the default one, then wait for it to come to the front when more
@@ -815,6 +884,14 @@ extension OverlayController: OverlayPresenting {
         return checkOnScreen(TargetResolver.resolveMove(t, overlay: overlay.state, cursor: cursor ?? .zero,
                                           elements: elements ?? (needsElements ? ax.actionableElements() : []),
                                           screens: ax.screenRectsCG(), labels: labelSnapshot), checked: direct)
+    }
+
+    /// A spoken stop: releases a mouse button a command left held (`hold click`), leaving any grid or labels shown.
+    /// Does nothing during a native drag: the drag releases its own button when it ends or fails.
+    public func releaseHeldButton() {
+        guard !dragInFlight else { return }
+        input.releaseAll()
+        pressed = []
     }
 
     /// Safety net for pause/quit: release any held mouse button and drop any grid/labels overlay.

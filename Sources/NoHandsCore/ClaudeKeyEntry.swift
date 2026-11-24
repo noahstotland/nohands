@@ -20,7 +20,7 @@ public enum ClaudeKeyEntry {
 
 /// The shared parse, set one key, serialize step for the menu items that edit `config.json` in place.
 enum ConfigPatch {
-    static func merged(existing: Data?, key: String, value: String) throws -> Data {
+    static func merged(existing: Data?, key: String, value: Any) throws -> Data {
         var object: [String: Any] = [:]
         if let existing {
             guard let parsed = try? JSONSerialization.jsonObject(with: existing),

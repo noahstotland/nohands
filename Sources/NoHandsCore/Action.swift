@@ -19,6 +19,8 @@ public enum MoveTarget: Equatable, Codable, Sendable {
     case element(named: String)
     case point(CGPoint)
     case relative(dx: Int, dy: Int)
+    /// The middle of the screen holding the pointer. Grammar only: `IntentDecoder` never produces it.
+    case screenCenter
 }
 
 /// An element the harness acts on: a number from the request's element list, or a name looked up live.
@@ -65,7 +67,11 @@ public enum Action: Equatable, Codable, Sendable {
     case showLabels
     case hideOverlay
     case setMode(Mode)
+    /// Change how much NoHands says out loud. Grammar only: the intent decoder has no kind for it.
+    case setSpokenFeedback(SpeakLevel)
     case openApp(String)
+    /// Open a standard folder, a file or folder found by name, or the newest file of a kind (see `FileRequest`).
+    case openFile(FileRequest)
     /// Open a web address in the default browser (`app` nil) or in the named browser.
     case openURL(URL, app: String?)
     /// Move and resize the frontmost app's focused window on its screen.
@@ -99,8 +105,9 @@ public enum Action: Equatable, Codable, Sendable {
     case drag(from: MoveTarget, to: MoveTarget)
     /// Click a named item in a surface (menubar, dock, sheet, …).
     case clickIn(DesktopSurface, name: String)
-    /// Run a menu bar command by name ("Save As…" or "File > Save As…").
-    case menuItem(String)
+    /// Run a menu bar command by name ("Save As…" or "File > Save As…"). `exact` presses only the item with that very
+    /// title (installed packs); otherwise the closest match may be pressed (the user's own "menu <words>", built-in packs).
+    case menuItem(String, exact: Bool = false)
     case closeApp(String)
     case windowAction(DesktopWindowOp, app: String?, title: String?)
     case clipboardSet(String)
@@ -128,9 +135,14 @@ public enum Action: Equatable, Codable, Sendable {
     /// like the tab commands: the model has no kind for it. `otherwise` is dictation's own words, typed when the edit
     /// names a phrase that is not in the field ("Delete the old files." still dictates); nil in command mode.
     case editText(TextEdit, otherwise: String?)
+    /// Rewrite the selected text (else the last sentence before the caret) with the model and type the answer over it
+    /// ("make that shorter", "translate that to French"). Grammar only: the model has no kind for it.
+    case rewriteText(RewriteInstruction)
     // Voice commands for what is playing and the system volume. Grammar only; the model has no kind for them.
     case media(MediaCommand)
     case volume(VolumeChange)
+    /// A system chore ("lock screen", "next space", "open bluetooth settings"). Grammar only; the model has no kind for it.
+    case system(SystemCommand)
 
     /// Ask for a picture of the focused window on the next step. Only the task loop gives it meaning; anywhere
     /// else the executor runs it as a successful no-op.

@@ -55,6 +55,18 @@ public enum ConfigFile {
         try save(at: url, keepMode: true) { try BackendMenu.merged(existing: $0, choice: choice) }
     }
 
+    /// Sets `speakFeedback` in the file at `url`, keeping every other key (see `SpeakMenu.merged`). Same steps and
+    /// refusals as `saveIntentBackend`.
+    public static func saveSpeakFeedback(_ level: SpeakLevel, at url: URL) throws {
+        try save(at: url, keepMode: true) { try SpeakMenu.merged(existing: $0, level: level) }
+    }
+
+    /// Sets `commandLog` in the file at `url`, keeping every other key (see `CommandLogMenu.merged`). Same steps and
+    /// refusals as `saveIntentBackend`.
+    public static func saveCommandLog(_ on: Bool, at url: URL) throws {
+        try save(at: url, keepMode: true) { try CommandLogMenu.merged(existing: $0, on: on) }
+    }
+
     private static func save(at url: URL, keepMode: Bool, merge: (Data?) throws -> Data) throws {
         let dir = url.deletingLastPathComponent()
         do {
@@ -80,7 +92,7 @@ public enum ConfigFile {
         try readRegularFile(url.path)?.data
     }
 
-    private static func errnoCode() -> POSIXErrorCode { POSIXErrorCode(rawValue: errno) ?? .EIO }
+    static func errnoCode() -> POSIXErrorCode { POSIXErrorCode(rawValue: errno) ?? .EIO }
 
     private static func posixCode(_ error: Error) -> POSIXErrorCode {
         let ns = error as NSError
@@ -89,7 +101,7 @@ public enum ConfigFile {
     }
 
     /// Creates the folder at 700, or tightens an existing real folder to 700. A symlink is refused.
-    private static func makePrivateFolder(_ path: String) throws {
+    static func makePrivateFolder(_ path: String) throws {
         var st = stat()
         if lstat(path, &st) != 0 {
             guard errno == ENOENT else { throw SaveError.writeFailed(errnoCode()) }
@@ -105,7 +117,8 @@ public enum ConfigFile {
     }
 
     /// The file's bytes and permission bits, or nil when it is missing. A symlink or anything but a regular file is refused.
-    private static func readRegularFile(_ path: String) throws -> (data: Data, mode: mode_t)? {
+    /// With a `limit`, no more than that many bytes are read (the caller sees a file longer than it allows by getting `limit`).
+    static func readRegularFile(_ path: String, limit: Int? = nil) throws -> (data: Data, mode: mode_t)? {
         // O_NONBLOCK so a FIFO at the path cannot hang the open.
         let fd = open(path, O_RDONLY | O_NOFOLLOW | O_NONBLOCK)
         guard fd >= 0 else {
@@ -126,12 +139,13 @@ public enum ConfigFile {
             if n < 0 { throw SaveError.writeFailed(errnoCode()) }
             if n == 0 { return (data, st.st_mode & 0o777) }
             data.append(contentsOf: buffer[0..<n])
+            if let limit, data.count >= limit { return (data.prefix(limit), st.st_mode & 0o777) }
         }
     }
 
     /// Writes `data` to a private temp file next to `path`, gives it `mode`, syncs it and renames it over `path`.
     /// The temp file may hold the key, so any failure removes it.
-    private static func replaceFile(_ path: String, in dir: String, with data: Data, mode: mode_t) throws {
+    static func replaceFile(_ path: String, in dir: String, with data: Data, mode: mode_t) throws {
         var template = Array((dir + "/.config.json.XXXXXX").utf8CString)
         let fd = mkstemp(&template)
         guard fd >= 0 else { throw SaveError.writeFailed(errnoCode()) }

@@ -8,12 +8,15 @@ public struct MenuEntry: Equatable, Sendable {
     public let enabled: Bool
     /// An item that only opens a submenu: pressing it does nothing, so it is never a match.
     public let hasSubmenu: Bool
+    /// The item's keyboard shortcut when the pack format can express it; only `pack new` reads it.
+    public let shortcut: KeyChord?
 
-    public init(title: String, path: [String], enabled: Bool, hasSubmenu: Bool = false) {
+    public init(title: String, path: [String], enabled: Bool, hasSubmenu: Bool = false, shortcut: KeyChord? = nil) {
         self.title = title
         self.path = path
         self.enabled = enabled
         self.hasSubmenu = hasSubmenu
+        self.shortcut = shortcut
     }
 }
 
@@ -39,6 +42,59 @@ public enum MenuMatch {
         return t.split(whereSeparator: { $0.isWhitespace }).joined(separator: " ")
     }
 
+    /// The part of a menu path that names the item to press: the last part of `path` split on ">" that is not empty
+    /// once trimmed ("File > Open Recent > Empty" is "Empty"; "Send>" is "Send"), nil when no part has a character.
+    /// The guards and both lookups in the executor use this one definition, so they cannot disagree on what is pressed.
+    public static func leaf(of path: String) -> String? {
+        path.split(separator: ">").map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.last { !$0.isEmpty }
+    }
+
+    /// Non-Latin letters that look like a Latin one: Cyrillic, Greek and Armenian, lowercase and capitals.
+    private static let confusables: [Character: Character] = {
+        let pairs = [
+            "аa", "еe", "оo", "рp", "сc", "уy", "хx", "ѕs", "іi", "јj", "һh", "ԁd", "ԛq", "ԝw",
+            "АA", "ЕE", "ОO", "РP", "СC", "УY", "ХX", "ЅS", "ІI", "ЈJ", "ҺH",
+            "οo", "αa", "νv", "ρp", "τt", "ιi", "κk",
+            "ΑA", "ΒB", "ΕE", "ΖZ", "ΗH", "ΙI", "ΚK", "ΜM", "ΝN", "ΟO", "ΡP", "ΤT", "ΧX", "ΥY",
+            "օo", "սu",
+        ]
+        return Dictionary(pairs.map { ($0.first!, $0.last!) }, uniquingKeysWith: { a, _ in a })
+    }()
+
+    /// The script block a letter belongs to (Cyrillic, Greek, Armenian), nil for any other.
+    private static func script(_ ch: Character) -> Int? {
+        guard let v = ch.unicodeScalars.first?.value else { return nil }
+        switch v {
+        case 0x0370...0x03FF: return 1
+        case 0x0400...0x052F: return 2
+        case 0x0530...0x058F: return 3
+        default: return nil
+        }
+    }
+
+    /// Whether a title holds an ASCII word in disguise, checked word by word so another accented or CJK word beside it
+    /// cannot hide it ("Sеnd Ägain" with a Cyrillic е). A non-ASCII letter that reads as ASCII (NFKC, then look-alike
+    /// Cyrillic, Greek and Armenian letters mapped to Latin) marks its word when the word also holds a real ASCII letter.
+    /// A word of such letters alone ("Сору") marks it unless the title shows the letters are really that script: a
+    /// letter of the same script that does not look Latin ("О программе Safari", "και στιλ"). "Закрыть Safari",
+    /// "Envoyer à nouveau" and "URLを開く" are not disguises.
+    public static func isLookalike(_ rawTitle: String) -> Bool {
+        // Invisible joiners (zero-width joiner, combining grapheme joiner) cannot hide a letter from the table.
+        var title = ""
+        title.unicodeScalars.append(contentsOf: rawTitle.unicodeScalars.filter { !$0.properties.isDefaultIgnorableCodePoint })
+        func converts(_ ch: Character) -> Bool {
+            String(ch).precomposedStringWithCompatibilityMapping.map { confusables[$0] ?? $0 }.allSatisfy { !$0.isLetter || $0.isASCII }
+        }
+        let genuine = Set(title.filter { $0.isLetter && !$0.isASCII && !converts($0) }.compactMap(script))
+        return title.split(whereSeparator: { !$0.isLetter && !$0.isNumber }).contains { word in
+            let letters = word.filter(\.isLetter)
+            let converted = letters.filter { !$0.isASCII && converts($0) }
+            guard !converted.isEmpty else { return false }
+            if letters.contains(where: \.isASCII) { return true }
+            return converted.count == letters.count && converted.allSatisfy { script($0).map { !genuine.contains($0) } ?? true }
+        }
+    }
+
     /// Titles in the Apple menu: never pressed by name, whichever way the item is found.
     public static let appleMenuTitles: Set<String> = [
         "about this mac", "system settings", "system preferences", "app store", "recent items", "force quit",
@@ -62,7 +118,7 @@ public enum MenuMatch {
         var parts = spoken.split(separator: ">", omittingEmptySubsequences: false).map { fold(String($0)) }
         guard let words = parts.popLast(), !words.isEmpty else { return nil }
         let candidates = entries.indices.filter { i in
-            guard !entries[i].hasSubmenu else { return false }
+            guard !entries[i].hasSubmenu, !isLookalike(entries[i].title) else { return false }
             let path = entries[i].path.map { fold($0) }
             return path.count >= parts.count && Array(path.prefix(parts.count)) == parts
         }
@@ -72,7 +128,7 @@ public enum MenuMatch {
             { $0.starts(with: words) },
             { title in words.allSatisfy(title.contains) },
         ]
-        let spokenPlain = plain(spoken.split(separator: ">").last.map(String.init) ?? spoken)
+        let spokenPlain = plain(leaf(of: spoken) ?? spoken)
         for matches in exactOnly ? Array(tiers.prefix(1)) : tiers {
             let hits = candidates.filter {
                 !folded[$0]!.isEmpty && matches(folded[$0]!) && (!exactOnly || plain(entries[$0].title) == spokenPlain)

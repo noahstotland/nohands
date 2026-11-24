@@ -37,8 +37,9 @@ Build from an up-to-date `main`. The first build downloads and compiles [FluidAu
 1. **Microphone:** macOS asks at start. If you say no, the menu shows "Microphone denied" with an item that opens Settings.
 2. **Accessibility:** enable NoHands under System Settings > Privacy & Security > Accessibility. A red "Grant Accessibility…" item shows until you do.
 3. **Screen Recording** (optional): only for `visionFallback` with Claude. A red "Grant Screen Recording…" item opens the setting.
+4. **Automation** (optional): macOS asks the first time you say a dark-mode phrase (`dark mode`, `light mode` or `toggle dark mode`), to let NoHands control System Events. Allow it and say the phrase again.
 
-NoHands starts listening once Microphone and Accessibility are granted. Every ad-hoc rebuild is a new app to macOS, so you grant them again each time; [Using NoHands](docs/using-nohands.md) shows how to sign with a stable identity to avoid that. It also covers the on-screen panels, Start at Login and logs.
+NoHands starts listening once Microphone and Accessibility are granted. Every ad-hoc rebuild is a new app to macOS, so you grant them again each time (`tccutil reset AppleEvents dev.nohands.app` clears the Automation one); [Using NoHands](docs/using-nohands.md) shows how to sign with a stable identity to avoid that. It also covers the on-screen panels, Start at Login and logs.
 
 ## Try these
 
@@ -73,8 +74,10 @@ Optional file `~/.config/nohands/config.json`. Every key may be omitted, and cha
 ## Privacy
 
 - Audio never leaves your machine.
-- Only commands the grammar can't match go to Claude (or the local model, which stays on your Mac), as text, plus, only with `visionFallback` on, a screenshot of the focused window to Claude.
+- Only commands the grammar can't match go to Claude (or the local model, which stays on your Mac), as text. The rewrite commands (`make that shorter`, `fix the grammar`) also send the text you selected, and, only with `visionFallback` on, a screenshot of the focused window goes to Claude.
 - Without an API key nothing is sent off the Mac. The local backend talks only to Ollama on `127.0.0.1`.
+- Finished tasks are remembered as routes (your goal, the site and the names of what was clicked; typed text and answers are cut from the saved steps) in `~/.config/nohands/routes.json`, mode 600 on this Mac; say "forget all routes" to clear it.
+- Packs use the network only when you open Packs > Browse…, check for pack updates or run `nohands-cli pack search`, `install` or `update`. The request carries only the registry's or pack's address and fixed headers, the registry host sees your IP address, nothing is fetched in the background, and installed packs work with the network off.
 - There is no wake-word model, so other people or loud playback can be acted on. Say "go to sleep" before leaving the desk or during calls.
 
 The full list of what is sent is in [Privacy](docs/privacy.md).
@@ -84,6 +87,7 @@ The full list of what is sent is in [Privacy](docs/privacy.md).
 - [Voice commands](docs/voice-commands.md): every phrase
 - [Using NoHands](docs/using-nohands.md): panels, permissions, signing, logs
 - [Configuration](docs/configuration.md): config keys and the local model
+- [App packs](docs/app-packs.md): add voice commands for more apps from a pack file or a signed pack registry, and publish your own registry
 - [Tasks](docs/tasks.md): how multi-step requests run, guards, the agent-desktop harness
 - [CLI tools](docs/cli.md): `nohands-cli` subcommands for trying each piece by hand
 - [Privacy](docs/privacy.md)

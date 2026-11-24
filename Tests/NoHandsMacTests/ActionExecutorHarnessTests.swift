@@ -105,6 +105,10 @@ private let labels: [Int: UIElementInfo] = [
     #expect(await x.execute([.menuItem("Paste")]) == "menu item Paste is disabled")
     h!.findResult = nil
     #expect(await x.execute([.menuItem("Nothing")]) == "no menu item called Nothing")
+    // A submenu path is not widened to its last title: agent-desktop would find "Sent" under any menu.
+    h!.findResult = DesktopFindMatch(ref: "@s1:e3", role: "menuitem", name: "Sent", path: [], disabled: false)
+    h!.calls.removeAll()
+    #expect(await x.execute([.menuItem("Mailbox > Go to Favorite Mailbox > Sent")]) == "no menu item called Sent" && h!.calls.isEmpty)
     // agent-desktop's contains fallback may not widen a model step: "trash" must not click "Empty Trash…".
     h!.findResult = DesktopFindMatch(ref: "@s1:e9", role: "menuitem", name: "Empty Trash…", path: [], disabled: false)
     #expect(await x.execute([.menuItem("trash")], labels: [:]) == "no menu item called trash")
@@ -189,12 +193,13 @@ private let labels: [Int: UIElementInfo] = [
 @MainActor @Test func dragUsesHarnessWithRefsAndPointsOrNativeMouse() async {
     let (x, i, _, _, h, _) = makeHarnessed()
     #expect(await x.execute([.drag(from: .label(1), to: .point(CGPoint(x: 300, y: 400)))], labels: labels) == nil)
-    #expect(h!.calls == ["act:--headed drag --from @s1:e1 --to-xy 300,400"] && i.calls.isEmpty)
+    #expect(h!.calls == ["act:--headed drag --from @s1:e1 --to-xy=300,400"] && i.calls.isEmpty)
     #expect(await x.execute([.drag(from: .point(CGPoint(x: 1, y: 2)), to: .label(3))], labels: labels) == nil)
-    #expect(h!.calls.last == "act:--headed drag --from-xy 1,2 --to-xy 55,55")
+    #expect(h!.calls.last == "act:--headed drag --from-xy=1,2 --to-xy=55,55")
     let (n, ni, _, _, _, _) = makeHarnessed(harness: nil)
     #expect(await n.execute([.drag(from: .point(CGPoint(x: 1, y: 2)), to: .label(3))], labels: labels) == nil)
-    #expect(ni.calls == ["move:1,2", "down", "move:55,55", "up"])
+    // Press, ten stepped moves ending on the target, release.
+    #expect(Array(ni.calls.prefix(2)) == ["move:1,2", "down"] && ni.calls.count == 13 && Array(ni.calls.suffix(2)) == ["move:55,55", "up"])
 }
 
 @MainActor @Test func mediaPlayingWaitIsPolledByNoHandsNotTheHarness() async {

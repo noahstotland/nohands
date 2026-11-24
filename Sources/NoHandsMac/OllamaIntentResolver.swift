@@ -46,6 +46,12 @@ public actor OllamaIntentResolver: IntentResolving {
 
     /// One POST to the local model; returns the 2xx response body.
     private func post(_ body: Data) async throws -> Data {
+        try await Self.send(body, config: config, session: session, deadline: deadline)
+    }
+
+    /// The one local POST, shared with the rewrite request. A refused connection is `localUnavailable`, an unknown
+    /// model `modelMissing`.
+    static func send(_ body: Data, config: AppConfig, session: URLSession, deadline: Duration) async throws -> Data {
         var request = URLRequest(url: config.ollamaBaseURL.appendingPathComponent("api/chat"))
         request.httpMethod = "POST"
         request.timeoutInterval = TimeInterval(deadline.components.seconds) + 2
@@ -57,16 +63,16 @@ public actor OllamaIntentResolver: IntentResolving {
         do {
             (data, http) = try await IntentHTTP.send(request, session: session, deadline: deadline)
         } catch .network(let underlying) {
-            if let e = underlying as NSError?, e.domain == NSURLErrorDomain, Self.refusedCodes.contains(e.code) {
+            if let e = underlying as NSError?, e.domain == NSURLErrorDomain, refusedCodes.contains(e.code) {
                 throw IntentError.localUnavailable
             }
             throw IntentError.network(underlying)
         }
 
         guard (200..<300).contains(http.statusCode) else {
-            let text = String(decoding: data.prefix(Self.bodyPrefixLimit * 4), as: UTF8.self)
+            let text = String(decoding: data.prefix(bodyPrefixLimit * 4), as: UTF8.self)
             if http.statusCode == 404, text.contains("not found") { throw IntentError.modelMissing }
-            throw IntentError.http(http.statusCode, String(text.prefix(Self.bodyPrefixLimit)))
+            throw IntentError.http(http.statusCode, String(text.prefix(bodyPrefixLimit)))
         }
         return data
     }
