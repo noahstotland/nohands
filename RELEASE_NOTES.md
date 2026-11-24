@@ -1,5 +1,11 @@
 # Release notes
 
+## 2026-11-24 close the gaps in the irreversible-step confirm (NH-154) (#184)
+
+Merged 2026-11-24 12:20 am UTC.
+
+Stricter confirm for risky task steps: NoHands now also asks before a task presses Send, Delete, Pay and similar buttons reached by pointer, grid cell, drag or the Space key, re-reads the screen after your yes, and refuses a press that landed on such a button the task never named.
+
 ## 2026-11-23 apply quit, close and Apple menu guards to menu bar click_in (NH-155) (#183)
 
 Merged 2026-11-23 11:26 pm UTC.
