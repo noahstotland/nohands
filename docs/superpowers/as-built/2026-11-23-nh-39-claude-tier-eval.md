@@ -97,6 +97,8 @@ the cache. Today (before #37) there is no cache to lose, only the extra call.
   under Decision. The spec's step 5 and its tests were not built.
 - **Defaults were already Haiku at `low`** (NH-95 merged after the spec was written), so the spec's baseline
   "opus/medium" is now one row of the table, not the running default.
+- **Numbers went to `docs/configuration.md`, `docs/tasks.md` and `docs/cli.md`**, not "README § Configuration":
+  the README no longer holds those sections. The note is dated 2026-11-23, not 2026-11-05.
 - **1,062 calls, not 972**, because the main fixture file grew from 40 to 45 cases after the spec.
 
 ## Follow-up proposed
