@@ -82,8 +82,19 @@ public struct ScreenObserver: Sendable {
         var fromHarness = false
         if harnessKind == .agentDesktop, let harness, overlay.kindName != "labels" {
             let app = ax.frontmostAppName() ?? ""
-            let surface = (surfaces ?? harness.takeOpenSurfaces()).lazy.compactMap { Self.overlaySurfaces[$0] }.first
-            if let snap = await harness.snapshot(app: app, surface: surface, timeoutMs: snapshotTimeoutMs) {
+            // agent-desktop reports the closed Apple menu as an open menu (NH-185): skip a surface whose snapshot is
+            // closed, and read the window when none is left.
+            let reported = (surfaces ?? harness.takeOpenSurfaces()).compactMap { Self.overlaySurfaces[$0] }
+            var surface: DesktopSurface?
+            var shot: DesktopSnapshot?
+            for s in reported {
+                let candidate = await harness.snapshot(app: app, surface: s, timeoutMs: snapshotTimeoutMs)
+                if candidate?.isClosedSurface == true { continue }
+                (surface, shot) = (s, candidate)
+                break
+            }
+            if surface == nil { shot = await harness.snapshot(app: app, surface: nil, timeoutMs: snapshotTimeoutMs) }
+            if let snap = shot {
                 result = Self.list(snap, app: app, windowTitle: ax.focusedWindowTitle() ?? snap.windowTitle ?? "",
                                    url: ax.webURL(), mode: mode, overlay: overlay, limit: limit ?? maxElements)
                 result.observation.surface = surface?.rawValue

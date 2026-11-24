@@ -26,6 +26,13 @@ public struct DesktopSnapshot: Equatable, Sendable {
         return editableRoles.contains(e.role)
     }
 
+    /// A surface snapshot of a menu that is not open: agent-desktop lists the closed Apple menu as a `menu` surface in
+    /// every app, with each item `offscreen`. An open menu, sheet, alert or popover is drawn on screen.
+    public var isClosedSurface: Bool {
+        let listed = elements.filter(Self.listable)
+        return !listed.isEmpty && listed.allSatisfy { $0.states.contains("offscreen") }
+    }
+
     /// `data` of a snapshot envelope; nil without a `tree`.
     public static func parse(_ data: [String: Any]) -> DesktopSnapshot? {
         guard let tree = data["tree"] as? [String: Any] else { return nil }
