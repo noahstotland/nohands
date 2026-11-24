@@ -61,8 +61,8 @@ func usage() -> Never {
       nohands-cli claude-check       (sends one small request to Claude with your key and prints whether commands will
                                       work; exits 0 only when connected; spends about one step's input tokens)
       nohands-cli desktop-status     (agent-desktop binary, version, permissions and the harness in use)
-      nohands-cli snapshot [app]     (waits 3 s, prints the task-loop observation through agent-desktop of the
-                                      frontmost app, or of the named app)
+      nohands-cli snapshot [app]     (prints the task-loop observation through agent-desktop of the named app,
+                                      or, after 3 s, of the frontmost app)
     """)
 }
 
