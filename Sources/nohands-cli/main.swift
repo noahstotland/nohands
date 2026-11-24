@@ -445,6 +445,7 @@ var exitStatus: Int32 = 0
                 runner.onStatus = { status in if status.isFinal { print("status: \(sanitized(status.text))") } }
                 runner.onStep = { n, step, settle, failure in
                     let now = ContinuousClock.now
+                    if n == 1 { print("harness: \(runner.harnessReport)") }
                     print("step \(n): \(sanitized(step.intent)) -> \(ActionSummary.kinds(step.actions)) (settle \(ms(settle)) ms, step \(ms(last.duration(to: now))) ms)")
                     print("        \(step.status.rawValue) \(step.actions)")
                     if let failure { print("        failed: \(failure)") }

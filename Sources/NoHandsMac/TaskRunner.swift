@@ -64,7 +64,14 @@ public enum TaskOutcome: Equatable, Sendable {
     private var answerWaitID = 0
     /// agent-desktop, when installed and chosen. The task's harness kind is decided by the first observation.
     private let harness: (any DesktopHarness)?
-    private var taskHarness: HarnessKind = .native
+    /// The harness the running (or last) task observes through; `.native` after a fallback. Set by the first observation.
+    public private(set) var taskHarness: HarnessKind = .native
+    /// One line for the CLI step log: the harness the task ran on, with the reason when it fell back.
+    public var harnessReport: String {
+        taskHarness == .agentDesktop ? "agent-desktop" : "native" + (harnessFallbackReason.map { " (fallback: \($0))" } ?? "")
+    }
+    /// Why the task is on the native harness although one was loaded: agent-desktop could not read the frontmost app.
+    public private(set) var harnessFallbackReason: String?
     private var sessionID: String?
     /// Overlays (sheet, menu, …) the last step's actions left open, read from the harness once per settle so every
     /// poll of that settle observes the same surface (reading clears the harness's copy).
@@ -200,6 +207,7 @@ public enum TaskOutcome: Equatable, Sendable {
         // The first observation decides the task's harness: agent-desktop when it could read the frontmost app,
         // else native for the whole task (the prompt and the local model's cached prefix must not flip mid-task).
         taskHarness = harness == nil ? .native : .agentDesktop
+        harnessFallbackReason = nil
         if taskHarness == .agentDesktop, config.agentDesktopTrace, let harness {
             sessionID = await harness.startSession(name: "nohands-\(Int(Date().timeIntervalSince1970))")
         }
@@ -208,6 +216,7 @@ public enum TaskOutcome: Equatable, Sendable {
         var first = await observeTimed(mode: mode)
         if taskHarness == .agentDesktop, !first.fromHarness {
             taskHarness = .native
+            harnessFallbackReason = "agent-desktop could not read the frontmost app (no window, off screen or not permitted)"
             first.result.observation.harness = .native
         }
         if observer.didJustExpose() { first = (await settle(mode: mode, from: first), first.ms, first.fromHarness) }
