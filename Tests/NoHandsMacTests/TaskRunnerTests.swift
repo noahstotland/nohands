@@ -633,12 +633,15 @@ private func harnessSnapshot() -> DesktopSnapshot {
     _ = await r.runner.run(goal: "x", mode: .command)
     #expect(r.resolver.requests.map(\.observation.harness) == [.agentDesktop, .agentDesktop])
     #expect(r.resolver.requests[1].observation.elements.first?.title == "Reload")   // native fallback elements
+    #expect(r.runner.harnessReport == "agent-desktop" && r.runner.harnessFallbackReason == nil)
     // No snapshot on step 1: a native task; the harness is not asked again.
     let h2 = FakeHarness(); h2.snapshotResults = [nil, harnessSnapshot()]
     let r2 = harnessRig(FakeResolver([step("wait", .continue, [.wait(ms: 100)]), step("done", .done)]), harness: h2)
     _ = await r2.runner.run(goal: "x", mode: .command)
     #expect(r2.resolver.requests.map(\.observation.harness) == [.native, .native])
     #expect(h2.calls.filter { $0.hasPrefix("snapshot") }.count == 1)
+    // The CLI step log must say which harness the task really used, and why it fell back.
+    #expect(r2.runner.taskHarness == .native && r2.runner.harnessReport.hasPrefix("native (fallback: agent-desktop could not read"))
 }
 
 private func tab(_ id: String, _ title: String, active: Bool = false) -> BrowserTab { BrowserTab(id: id, title: title, active: active) }

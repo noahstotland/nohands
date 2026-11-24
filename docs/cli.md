@@ -33,10 +33,10 @@ Back to the [README](../README.md).
 | `run "<phrase>"...` | Executes grammar phrases in order; a phrase that asks first (`empty trash`) is refused with `asks first: not run from the CLI` |
 | `observe` | Prints what the task loop sends the model: title, URL, `Media:` line, numbered elements |
 | `resolve "<text>"` | Dry run: sends text and labels to the backend, prints the step (`intent`, `status`, actions); spends API credit |
-| `task "<goal>"` | Waits 3 s, runs the goal as a task for real, printing each step. Ctrl-C stops it, a second quits (130); exits 2 when stuck, failed or stopped |
+| `task "<goal>"` | Waits 3 s, runs the goal as a task for real, printing each step and, after step 1, a `harness:` line (`agent-desktop`, or `native (fallback: …)`). Ctrl-C stops it, a second quits (130); exits 2 when stuck, failed or stopped |
 | `scenarios [file] [--only name]` | Waits 3 s, runs each goal in `scripts/task-scenarios.json` for real, scored against a fresh screen check: `pass`, `false-done`, `unclaimed`, `fail`, `stopped`, `start-failed`, `not-run`. Exits 0 only when all pass, 2 otherwise (1 for a bad file or name). Takes over screen, mouse and keyboard. Ctrl-C stops; a second quits (130). Details: `docs/superpowers/specs/2026-11-09-nh-49-task-scenarios-design.md` |
 | `eval <file> [--runs N]` | Dry run: sends each phrase in the fixture file (e.g. `scripts/intent-eval.json`) to the configured backend `N` times (default 1), prints `PASS` or `FAIL` with the time of each call, then accuracy, median time (without the first 2 calls) and model. Executes nothing; spends API credit with the Claude backend. Exits 0 even when cases fail; 1 for a bad file or `--runs`, or with the backend off |
 | `listen` | Microphone to recognition, printing transcripts |
 | `claude-check` | One-token request with your key; prints connected, key rejected, model not found, request rejected, rate limited, unavailable, timed out, no network, or no key. The key is never shown. Exit 0 only when connected |
 | `desktop-status` | Where agent-desktop was found, version, Accessibility, harness in use |
-| `snapshot [app]` | Waits 3 s, prints the task-loop observation as agent-desktop sees it |
+| `snapshot [app]` | Waits 3 s unless you name the app, then prints the task-loop observation as agent-desktop sees it |
