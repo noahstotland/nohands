@@ -1,5 +1,11 @@
 # Release notes
 
+## 2026-11-24 Slack voice commands (NH-81) (#141)
+
+Merged 2026-11-24 3:05 pm UTC.
+
+In Slack you can now say "threads", "next unread", "start huddle" and more. "jump to design team" opens the quick switcher with the name typed; say "enter" to go. "send" asks first, then presses Return in Slack.
+
 ## 2026-11-24 task log names the harness; live harness verification (NH-4) (#186)
 
 Merged 2026-11-24 2:04 am UTC.
