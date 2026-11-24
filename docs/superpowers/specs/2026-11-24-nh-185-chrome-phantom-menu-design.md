@@ -26,7 +26,7 @@ The task loop reads `data.surfaces` from each action's result (`AgentDesktopHarn
 Builds:
 
 - **A closed-surface rule in core.** `DesktopSnapshot.isClosedSurface` (or a static function on a snapshot): true when the snapshot has at least one element and every listable element (`DesktopSnapshot.listable`) carries the `offscreen` state. An open menu, sheet, alert or popover is on screen, so its items are not all offscreen.
-- **The observer drops a closed surface.** In `ScreenObserver.observe` (agent-desktop path), when a surface was asked for and its snapshot is closed by that rule, snapshot the window again with no surface and use that. `observation.surface` stays nil, so no `Surface:` line reaches the model. A failed second snapshot falls back to the native walk, as a failed first one does today.
+- **The observer drops a closed surface.** In `ScreenObserver.observe` (agent-desktop path), try each reported surface in order and skip any whose snapshot is closed by that rule; use the first open one, and when none is left snapshot the window with no surface. `observation.surface` stays nil, so no `Surface:` line reaches the model. A failed second snapshot falls back to the native walk, as a failed first one does today.
 - **The same rule for the plan runner and `find`.** Any other place that passes the reported surface to a snapshot or a `find` (check `TaskRunner`'s plan steps and `ActionExecutor+Harness`) goes through the same check, so a closed Apple menu is never a target.
 
 Leaves out:
@@ -56,15 +56,19 @@ An empty snapshot is not called closed by this rule (nothing to judge); the obse
 ### Observer (`NoHandsMac/ScreenObserver.swift`)
 
 ```swift
-var surface = ...first
-var snap = await harness.snapshot(app: app, surface: surface, timeoutMs: snapshotTimeoutMs)
-if surface != nil, let s = snap, s.isClosedSurface {
-    surface = nil
-    snap = await harness.snapshot(app: app, surface: nil, timeoutMs: snapshotTimeoutMs)
+let reported = (surfaces ?? harness.takeOpenSurfaces()).compactMap { Self.overlaySurfaces[$0] }
+var surface: DesktopSurface?
+var shot: DesktopSnapshot?
+for s in reported {
+    let candidate = await harness.snapshot(app: app, surface: s, timeoutMs: snapshotTimeoutMs)
+    if candidate?.isClosedSurface == true { continue }
+    (surface, shot) = (s, candidate)
+    break
 }
+if surface == nil { shot = await harness.snapshot(app: app, surface: nil, timeoutMs: snapshotTimeoutMs) }
 ```
 
-The extra snapshot runs only when agent-desktop reported a surface and it came back closed: one more snapshot after such a step, in place of a whole wasted model step and Escape press (about 3 s each in the run).
+The extra snapshot runs only when every reported surface came back closed: one more snapshot after such a step, in place of a whole wasted model step and Escape press (about 3 s each in the run).
 
 ## Tests
 
