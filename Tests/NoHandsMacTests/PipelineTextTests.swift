@@ -5,7 +5,7 @@ import NoHandsCore
 
 @Test func intentErrorsMapToHudText() {
     #expect(PipelineText.hud(for: .cancelled) == nil)
-    #expect(PipelineText.hud(for: .noAPIKey) == "LLM off: add anthropicAPIKey to ~/.config/nohands/config.json")
+    #expect(PipelineText.hud(for: .noAPIKey) == "LLM off: choose Set Claude API key… in the menu")
     #expect(PipelineText.hud(for: .timeout) == "timed out")
     #expect(PipelineText.hud(for: .network(URLError(.notConnectedToInternet))) == "no network")
     #expect(PipelineText.hud(for: .http(500, "x")) == "LLM error (500)")
@@ -14,6 +14,7 @@ import NoHandsCore
 @Test func routingSummaries() {
     #expect(PipelineText.summary(.ignore(reason: "sleeping")) == "ignore(sleeping)")
     #expect(PipelineText.summary(.resolveWithLLM("x")) == "llm")
+    #expect(PipelineText.summary(.reject("can't spell \"k9\"")) == "reject")   // a spoken secret stays out of the public log
     #expect(PipelineText.summary(.execute([.setMode(.sleep)])).hasPrefix("execute ["))
 }
 

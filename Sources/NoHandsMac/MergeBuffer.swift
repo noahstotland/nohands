@@ -12,7 +12,11 @@ actor MergeBuffer {
     }
 
     private let merger: UtteranceMerger
+    private let gate: AttentionGate
     private let isComplete: @Sendable (String, Mode) -> Bool
+    /// True when the transcript's parsed actions carry words the speaker may still be saying (typed text, a name).
+    /// The default answers true, so a buffer built without the grammar never closes early.
+    private let carriesSpokenText: @Sendable (String) -> Bool
     private let emit: @Sendable (String, LatencyTrace) -> Void
     private let onHold: @Sendable (String) -> Void
     private var pending: Pending?
@@ -24,21 +28,44 @@ actor MergeBuffer {
     static let safetyTimeout: Duration = .seconds(20)
 
     init(merger: UtteranceMerger,
+         gate: AttentionGate = .off,
          isComplete: @escaping @Sendable (String, Mode) -> Bool,
+         carriesSpokenText: @escaping @Sendable (String) -> Bool = { _ in true },
          onHold: @escaping @Sendable (String) -> Void,
          emit: @escaping @Sendable (String, LatencyTrace) -> Void) {
         self.merger = merger
+        self.gate = gate
         self.isComplete = isComplete
+        self.carriesSpokenText = carriesSpokenText
         self.onHold = onHold
         self.emit = emit
     }
 
     func set(mode: Mode) { self.mode = mode }
 
+    /// Only command mode gets an early ASR pass: in dictation and sleep nothing may close before the full silence.
+    var wantsEarlyPass: Bool { mode == .command }
+
+    /// Text from the early pass, heard after a short silence while the utterance is still open. Accepted (released
+    /// through `transcript`) only when it can be acted on now: a stop phrase, or a complete grammar command with
+    /// nothing pending, nothing left hanging and no free text that may still be coming. Anything else returns false
+    /// and the full pass decides. Calls `isComplete` itself: a zero `holdDuration` also means "merge window off".
+    func earlyTranscript(_ text: String, trace: LatencyTrace) -> Bool {
+        guard mode == .command else { return false }
+        if !gate.isStop(text) {
+            guard pending == nil, isComplete(text, mode) else { return false }
+            var phrase = text
+            if case .addressed(let rest) = gate.check(text) { phrase = rest }
+            guard !UtteranceMerger.isUnfinished(phrase), !carriesSpokenText(text) else { return false }
+        }
+        transcript(text, trace: trace)
+        return true
+    }
+
     func transcript(_ text: String, trace: LatencyTrace) {
         speechActive = false
-        // A stop phrase or a dictation escape is never merged: it must reach the pipeline on its own, at once.
-        if StopWords.isStop(text) {
+        // A stop phrase or a dictation command is never merged: it must reach the pipeline on its own, at once.
+        if gate.isStop(text) {
             // In command mode a stop also cancels what was still being said; in dictation the words already
             // spoken are kept (typed) before the stop.
             if mode == .dictation { flush() } else { discardPending() }
@@ -46,18 +73,26 @@ actor MergeBuffer {
             flush()
             return
         }
-        if mode == .dictation && ModeMachine.isDictationEscape(text) {
+        if mode == .dictation && ModeMachine.isDictationCommand(text, attention: gate) {
             flush()
             pending = Pending(transcript: text, trace: trace)
             flush()
             return
         }
+        // With the attention word on, stray speech is never merged into a command that addresses it.
+        if gated, pending != nil {
+            switch gate.check(text) {
+            case .addressed, .wordOnly: flush()
+            case .notAddressed, .off: break
+            }
+        }
         var next = Pending(transcript: text, trace: trace)
         if let p = pending { next.transcript = UtteranceMerger.merge(p.transcript, text) }
         pending = next
-        let hold = merger.hold(for: next.transcript, isComplete: isComplete(next.transcript, mode))
+        let hold = holdDuration(for: next.transcript)
         if hold == .zero { flush(); return }
-        onHold(next.transcript)
+        // Stray speech is held (it may still be the start of "computer …") but shown nowhere.
+        if !(gated && gate.check(next.transcript) == .notAddressed) { onHold(next.transcript) }
         schedule(after: hold)
     }
 
@@ -72,11 +107,28 @@ actor MergeBuffer {
     func speechAbandoned() {
         guard speechActive, let p = pending else { return }
         speechActive = false
-        let hold = merger.hold(for: p.transcript, isComplete: isComplete(p.transcript, mode))
+        let hold = holdDuration(for: p.transcript)
         if hold == .zero { flush() } else { schedule(after: hold) }
     }
 
     func reset() { discardPending() }
+
+    /// Command mode with the attention word on.
+    private var gated: Bool { gate.isOn && mode == .command }
+
+    private func holdDuration(for transcript: String) -> Duration {
+        // The word alone waits like a dangling word, so "computer … go back" said in two breaths is one command.
+        // The merger's rules (dangling last word, a leading "spell") apply to what follows the word.
+        var phrase = transcript
+        if gated {
+            switch gate.check(transcript) {
+            case .wordOnly: return .milliseconds(merger.unfinishedWindowMs)
+            case .addressed(let rest): phrase = rest
+            case .notAddressed, .off: break
+            }
+        }
+        return merger.hold(for: phrase, isComplete: isComplete(transcript, mode))
+    }
 
     private func discardPending() {
         generation += 1

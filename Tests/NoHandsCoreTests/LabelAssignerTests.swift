@@ -23,3 +23,12 @@ import CoreGraphics
     #expect(LabelAssigner.find(named: "quit", in: els) == nil)
     #expect(LabelAssigner.find(named: "  ", in: els) == nil)
 }
+
+@Test func menuBarItemsNumberAfterThePageKeepingEachGroupsOrder() {
+    func el(_ title: String, _ role: String) -> UIElementInfo { UIElementInfo(id: 0, frame: .zero, title: title, role: role) }
+    let labels = [1: el("Apple", "AXMenuBarItem"), 2: el("Edit", "AXMenuBarItem"), 3: el("Back", "AXButton"),
+                  4: el("Save", "AXMenuItem"), 5: el("Go", "AXLink")]
+    let sorted = LabelAssigner.menuBarLast(labels)
+    #expect((1...5).map { sorted[$0]?.title } == ["Back", "Save", "Go", "Apple", "Edit"])
+    #expect(LabelAssigner.menuBarLast([:]).isEmpty)
+}

@@ -9,21 +9,58 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let stateItem = NSMenuItem(title: MenuState.loading.text, action: nil, keyEquivalent: "")
     private let configItem = NSMenuItem(title: "config.json invalid: using defaults", action: nil, keyEquivalent: "")
     private let transcriptItem = NSMenuItem(title: "No speech yet", action: nil, keyEquivalent: "")
+    private let recentItem = NSMenuItem(title: "Recent commands", action: nil, keyEquivalent: "")
+    private let recentMenu = NSMenu(title: "Recent commands")
+    private let viewLogsItem = NSMenuItem(title: "View Logs…", action: #selector(viewLogs), keyEquivalent: "")
     private let localModelItem = NSMenuItem(title: "", action: #selector(localModelClicked), keyEquivalent: "")
     private let pauseItem = NSMenuItem(title: "Pause Listening", action: #selector(togglePause), keyEquivalent: "")
     private let retryItem = NSMenuItem(title: "Retry", action: #selector(retry), keyEquivalent: "")
     private let accessibilityItem = NSMenuItem(title: "Grant Accessibility…", action: #selector(grantAccessibility), keyEquivalent: "")
+    private let screenRecordingItem = NSMenuItem(title: "Grant Screen Recording…", action: #selector(grantScreenRecording), keyEquivalent: "")
     private let micItem = NSMenuItem(title: "Microphone denied — open Settings", action: #selector(openMicrophoneSettings), keyEquivalent: "")
     private let harnessItem = NSMenuItem(title: "Harness: checking…", action: nil, keyEquivalent: "")
+    private let claudeItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
+    private let claudeUsageItem = NSMenuItem(title: "", action: nil, keyEquivalent: "")
+    private let checkClaudeItem = NSMenuItem(title: "Check Claude connection", action: #selector(checkClaude), keyEquivalent: "")
+    private let loginItem = NSMenuItem(title: "Start at Login", action: #selector(loginItemClicked), keyEquivalent: "")
+    private let statusBarItem = NSMenuItem(title: "Status Bar", action: nil, keyEquivalent: "")
+    private let statusBarMenu = NSMenu(title: "Status Bar")
+    private static let statusBarDefaultsKey = "statusBarPosition"
+    private let backendItem = NSMenuItem(title: "Model", action: nil, keyEquivalent: "")
+    private let backendMenu = NSMenu(title: "Model")
+    private let speakItem = NSMenuItem(title: "Speak Feedback", action: nil, keyEquivalent: "")
+    private let speakMenu = NSMenu(title: "Speak Feedback")
+    private let packsItem = NSMenuItem(title: "Packs", action: nil, keyEquivalent: "")
+    private let packsMenu = NSMenu(title: "Packs")
+    private let packStore = PackStore()
+    /// Created on first use, so nothing is built (or fetched) until the user opens Browse or checks for updates.
+    private var packBrowser: PackBrowserController?
+    private let claudeKeyItem = NSMenuItem(title: "Set Claude API key…", action: #selector(setClaudeKey), keyEquivalent: "")
+    private let openConfigItem = NSMenuItem(title: "Open config.json…", action: #selector(openConfig), keyEquivalent: "")
     /// agent-desktop, when found and permitted (see `HarnessStatus`); re-probed when the menu opens.
     private var harnessStatus: HarnessStatus?
     private var harnessProbeInFlight = false
     /// The harness the running pipeline was built with (built once at pipeline start); nil before it starts.
     private var pipelineHarnessKind: HarnessKind?
+    /// What the running pipeline was built with, so a model switch can build a new observer and runner on the same AX query and harness.
+    private var taskAX: AXQuery?
+    private var pipelineHarness: (any DesktopHarness)?
+    /// The last Claude check (kept in memory only) and whether one is running.
+    private var lastClaudeCheck: (result: ClaudeCheckResult, time: String)?
+    private var claudeChecking = false
 
     private let overlay = OverlayController()
+    private let commandLog = CommandLogStore()
+    /// Saved routes (NH-46), read once at launch; matching and saving use the in-memory list.
+    private let routeStore = RouteStore()
+    /// Created on first show, so no command builds it unless the user opens the logs.
+    private var logWindow: LogWindowController?
     private var config = AppConfig()
     private var configInvalid = false
+    /// Whether config.json itself holds a key (the environment is ignored): as of launch, plus saves from the menu.
+    private var fileHasKey = false
+    /// A key was saved from the menu since launch. It applies after a restart, so the Claude row stays off and says so.
+    private var keySavedThisSession = false
     private var pipeline: VoicePipeline?
     private var pipelineStarting = false
     private var userPaused = false
@@ -39,9 +76,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var launchedOllama = false
     private var lastWarm: ContinuousClock.Instant?
     private var warming = false
+    private var packsObserver: (any NSObjectProtocol)?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        overlay.statusBarPosition = StatusBarPosition.stored(UserDefaults.standard.string(forKey: Self.statusBarDefaultsKey))
+        commandLog.onChange = { [weak self] in self?.logWindow?.reload() }
         buildMenu()
+        // The CLI installs packs; it tells the app through this local notification (no payload), and the menu re-reads on open.
+        packsObserver = DistributedNotificationCenter.default().addObserver(
+            forName: PackStore.changedNotification, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.packsChanged() }
+        }
         Task { await bootstrap() }
     }
 
@@ -51,9 +96,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     // MARK: - menu
 
+    /// The bundled winking-face glyph as a template image, or the `mic` symbol when the PNGs are missing (an unbundled `swift run`).
+    private func menuBarImage() -> NSImage {
+        guard let image = NSImage(named: "MenuBarIcon") else {
+            return NSImage(systemSymbolName: "mic", accessibilityDescription: "NoHands") ?? NSImage()
+        }
+        image.size = NSSize(width: 18, height: 18)
+        image.isTemplate = true
+        image.accessibilityDescription = "NoHands"
+        return image
+    }
+
     private func buildMenu() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        statusItem.button?.image = NSImage(systemSymbolName: "mic", accessibilityDescription: "NoHands")
+        statusItem.button?.image = menuBarImage()
         statusItem.button?.imagePosition = .imageLeading
 
         let menu = NSMenu()
@@ -62,19 +118,69 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         configItem.isEnabled = false
         transcriptItem.isEnabled = false
         harnessItem.isEnabled = false
-        for item in [localModelItem, pauseItem, retryItem, accessibilityItem, micItem] { item.target = self }
+        claudeItem.isEnabled = false
+        claudeUsageItem.isEnabled = false
+        claudeUsageItem.isHidden = true
+        for item in [viewLogsItem, checkClaudeItem, localModelItem, pauseItem, retryItem, accessibilityItem, screenRecordingItem, micItem, loginItem, claudeKeyItem, openConfigItem] { item.target = self }
         let title = NSMutableAttributedString(string: "● ", attributes: [.foregroundColor: NSColor.systemRed])
         title.append(NSAttributedString(string: "Grant Accessibility…"))
         accessibilityItem.attributedTitle = title
+        let recordingTitle = NSMutableAttributedString(string: "● ", attributes: [.foregroundColor: NSColor.systemRed])
+        recordingTitle.append(NSAttributedString(string: "Grant Screen Recording…"))
+        screenRecordingItem.attributedTitle = recordingTitle
+        for choice in BackendChoice.allCases {
+            let item = NSMenuItem(title: choice.rawValue, action: #selector(backendChosen(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = choice.rawValue
+            backendMenu.addItem(item)
+        }
+        backendItem.submenu = backendMenu
+        for position in StatusBarPosition.allCases {
+            let item = NSMenuItem(title: Self.statusBarTitle(position), action: #selector(statusBarChosen(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = position.rawValue
+            statusBarMenu.addItem(item)
+        }
+        statusBarItem.submenu = statusBarMenu
+        for level in SpeakLevel.allCases {
+            let item = NSMenuItem(title: level.rawValue.capitalized, action: #selector(speakChosen(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = level.rawValue
+            speakMenu.addItem(item)
+        }
+        speakItem.submenu = speakMenu
+        packsItem.submenu = packsMenu
+        reloadPacks()
+        refreshStatusBarMenu()
         let quit = NSMenuItem(title: "Quit NoHands", action: #selector(quit), keyEquivalent: "q")
         quit.target = self
 
-        for item in [stateItem, configItem, NSMenuItem.separator(), transcriptItem, localModelItem, harnessItem, NSMenuItem.separator(),
-                     pauseItem, retryItem, accessibilityItem, micItem, NSMenuItem.separator(), quit] {
+        recentItem.submenu = recentMenu
+        rebuildRecentMenu()
+        for item in [stateItem, configItem, NSMenuItem.separator(), transcriptItem, recentItem, viewLogsItem, localModelItem, harnessItem, claudeItem, claudeUsageItem, checkClaudeItem, NSMenuItem.separator(),
+                     pauseItem, retryItem, accessibilityItem, screenRecordingItem, micItem, NSMenuItem.separator(), loginItem, statusBarItem, speakItem, packsItem, backendItem, claudeKeyItem, openConfigItem,
+                     NSMenuItem.separator(), quit] {
             menu.addItem(item)
         }
         statusItem.menu = menu
+        installEditMenu()
         refresh()
+    }
+
+    /// An accessory app shows no main menu, but text fields get Cmd-V, Cmd-C, Cmd-X and Cmd-A only through one.
+    /// This hidden Edit menu lets paste work in the API key field.
+    private func installEditMenu() {
+        let edit = NSMenu(title: "Edit")
+        for (title, selector, key) in [("Cut", #selector(NSText.cut(_:)), "x"), ("Copy", #selector(NSText.copy(_:)), "c"),
+                                       ("Paste", #selector(NSText.paste(_:)), "v"), ("Select All", #selector(NSText.selectAll(_:)), "a")] {
+            edit.addItem(NSMenuItem(title: title, action: selector, keyEquivalent: key))
+        }
+        let editItem = NSMenuItem(title: "Edit", action: nil, keyEquivalent: "")
+        editItem.submenu = edit
+        let mainMenu = NSMenu()
+        mainMenu.addItem(NSMenuItem(title: "NoHands", action: nil, keyEquivalent: ""))
+        mainMenu.addItem(editItem)
+        NSApp.mainMenu = mainMenu
     }
 
     /// Recomputes the status line, title and item visibility from current state.
@@ -87,6 +193,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         retryItem.isHidden = !state.showsRetry
         configItem.isHidden = !configInvalid
         accessibilityItem.isHidden = axGranted
+        screenRecordingItem.isHidden = !config.visionEnabled || Permissions.screenRecordingGranted()
         micItem.isHidden = !micDenied
         pauseItem.isHidden = pipeline == nil
         let isLocal = config.effectiveBackend == .local
@@ -96,9 +203,395 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                                                        ollamaInstalled: OllamaClient.installedAppURL() != nil)
             localModelItem.isEnabled = LocalModelMenu.actionable(localStatus)
         }
+        refreshClaudeItems()
+        refreshBackendMenu()
+        for item in speakMenu.items { item.state = item.representedObject as? String == config.speakFeedback.rawValue ? .on : .off }
+        claudeKeyItem.title = fileHasKey ? "Change Claude API key…" : "Set Claude API key…"
+        refreshLoginItem()
         pauseItem.title = userPaused ? "Resume Listening" : "Pause Listening"
         if let harnessStatus { harnessItem.title = harnessStatus.menuText(inUse: pipelineHarnessKind) }
         statusItem.button?.title = " " + MenuState.title(mode: mode, paused: state == .paused)
+        overlay.setAppState(state, mode: mode)
+    }
+
+    // MARK: - Claude status
+
+    /// The Claude line (config and last check only, no network) and the check item. The menu autoenables items that
+    /// have a target and action, so the item is disabled by removing its action, not by `isEnabled`.
+    private func refreshClaudeItems() {
+        let line = ClaudeStatus.menuLine(config: config, checking: claudeChecking, last: lastClaudeCheck)
+        claudeItem.title = line
+        if ClaudeStatus.showsCheckmark(checking: claudeChecking, last: lastClaudeCheck?.result) {
+            let title = NSMutableAttributedString(string: "✓ ", attributes: [.foregroundColor: NSColor.systemGreen])
+            title.append(NSAttributedString(string: line))
+            claudeItem.attributedTitle = title
+        } else {
+            claudeItem.attributedTitle = nil
+        }
+        // The session's token total: counts only, no network. Hidden until the first call (and with no key or LLM off).
+        let usageLine = config.effectiveBackend == .claude ? ClaudeUsageMeter.shared.total.menuLine : nil
+        claudeUsageItem.title = usageLine ?? ""
+        claudeUsageItem.isHidden = usageLine == nil
+        checkClaudeItem.action = claudeChecking || !ClaudeStatus.hasKey(config) ? nil : #selector(checkClaude)
+    }
+
+    @objc private func checkClaude() {
+        guard !claudeChecking, ClaudeStatus.hasKey(config) else { return }
+        claudeChecking = true
+        refresh()
+        let check = ClaudeConnectionCheck(config: config)
+        Task { @MainActor in
+            let result = await check.run()
+            let formatter = DateFormatter()
+            formatter.dateFormat = "HH:mm"
+            lastClaudeCheck = (result, formatter.string(from: Date()))
+            claudeChecking = false
+            refresh()
+        }
+    }
+
+    // MARK: - model setting
+
+    /// The title follows the backend in use; each row's checkmark and enabled state come from `BackendMenu`. A disabled
+    /// row has its action removed, since the menu autoenables items that have one.
+    private func refreshBackendMenu() {
+        backendItem.title = BackendMenu.title(config: config)
+        let rows = BackendMenu.rows(config: config, keySavedThisSession: keySavedThisSession)
+        for item in backendMenu.items {
+            guard let raw = item.representedObject as? String, let row = rows.first(where: { $0.choice.rawValue == raw }) else { continue }
+            item.title = row.title
+            item.state = row.checked ? .on : .off
+            item.action = row.enabled ? #selector(backendChosen(_:)) : nil
+        }
+    }
+
+    /// One pick, applied from the next command with no restart. The file is written first; if that fails the app stays
+    /// on the old backend. Only `intentBackend` is applied live: other edits to config.json still wait for a restart.
+    @objc private func backendChosen(_ sender: NSMenuItem) {
+        guard let raw = sender.representedObject as? String, let choice = BackendChoice(rawValue: raw) else { return }
+        let target: EffectiveBackend = choice == .claude ? .claude : .local
+        // The checked row does nothing, so `auto` stays `auto` until a real change.
+        guard config.effectiveBackend != target else { return }
+        guard choice != .claude || ClaudeStatus.hasKey(config) else { return }
+        do {
+            try ConfigFile.saveIntentBackend(choice, at: ConfigFile.defaultURL)
+        } catch {
+            let hud: String
+            switch error as? ConfigFile.SaveError {
+            case .invalidJSON:
+                PipelineLog.warning("couldn't switch model: config.json is not valid JSON")
+                hud = "couldn't switch model: fix config.json, then try again"
+            case .symlink:
+                PipelineLog.warning("couldn't switch model: config.json or its folder is a symlink")
+                hud = "couldn't switch model: replace the config.json link with a file"
+            case .writeFailed(let code):
+                PipelineLog.warning("couldn't switch model: write failed (\(code))")
+                hud = "couldn't switch model: check ~/.config/nohands"
+            case nil:
+                PipelineLog.warning("couldn't switch model")
+                hud = "couldn't switch model: check ~/.config/nohands"
+            }
+            overlay.showHUD(hud, duration: .seconds(4))
+            return
+        }
+        config.intentBackend = choice == .claude ? .claude : .local
+        lastClaudeCheck = nil
+        if target == .local { lastWarm = nil }
+        if let pipeline { switchPipelineBackend(pipeline) }
+        PipelineLog.info("intent backend: \(Self.backendName(config.effectiveBackend))")
+        refresh()
+        refreshLocalModel()
+        overlay.showHUD(target == .claude ? "Using Claude from the next command" : "Using the local model from the next command",
+                        duration: .seconds(3))
+    }
+
+    // MARK: - spoken feedback
+
+    @objc private func speakChosen(_ sender: NSMenuItem) {
+        guard let raw = sender.representedObject as? String, let level = SpeakLevel(rawValue: raw) else { return }
+        applySpeakLevel(level)
+        pipeline?.setSpeakLevel(level)
+    }
+
+    /// Saves `level` to config.json (the choice survives a restart) and checks its menu row. The pipeline applies it
+    /// at once; it needs no restart. If the file cannot be written the level still applies for this session.
+    private func applySpeakLevel(_ level: SpeakLevel) {
+        guard level != config.speakFeedback else { return }
+        config.speakFeedback = level
+        do {
+            try ConfigFile.saveSpeakFeedback(level, at: ConfigFile.defaultURL)
+        } catch {
+            PipelineLog.warning("couldn't save spoken feedback setting", detail: "\(error)")
+            overlay.showHUD("spoken feedback changed, but not saved: check config.json", duration: .seconds(4))
+        }
+        PipelineLog.info("speak feedback: \(level.rawValue)")
+        refresh()
+    }
+
+    private static func backendName(_ backend: EffectiveBackend) -> String {
+        switch backend {
+        case .claude: "claude"
+        case .local: "local"
+        case .off: "off"
+        }
+    }
+
+    /// The resolver for the backend in effect; nil when the model is off.
+    private func makeResolver() -> (any IntentResolving)? {
+        switch config.effectiveBackend {
+        case .claude: ClaudeIntentResolver(config: config)
+        case .local: OllamaIntentResolver(config: config)
+        case .off: nil
+        }
+    }
+
+    /// Hands the pipeline a runner for the backend now in `config`: the resolver, the element cap and vision all follow it.
+    private func switchPipelineBackend(_ pipeline: VoicePipeline) {
+        guard let resolver = makeResolver(), let taskAX else { return }
+        let observer = ScreenObserver(ax: taskAX, maxElements: config.observedElementCap, harness: pipelineHarness,
+                                      snapshotTimeoutMs: config.agentDesktopSnapshotMs)
+        pipeline.switchBackend(config: config, resolver: resolver, observer: observer)
+        pipeline.resolverKind = Self.logResolver(config.effectiveBackend)
+    }
+
+    // MARK: - status bar setting
+
+    private static func statusBarTitle(_ position: StatusBarPosition) -> String {
+        switch position {
+        case .off: "Off"
+        case .corner: "Bottom Right"
+        }
+    }
+
+    private func refreshStatusBarMenu() {
+        for item in statusBarMenu.items {
+            item.state = (item.representedObject as? String) == overlay.statusBarPosition.rawValue ? .on : .off
+        }
+    }
+
+    @objc private func statusBarChosen(_ sender: NSMenuItem) {
+        guard let raw = sender.representedObject as? String, let position = StatusBarPosition(rawValue: raw) else { return }
+        UserDefaults.standard.set(position.rawValue, forKey: Self.statusBarDefaultsKey)
+        overlay.statusBarPosition = position
+        refreshStatusBarMenu()
+    }
+
+    // MARK: - login item and config file
+
+    /// Re-reads the system's registration state; it is never cached, so it is right after a relaunch and after
+    /// the user removes the item in System Settings.
+    private func refreshLoginItem() {
+        let item = LoginItemMenu.item(for: LoginItem.state)
+        loginItem.title = item.title
+        loginItem.isEnabled = item.isEnabled
+        switch item.checkmark {
+        case .on: loginItem.state = .on
+        case .off: loginItem.state = .off
+        case .mixed: loginItem.state = .mixed
+        }
+    }
+
+    @objc private func loginItemClicked() {
+        do {
+            switch LoginItemMenu.item(for: LoginItem.state).action {
+            case .register: try LoginItem.register()
+            case .unregister: try LoginItem.unregister()
+            case .openSettings: LoginItem.openSettings()
+            case .none: break
+            }
+        } catch {
+            PipelineLog.warning("couldn't change Start at Login", detail: "\(error)")
+            overlay.showHUD("couldn't change Start at Login: allow NoHands in Login Items", duration: .seconds(4))
+        }
+        refreshLoginItem()
+    }
+
+    @objc private func openConfig() {
+        let url = ConfigFile.defaultURL
+        do { _ = try ConfigFile.ensureExists(at: url) } catch {
+            PipelineLog.warning("couldn't create config.json", detail: "\(url.path): \(error)")
+            overlay.showHUD("couldn't create config.json: check ~/.config/nohands", duration: .seconds(4))
+            return
+        }
+        let workspace = NSWorkspace.shared
+        if workspace.urlForApplication(toOpen: url) == nil,
+           let textEdit = workspace.urlForApplication(withBundleIdentifier: "com.apple.TextEdit") {
+            workspace.open([url], withApplicationAt: textEdit, configuration: NSWorkspace.OpenConfiguration())
+        } else {
+            workspace.open(url)
+        }
+        overlay.showHUD("restart NoHands to apply config changes", duration: .seconds(4))
+    }
+
+    /// Asks for the key in a masked field and saves it to config.json. The key never reaches the menu, the HUD or the
+    /// log: only fixed text (and the errno name of a failed write) is logged. It applies after a restart.
+    @objc private func setClaudeKey() {
+        NSApp.activate(ignoringOtherApps: true)
+        let alert = NSAlert()
+        alert.messageText = fileHasKey ? "Change Claude API key" : "Set Claude API key"
+        alert.informativeText = "Applies after you restart NoHands. ANTHROPIC_API_KEY, if set, overrides this."
+        alert.addButton(withTitle: "Save")
+        alert.addButton(withTitle: "Cancel")
+        let field = NSSecureTextField(frame: NSRect(x: 0, y: 0, width: 300, height: 24))
+        alert.accessoryView = field
+        alert.window.initialFirstResponder = field
+        // Listening stays off while the alert is open, so dictation can't type into the field and a spoken
+        // "press return" can't press Save. If the user had already paused, it stays paused.
+        let pausedForAlert = pipeline != nil && !userPaused && !axPaused
+        if pausedForAlert { togglePause() }
+        let response = alert.runModal()
+        if pausedForAlert { togglePause() }
+        defer { field.stringValue = "" }
+        guard response == .alertFirstButtonReturn else { return }
+        guard let key = ClaudeKeyEntry.normalized(field.stringValue) else { return }
+        do {
+            try ConfigFile.saveAnthropicKey(key, at: ConfigFile.defaultURL)
+            fileHasKey = true
+            keySavedThisSession = true
+            PipelineLog.info("Claude key saved to config.json; restart to apply")
+            overlay.showHUD("Claude key saved: restart NoHands to apply", duration: .seconds(4))
+            refresh()
+        } catch let error as ConfigFile.SaveError {
+            let hud: String
+            switch error {
+            case .invalidJSON:
+                PipelineLog.warning("couldn't save Claude key: config.json is not valid JSON")
+                hud = "couldn't save key: fix config.json, then try again"
+            case .symlink:
+                PipelineLog.warning("couldn't save Claude key: config.json or its folder is a symlink")
+                hud = "couldn't save key: replace the config.json link with a file"
+            case .writeFailed(let code):
+                PipelineLog.warning("couldn't save Claude key: write failed (\(code))")
+                hud = "couldn't save key: check ~/.config/nohands"
+            }
+            overlay.showHUD(hud, duration: .seconds(4))
+        } catch {
+            PipelineLog.warning("couldn't save Claude key")
+            overlay.showHUD("couldn't save key: check ~/.config/nohands", duration: .seconds(4))
+        }
+    }
+
+    // MARK: - app packs
+
+    /// Built-in packs plus the enabled installed ones, as of the last reload.
+    private var packSet = PackSet.builtIns
+
+    private var packsReloadPending = false
+
+    /// The CLI's notification: one reload per 500 ms however many arrive, so a flood of them cannot keep the app reading disk.
+    private func packsChanged() {
+        guard !packsReloadPending else { return }
+        packsReloadPending = true
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(500))
+            self?.packsReloadPending = false
+            self?.reloadPacks()
+        }
+    }
+
+    /// Re-reads the installed packs (on the CLI's notification, on menu open and after a toggle or remove), hands the
+    /// pipeline the new set and rebuilds the Packs submenu. A pack that fails to load is shown as invalid and skipped.
+    private func reloadPacks() {
+        let entries: [PackStore.Entry]
+        do { entries = try packStore.list() } catch {
+            PipelineLog.warning("couldn't read installed packs", detail: "\(error)")
+            entries = []
+        }
+        packSet = PackSet(installed: entries.compactMap { $0.enabled ? $0.pack : nil })
+        pipeline?.setPacks(packSet)
+        packsMenu.removeAllItems()
+        addRegistryItems()
+        guard !entries.isEmpty else {
+            let none = NSMenuItem(title: "No packs installed", action: nil, keyEquivalent: "")
+            none.isEnabled = false
+            packsMenu.addItem(none)
+            return
+        }
+        for entry in entries {
+            let status = PackMenu.status(phrases: entry.pack?.phrases.count ?? 0,
+                                         shadowed: packSet.shadowed.filter { $0.packID == entry.id }.count,
+                                         invalidReason: entry.invalidReason)
+            let line = NSMenuItem(title: status, action: nil, keyEquivalent: "")
+            line.isEnabled = false
+            let on = NSMenuItem(title: "On", action: #selector(packToggled(_:)), keyEquivalent: "")
+            on.state = entry.enabled ? .on : .off
+            let remove = NSMenuItem(title: "Remove…", action: #selector(packRemoveClicked(_:)), keyEquivalent: "")
+            let submenu = NSMenu(title: entry.id)
+            for item in [line, on, remove] {
+                item.target = self
+                item.representedObject = entry.id
+                submenu.addItem(item)
+            }
+            let item = NSMenuItem(title: entry.pack.map { "\($0.name) \($0.version)" } ?? entry.id, action: nil, keyEquivalent: "")
+            item.submenu = submenu
+            packsMenu.addItem(item)
+        }
+    }
+
+    /// The registry line and the two items that reach it. Choosing one is the only way the app contacts the registry:
+    /// it opens the Browse window, which fetches the list once.
+    private func addRegistryItems() {
+        let line = NSMenuItem(title: RegistryStatus(config: config).menuLine, action: nil, keyEquivalent: "")
+        line.isEnabled = false
+        packsMenu.addItem(line)
+        for (title, action) in [("Browse…", #selector(packBrowseClicked)), ("Check for pack updates", #selector(packCheckUpdatesClicked))] {
+            let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
+            item.target = self
+            packsMenu.addItem(item)
+        }
+        packsMenu.addItem(.separator())
+    }
+
+    @objc private func packBrowseClicked() { showPackBrowser(.browse) }
+
+    @objc private func packCheckUpdatesClicked() { showPackBrowser(.updates) }
+
+    private func showPackBrowser(_ mode: PackBrowserController.Mode) {
+        let browser = packBrowser ?? PackBrowserController(store: packStore) { [weak self] alert in
+            self?.runPausedAlert(alert) ?? alert.runModal()
+        }
+        packBrowser = browser
+        browser.show(mode, config: config)
+    }
+
+    /// Runs `alert` with listening off, so a spoken "press return" can't answer it. If the user had already paused, it stays paused.
+    private func runPausedAlert(_ alert: NSAlert) -> NSApplication.ModalResponse {
+        NSApp.activate(ignoringOtherApps: true)
+        let pausedForAlert = pipeline != nil && !userPaused && !axPaused
+        if pausedForAlert { togglePause() }
+        let response = alert.runModal()
+        if pausedForAlert { togglePause() }
+        return response
+    }
+
+    @objc private func packToggled(_ sender: NSMenuItem) {
+        guard let id = sender.representedObject as? String else { return }
+        do { try packStore.setEnabled(id, sender.state != .on) } catch {
+            PipelineLog.warning("couldn't change pack", detail: "\(error)")
+            overlay.showHUD("couldn't change the pack: check ~/.config/nohands/packs", duration: .seconds(4))
+        }
+        reloadPacks()
+    }
+
+    @objc private func packRemoveClicked(_ sender: NSMenuItem) {
+        guard let id = sender.representedObject as? String else { return }
+        NSApp.activate(ignoringOtherApps: true)
+        let alert = NSAlert()
+        alert.messageText = "Remove this pack?"
+        alert.informativeText = "Its voice commands stop working. You can add the pack again with nohands-cli."
+        alert.addButton(withTitle: "Cancel")
+        alert.addButton(withTitle: "Remove").hasDestructiveAction = true
+        // Listening stays off while the alert is open, so a spoken "press return" can't answer it.
+        let pausedForAlert = pipeline != nil && !userPaused && !axPaused
+        if pausedForAlert { togglePause() }
+        let response = alert.runModal()
+        if pausedForAlert { togglePause() }
+        guard response == .alertSecondButtonReturn else { return }
+        do { try packStore.remove(id) } catch {
+            PipelineLog.warning("couldn't remove pack", detail: "\(error)")
+            overlay.showHUD("couldn't remove the pack: check ~/.config/nohands/packs", duration: .seconds(4))
+        }
+        reloadPacks()
     }
 
     // MARK: - desktop harness
@@ -117,8 +610,74 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     func menuWillOpen(_ menu: NSMenu) {
+        refreshClaudeItems()
+        refreshLoginItem()
+        rebuildRecentMenu()
+        reloadPacks()
         guard !harnessProbeInFlight else { return }
         Task { _ = await probeHarness() }
+    }
+
+    /// Newest first, one line per command; choosing one opens the View Logs window on it.
+    private func rebuildRecentMenu() {
+        recentMenu.removeAllItems()
+        let entries = commandLog.log.entries
+        if entries.isEmpty {
+            let none = NSMenuItem(title: config.commandLog ? "No commands yet" : "Command log is off", action: nil, keyEquivalent: "")
+            none.isEnabled = false
+            recentMenu.addItem(none)
+        }
+        for entry in entries {
+            let item = NSMenuItem(title: CommandLogText.menuLine(entry), action: #selector(recentCommandChosen(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = entry.id.uuidString
+            recentMenu.addItem(item)
+        }
+        recentMenu.addItem(.separator())
+        let clear = NSMenuItem(title: "Clear Log", action: #selector(clearLog), keyEquivalent: "")
+        clear.target = self
+        clear.isEnabled = !entries.isEmpty
+        recentMenu.addItem(clear)
+        let keep = NSMenuItem(title: "Keep Command Log", action: #selector(toggleCommandLog), keyEquivalent: "")
+        keep.target = self
+        keep.state = config.commandLog ? .on : .off
+        recentMenu.addItem(keep)
+    }
+
+    @objc private func clearLog() { commandLog.clear() }
+
+    /// Flips `commandLog`, applies it at once and saves it to config.json. If the file cannot be written the change
+    /// still applies for this session.
+    @objc private func toggleCommandLog() {
+        config.commandLog.toggle()
+        commandLog.isRecording = config.commandLog
+        do {
+            try ConfigFile.saveCommandLog(config.commandLog, at: ConfigFile.defaultURL)
+        } catch {
+            PipelineLog.warning("couldn't save command log setting", detail: "\(error)")
+            overlay.showHUD("couldn't save the log setting: check config.json", duration: .seconds(4))
+        }
+        PipelineLog.info("command log: \(config.commandLog ? "on" : "off")")
+    }
+
+    @objc private func recentCommandChosen(_ sender: NSMenuItem) {
+        showLogs(selecting: (sender.representedObject as? String).flatMap(UUID.init(uuidString:)))
+    }
+
+    @objc private func viewLogs() { showLogs() }
+
+    private func showLogs(selecting id: UUID? = nil) {
+        let window = logWindow ?? LogWindowController(store: commandLog)
+        logWindow = window
+        window.show(selecting: id)
+    }
+
+    private static func logResolver(_ backend: EffectiveBackend) -> CommandLogEntry.Resolver {
+        switch backend {
+        case .claude: .claude
+        case .local: .localModel
+        case .off: .none
+        }
     }
 
     private func apply(mode: Mode, transcript: String) {
@@ -191,6 +750,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func warmIfDue(model: String) {
+        // A status check that lands after a switch away from the local model must not warm it.
+        guard config.effectiveBackend == .local else { return }
         let listening = pipeline != nil && !userPaused && !axPaused
         let now = ContinuousClock.now
         guard !warming, WarmPolicy.shouldWarm(now: now, last: lastWarm, listening: listening, status: localStatus) else { return }
@@ -251,6 +812,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc private func grantAccessibility() { Permissions.openAccessibilitySettings() }
 
+    @objc private func grantScreenRecording() {
+        Permissions.requestScreenRecording()
+        Permissions.openScreenRecordingSettings()
+    }
+
     @objc private func openMicrophoneSettings() {
         if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone") {
             NSWorkspace.shared.open(url)
@@ -265,12 +831,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     // MARK: - startup
 
     private func loadConfig() {
-        let url = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".config/nohands/config.json")
+        let url = ConfigFile.defaultURL
         let env = ProcessInfo.processInfo.environment
         let data = try? Data(contentsOf: url)   // missing file -> defaults
         do {
             config = try AppConfig.load(from: data, environment: env)
-            if let data, (try? AppConfig.load(from: data, environment: [:]))?.anthropicAPIKey?.isEmpty == false,
+            fileHasKey = (try? AppConfig.load(from: data, environment: [:]))?.anthropicAPIKey?.isEmpty == false
+            // A count only: the words are never logged.
+            if config.vocabulary.skipped > 0 {
+                PipelineLog.warning("vocabulary: skipped \(config.vocabulary.skipped) entries (see docs/configuration.md)")
+            }
+            if config.macros.skipped > 0 {
+                PipelineLog.warning("macros: skipped \(config.macros.skipped) (see docs/configuration.md)")
+            }
+            if fileHasKey,
                let perms = (try? FileManager.default.attributesOfItem(atPath: url.path))?[.posixPermissions] as? Int,
                ConfigFileSecurity.isTooOpen(posixPermissions: perms) {
                 PipelineLog.warning("config.json contains an API key but is readable by other users; run: chmod 600 \(url.path)")
@@ -285,6 +859,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func bootstrap() async {
         loadConfig()
+        commandLog.isRecording = config.commandLog
         micGranted = await Permissions.requestMicrophone()
         _ = Permissions.accessibilityGranted(prompt: true)
         // Shown after the permission prompts so it is not buried; it also stays in the menu.
@@ -338,31 +913,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             defer { pipelineStarting = false; refresh() }
             do {
                 let transcriber = try await ParakeetTranscriber(version: config.asrModelVersion)
-                let resolver: (any IntentResolving)?
-                switch config.effectiveBackend {
-                case .claude: resolver = ClaudeIntentResolver(config: config)
-                case .local: resolver = OllamaIntentResolver(config: config)
-                case .off: resolver = nil
-                }
+                // The menu can switch backend while the speech model loads; remember which one the pipeline starts on.
+                let builtBackend = config.effectiveBackend
+                let resolver = makeResolver()
                 let ax = AXQuery()
                 // agent-desktop, when installed and permitted: the task loop observes and acts through it.
                 let status = await probeHarness()
                 let harness = status.makeHarness(config: config)
                 pipelineHarnessKind = harness == nil ? .native : .agentDesktop
                 PipelineLog.info("harness: \(status.text)")
+                // Tasks observe, and the executor looks for a media player, with their own, larger AX budget:
+                // Chrome's toolbar alone exhausts the default one.
+                let taskAX = AXQuery(budget: .milliseconds(1000), maxNodes: 6000)
+                self.taskAX = taskAX
+                pipelineHarness = harness
                 let executor = ActionExecutor(input: CGEventInputSynthesizer(), ax: ax, overlay: overlay, config: config,
-                                              harness: harness)
-                // Tasks observe with their own, larger AX budget: Chrome's toolbar alone exhausts the default one.
-                let observer = ScreenObserver(ax: AXQuery(budget: .milliseconds(1000), maxNodes: 6000),
+                                              harness: harness, mediaAX: taskAX)
+                let observer = ScreenObserver(ax: taskAX,
                                               maxElements: config.observedElementCap, harness: harness,
                                               snapshotTimeoutMs: config.agentDesktopSnapshotMs)
                 let p = VoicePipeline(config: config, transcriber: transcriber, resolver: resolver,
-                                      executor: executor, overlay: overlay, ax: ax, observer: observer, harness: harness)
+                                      executor: executor, overlay: overlay, ax: ax, observer: observer, harness: harness,
+                                      commandLog: commandLog, routes: routeStore)
+                p.resolverKind = Self.logResolver(builtBackend)
+                p.setPacks(packSet)
                 p.onStatus = { [weak self] mode, transcript in self?.apply(mode: mode, transcript: transcript) }
+                p.onSpeakLevelChange = { [weak self] level in self?.applySpeakLevel(level) }
                 p.onNotice = { PipelineLog.info("notice: \($0)") }
                 p.onError = { [weak self] message in self?.errorText = message; self?.refresh() }
                 try await p.start()
                 pipeline = p
+                PipelineLog.info("intent backend: \(Self.backendName(builtBackend))")
+                if config.effectiveBackend != builtBackend { switchPipelineBackend(p) }
                 schedulePoll(every: 5)
                 overlay.showHUD("NoHands is listening", duration: .seconds(2))
             } catch {

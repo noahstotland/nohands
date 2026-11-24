@@ -58,7 +58,8 @@ public enum IntentDecoder {
     private enum Opt<T> { case absent, invalid, value(T) }
     private static func optInt(_ o: [String: Any], _ k: String) -> Opt<Int> {
         guard let v = o[k] else { return .absent }
-        return int(v).map(Opt.value) ?? .invalid
+        // The Claude schema sends 0 for a number that does not apply, so 0 means omitted (the default applies).
+        return int(v).map { $0 == 0 ? .absent : .value($0) } ?? .invalid
     }
     private static func optButton(_ o: [String: Any]) -> Opt<MouseButton> {
         guard let v = o["button"] else { return .absent }
@@ -124,11 +125,14 @@ public enum IntentDecoder {
             return (o["mode"] as? String).flatMap(Mode.init(rawValue:)).map(Action.setMode)
         case "open_app":
             return nonBlank(o["app_name"]).map(Action.openApp)
+        case "open_file": return fileRequest(o).map(Action.openFile)
         case "open_url":
             guard let url = nonBlank(o["url"]).flatMap(WebAddress.url(for:)) else { return nil }
             return .openURL(url, app: nonBlank(o["app_name"]))
         case "move_window":
             return (o["placement"] as? String).flatMap(WindowPlacement.init(rawValue:)).map(Action.moveWindow)
+        case "search": return nonBlank(o["text"]).map(Action.search)
+        case "find": return nonBlank(o["target_name"]).map { .findOnPage($0, movePointer: false) }
         case "wait":
             if o["wait_for"] != nil { return waitFor(o) }
             switch optInt(o, "ms") {
@@ -136,10 +140,11 @@ public enum IntentDecoder {
             case .value(let ms): return .wait(ms: clamp(ms, 100...5000))
             }
         case "ignore": return .ignore
+        case "look": return .look
 
         // Harness kinds.
         case "set_value":
-            guard let t = elementTarget(o), let v = o["value"] as? String else { return nil }
+            guard let t = elementTarget(o), let v = o["value"] as? String, !misfiled(o) else { return nil }
             return v.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? .clearField(t) : .setValue(t, v)
         case "type_into":
             guard let t = elementTarget(o), let text = nonBlank(o["text"]) else { return nil }
@@ -169,18 +174,57 @@ public enum IntentDecoder {
             guard let s = (o["surface"] as? String).flatMap(DesktopSurface.init(rawValue:)),
                   let name = nonBlank(o["target_name"]) else { return nil }
             return .clickIn(s, name: name)
-        case "menu_item": return nonBlank(o["target_name"]).map(Action.menuItem)
+        case "menu_item": return nonBlank(o["target_name"]).map { Action.menuItem($0) }
         case "close_app": return nonBlank(o["app_name"]).map(Action.closeApp)
         case "window":
             guard let op = (o["window_action"] as? String).flatMap(DesktopWindowOp.init(rawValue:)) else { return nil }
             return .windowAction(op, app: nonBlank(o["app_name"]), title: op == .focus ? nonBlank(o["title"]) : nil)
-        case "clipboard_set": return (o["value"] as? String).map(Action.clipboardSet)
+        case "clipboard_set": return misfiled(o) ? nil : (o["value"] as? String).map(Action.clipboardSet)
         case "read_clipboard": return .readClipboard
+        case "read_page": return .readPage
         case "read_value": return elementTarget(o).map(Action.readValue)
         case "read_notifications": return .readNotifications
+        case "close_tab": return number(o["target_number"]).map(Action.closeTab)
+        case "close_window": return number(o["target_number"]).map(Action.closeWindow)
+        case "select_tab": return number(o["target_number"]).map(Action.selectTab)
         case "dismiss_notifications": return .dismissNotifications(app: nonBlank(o["app_name"]))
         default: return nil
         }
+    }
+
+    /// `open_file`: the words in `text`, a file kind in `option`, or a standard folder in `value` (the Claude schema shares
+    /// those fields across kinds, which keeps it inside its size limits). The model never passes a path: one in a `path` or
+    /// `url` field, a path character in the words, an unknown kind or folder, or a mix other than words with a kind, a folder
+    /// alone, or a kind alone, is rejected. A blank field is an omitted one.
+    private static func fileRequest(_ o: [String: Any]) -> FileRequest? {
+        func field(_ k: String) -> Opt<String> {
+            guard let v = o[k] else { return .absent }
+            guard let s = v as? String else { return .invalid }
+            let t = s.trimmingCharacters(in: .whitespacesAndNewlines)
+            return t.isEmpty ? .absent : .value(t)
+        }
+        guard o["path"] == nil else { return nil }
+        if case .absent = field("url") {} else { return nil }
+        switch (field("text"), field("option"), field("value")) {
+        case (.absent, .absent, .value(let key)):
+            return StandardFolder(rawValue: key.lowercased()).map(FileRequest.folder)
+        case (.value(let words), let kind, .absent):
+            guard FileRequest.isValidName(words) else { return nil }
+            switch kind {
+            case .absent: return .named(words, kind: .file)
+            case .value(let k): return FileKind(rawValue: k.lowercased()).map { .named(words, kind: $0) }
+            case .invalid: return nil
+            }
+        case (.absent, .value(let k), .absent):
+            return FileKind(rawValue: k.lowercased()).flatMap { $0 == .folder ? nil : .recent($0) }
+        default: return nil
+        }
+    }
+
+    /// A blank `value` next to a filled `text` or `option`: the Claude schema shares those fields across kinds, so the
+    /// model put the text in the wrong one. Clearing the field or the clipboard on that would destroy something.
+    private static func misfiled(_ o: [String: Any]) -> Bool {
+        nonBlank(o["value"]) == nil && (nonBlank(o["text"]) != nil || nonBlank(o["option"]) != nil)
     }
 
     private static func elementTarget(_ o: [String: Any]) -> ElementTarget? {
@@ -195,11 +239,12 @@ public enum IntentDecoder {
         }
     }
 
-    /// `drag`'s source: `from_number`, `from_name`, or `from_x`/`from_y`.
+    /// `drag`'s source: `from_number`, `from_name`, or `from_x`/`from_y`. The Claude schema sends `0,0` for a source
+    /// that does not apply, so that pair is not a source (a drag from the exact screen corner is not possible).
     private static func dragSource(_ o: [String: Any]) -> MoveTarget? {
         if let n = number(o["from_number"]) { return .label(n) }
         if let name = nonBlank(o["from_name"]) { return .element(named: name) }
-        if let x = double(o["from_x"]), let y = double(o["from_y"]),
+        if let x = double(o["from_x"]), let y = double(o["from_y"]), !(x == 0 && y == 0),
            (-20000...20000).contains(x), (-20000...20000).contains(y) { return .point(CGPoint(x: x, y: y)) }
         return nil
     }
@@ -221,6 +266,7 @@ public enum IntentDecoder {
             condition = .event(e)
         case .menu: condition = .menu
         case .menuClosed: condition = .menuClosed
+        case .mediaPlaying: condition = .mediaPlaying
         case .element:
             guard let t = elementTarget(o) else { return nil }
             condition = .element(t, predicate: nonBlank(o["value"]) ?? nonBlank(o["predicate"]) ?? "exists")

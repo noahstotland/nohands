@@ -14,9 +14,19 @@ public enum IntentError: Error {
 
 public protocol IntentResolving: Sendable {
     func resolve(_ request: StepRequest) async throws -> IntentStep
+    /// Asks for a plan for the goal alone (no screen content). nil means no plan; the task loop then runs as usual.
+    /// A throw other than a cancel is treated as no plan by the caller.
+    func plan(goal: String) async throws -> TaskPlan?
+    /// The token counts of the Claude calls made since the last take, and clears them. Resolvers that do not call
+    /// Claude return none.
+    func takeUsage() async -> [ClaudeUsage]
 }
 
 extension IntentResolving {
+    public func plan(goal: String) async throws -> TaskPlan? { nil }
+
+    public func takeUsage() async -> [ClaudeUsage] { [] }
+
     /// One-shot convenience: step 1 of a fresh request, returning just the actions.
     public func resolve(_ transcript: String, context: IntentContext) async throws -> [Action] {
         try await resolve(StepRequest(oneShot: transcript, context: context)).actions
@@ -33,41 +43,95 @@ public actor ClaudeIntentResolver: IntentResolving {
     private let session: URLSession
     private let baseURL: URL
     private let deadline: Duration
+    private let meter: ClaudeUsageMeter
+    /// Usage of each call since the last `takeUsage`. A command's tokens are read once, when its task ends.
+    private var usage: [ClaudeUsage] = []
 
     /// `baseURL` and `deadline` exist for tests; production uses the defaults.
     public init(config: AppConfig, session: URLSession = .shared,
                 baseURL: URL = ClaudeIntentResolver.endpoint,
-                deadline: Duration? = nil) {
+                deadline: Duration? = nil,
+                meter: ClaudeUsageMeter = .shared) {
         self.config = config
+        self.meter = meter
         self.session = session
         self.baseURL = baseURL
         self.deadline = deadline ?? .milliseconds(config.llmDeadlineMs)
     }
 
-    public func resolve(_ stepRequest: StepRequest) async throws -> IntentStep {
-        guard let key = config.anthropicAPIKey, !key.isEmpty else { throw IntentError.noAPIKey }
-        let builder = ClaudeRequestBuilder(model: config.intentModel, effort: config.intentEffort)
-        var request = URLRequest(url: baseURL)
+    /// The one place a Claude `URLRequest` is set up, shared by real steps, plans and the connection check.
+    static func makeRequest(url: URL, key: String, deadline: Duration, body: Data) -> URLRequest {
+        var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.timeoutInterval = TimeInterval(deadline.components.seconds) + 2
         for (name, value) in ClaudeRequestBuilder.headers(key) { request.setValue(value, forHTTPHeaderField: name) }
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        do {
-            request.httpBody = try builder.body(request: stepRequest)
-        } catch {
-            throw IntentError.decode(.malformed("could not encode request"))
-        }
+        request.httpBody = body
+        return request
+    }
 
-        let (data, http) = try await IntentHTTP.send(request, session: session, deadline: deadline)
-        if !(200..<300).contains(http.statusCode) {
-            let text = String(decoding: data.prefix(Self.bodyPrefixLimit * 4), as: UTF8.self)
-            throw IntentError.http(http.statusCode, String(text.prefix(Self.bodyPrefixLimit)))
+    public func resolve(_ stepRequest: StepRequest) async throws -> IntentStep {
+        let started = ContinuousClock.now
+        let builder = makeBuilder()
+        let data = try await post(key: try apiKey()) {
+            do { return try builder.body(request: stepRequest) } catch { throw IntentError.decode(.malformed("could not encode request")) }
         }
+        // Counts and timing only; logged before decoding so a malformed step still shows its cache numbers.
+        let ms = Int(started.duration(to: .now) / .milliseconds(1))
+        let used = ClaudeUsage.from(response: data)
+        meter.record(used)
+        if let used { usage.append(used) }
+        PipelineLog.info("claude: step \(stepRequest.step) \(ms)ms \(ClaudeUsage.logFragment(used))")
         do {
             return try IntentDecoder.step(fromResponse: data)
         } catch let e as IntentDecodeError {
             throw IntentError.decode(e)
         }
+    }
+
+    public func plan(goal: String) async throws -> TaskPlan? {
+        let started = ContinuousClock.now
+        let builder = makeBuilder()
+        let data = try await post(key: try apiKey()) {
+            do { return try builder.planBody(goal: goal) } catch { throw IntentError.decode(.malformed("could not encode request")) }
+        }
+        let ms = Int(started.duration(to: .now) / .milliseconds(1))
+        let plan = TaskPlan.decode(fromResponse: data)
+        let used = ClaudeUsage.from(response: data)
+        meter.record(used)
+        if let used { usage.append(used) }
+        PipelineLog.info("claude: plan \(ms)ms \(plan.map { "\($0.steps.count) steps" } ?? "none") \(ClaudeUsage.logFragment(used))")
+        return plan
+    }
+
+    public func takeUsage() async -> [ClaudeUsage] {
+        defer { usage = [] }
+        return usage
+    }
+
+    private func makeBuilder() -> ClaudeRequestBuilder {
+        ClaudeRequestBuilder(model: config.intentModel, effort: config.intentEffort, vision: config.visionEnabled)
+    }
+
+    private func apiKey() throws -> String {
+        guard let key = config.anthropicAPIKey, !key.isEmpty else { throw IntentError.noAPIKey }
+        return key
+    }
+
+    /// One POST of `body()` with the key in the header only; returns the 2xx response body.
+    private func post(key: String, body: () throws -> Data) async throws -> Data {
+        try await Self.send(url: baseURL, key: key, body: try body(), session: session, deadline: deadline)
+    }
+
+    /// The one Claude POST, shared with the rewrite request: key in the header only, 2xx body back, else `IntentError.http`.
+    static func send(url: URL, key: String, body: Data, session: URLSession, deadline: Duration) async throws -> Data {
+        let request = makeRequest(url: url, key: key, deadline: deadline, body: body)
+        let (data, http) = try await IntentHTTP.send(request, session: session, deadline: deadline)
+        if !(200..<300).contains(http.statusCode) {
+            let text = String(decoding: data.prefix(bodyPrefixLimit * 4), as: UTF8.self)
+            throw IntentError.http(http.statusCode, String(text.prefix(bodyPrefixLimit)))
+        }
+        return data
     }
 }
 

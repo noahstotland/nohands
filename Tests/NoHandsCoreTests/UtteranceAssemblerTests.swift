@@ -71,3 +71,10 @@ private let silence = [Float](repeating: 0, count: 4096)
     _ = a.push(silence, event: .none)
     #expect(a.push(silence, event: .speechEnd) == nil)   // only 256 ms audible
 }
+
+@Test func latencySummaryAddsSinceVoice() {
+    var t = LatencyTrace()
+    let now = ContinuousClock.now
+    t.speechEnd = now; t.asrDone = now.advanced(by: .milliseconds(187)); t.voiceEnd = now.advanced(by: .milliseconds(-700))
+    #expect(t.summary == "asr=187ms total=187ms sinceVoice=887ms")
+}

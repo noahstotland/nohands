@@ -12,9 +12,12 @@ public struct UIElementInfo: Equatable, Sendable {
     public var value: String?
     /// agent-desktop state tokens: checked, selected, disabled, expanded, collapsed, focused, offscreen, …
     public var states: [String]
+    /// The words just before a generic link or button on a web page (`PageText.near`); nil elsewhere.
+    public var near: String?
 
     public init(id: Int, frame: CGRect, title: String, role: String,
-                ref: String? = nil, value: String? = nil, states: [String] = []) {
+                ref: String? = nil, value: String? = nil, states: [String] = [], near: String? = nil) {
+        self.near = near
         self.id = id
         self.frame = frame
         self.title = title
@@ -68,6 +71,28 @@ public enum LabelAssigner {
             result[i + 1] = e
         }
         return result
+    }
+
+    /// A top-level item of the app's menu bar (native role `AXMenuBarItem`). agent-desktop's `menuitem` is not one.
+    public static func isMenuBarItem(_ element: UIElementInfo) -> Bool {
+        var role = element.role.lowercased()
+        if role.hasPrefix("ax") { role.removeFirst(2) }
+        return role == "menubaritem"
+    }
+
+    /// Renumbers from 1 with the page's elements first, in their order, and the menu-bar items after them, so the
+    /// element list's cap cuts the menu bar and a model copying the first numbers it sees lands on the page.
+    public static func menuBarLast(_ labels: [Int: UIElementInfo]) -> [Int: UIElementInfo] {
+        let ordered = labels.keys.sorted().compactMap { labels[$0] }
+        let sorted = ordered.filter { !isMenuBarItem($0) } + ordered.filter(isMenuBarItem)
+        return Dictionary(uniqueKeysWithValues: sorted.enumerated().map { ($0.offset + 1, $0.element) })
+    }
+
+    /// Only an exact (case-insensitive) title match; nil if none.
+    public static func find(exactly name: String, in elements: [UIElementInfo]) -> UIElementInfo? {
+        let q = name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !q.isEmpty else { return nil }
+        return elements.first { $0.title.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == q }
     }
 
     /// Exact (case-insensitive) title match first, then prefix, then contains; nil if none.

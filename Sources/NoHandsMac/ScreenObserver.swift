@@ -9,14 +9,17 @@ public struct ScreenObserver: Sendable {
     private let maxElements: Int
     private let harness: (any DesktopHarness)?
     private let snapshotTimeoutMs: Int
+    private let audio: any AudioOutputProbing
     /// Overlay surfaces agent-desktop can snapshot; while one is open the window behind it is the wrong target.
     static let overlaySurfaces: [String: DesktopSurface] = ["menu": .menu, "sheet": .sheet, "alert": .alert, "popover": .popover]
 
-    public init(ax: any ElementProviding, maxElements: Int, harness: (any DesktopHarness)? = nil, snapshotTimeoutMs: Int = 3000) {
+    public init(ax: any ElementProviding, maxElements: Int, harness: (any DesktopHarness)? = nil, snapshotTimeoutMs: Int = 3000,
+                audio: any AudioOutputProbing = AudioOutputProbe()) {
         self.ax = ax
         self.maxElements = maxElements
         self.harness = harness
         self.snapshotTimeoutMs = snapshotTimeoutMs
+        self.audio = audio
     }
 
     /// `labels` holds exactly the elements listed in the observation (titled, first `maxElements` by number).
@@ -25,23 +28,39 @@ public struct ScreenObserver: Sendable {
     /// read on the main actor); nil reads them here.
     public func observe(mode: Mode, overlay: OverlayState,
                         screens: [CGRect]? = nil) -> (observation: ScreenObservation, labels: [Int: UIElementInfo]) {
-        let all: [Int: UIElementInfo]
+        let r = observeNative(mode: mode, overlay: overlay, screens: screens)
+        return (r.observation, r.labels)
+    }
+
+    /// The native walk; `all` is every element it found, before the untitled filter and the cap.
+    /// `menuBarLast` (the task loop) numbers the menu bar after the page's elements; badges already showing keep the
+    /// numbers the user can see.
+    private func observeNative(mode: Mode, overlay: OverlayState, screens: [CGRect]?, menuBarLast: Bool = false,
+                               limit: Int? = nil)
+        -> (observation: ScreenObservation, labels: [Int: UIElementInfo], all: [UIElementInfo]) {
+        var all: [Int: UIElementInfo]
         if case .labels(let badges) = overlay { all = badges }
-        else { all = LabelAssigner.assign(screens.map { ax.actionableElements(screens: $0) } ?? ax.actionableElements()) }
+        else {
+            all = LabelAssigner.assign(screens.map { ax.actionableElements(screens: $0) } ?? ax.actionableElements())
+            if menuBarLast { all = LabelAssigner.menuBarLast(all) }
+        }
         var listed: [ObservedElement] = []
         var snapshot: [Int: UIElementInfo] = [:]
         for n in all.keys.sorted() {
             guard let e = all[n], !e.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { continue }
-            if listed.count >= maxElements { break }
+            if listed.count >= (limit ?? maxElements) { break }
             var role = e.role
             if role.hasPrefix("AX") { role.removeFirst(2) }
-            listed.append(ObservedElement(number: n, role: role.lowercased(), title: e.title))
+            listed.append(ObservedElement(number: n, role: role.lowercased(), title: e.title, near: e.near))
             snapshot[n] = e
         }
-        let observation = ScreenObservation(
+        var observation = ScreenObservation(
             app: ax.frontmostAppName() ?? "", windowTitle: ax.focusedWindowTitle() ?? "",
             url: ax.webURL(), mode: mode, overlay: overlay.kindName, elements: listed)
-        return (observation, snapshot)
+        observation.menuBarTitles = all.keys.sorted().compactMap { all[$0] }
+            .filter { LabelAssigner.isMenuBarItem($0) && !$0.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+            .map(\.title)
+        return (observation, snapshot, all.keys.sorted().compactMap { all[$0] })
     }
 
     /// The task loop's observation. `harnessKind` is the task's harness (chosen once with `probe()`): with
@@ -52,28 +71,63 @@ public struct ScreenObserver: Sendable {
     /// decide the task's harness).
     /// `surfaces` are the overlays the last action left open (`DesktopHarness.takeOpenSurfaces()`, read once per
     /// settle by the caller so every poll of that settle targets the same surface); nil reads them here.
+    /// `limit` replaces the usual element cap for this observation (a running plan reads more than the model is sent).
+    /// `found` is the element a find just scrolled to: it is listed first, as number 1 (see `PageFind.pinFirst`),
+    /// unless number badges are showing, whose numbers the user can see.
     public func observe(mode: Mode, overlay: OverlayState, screens: [CGRect]? = nil, harnessKind: HarnessKind,
-                        readings: [String] = [], surfaces: [String]? = nil) async -> (observation: ScreenObservation, labels: [Int: UIElementInfo], fromHarness: Bool) {
+                        readings: [String] = [], surfaces: [String]? = nil, limit: Int? = nil,
+                        found: UIElementInfo? = nil) async -> (observation: ScreenObservation, labels: [Int: UIElementInfo], fromHarness: Bool) {
         var result: (observation: ScreenObservation, labels: [Int: UIElementInfo])
+        var every: [UIElementInfo]
         var fromHarness = false
         if harnessKind == .agentDesktop, let harness, overlay.kindName != "labels" {
             let app = ax.frontmostAppName() ?? ""
             let surface = (surfaces ?? harness.takeOpenSurfaces()).lazy.compactMap { Self.overlaySurfaces[$0] }.first
             if let snap = await harness.snapshot(app: app, surface: surface, timeoutMs: snapshotTimeoutMs) {
                 result = Self.list(snap, app: app, windowTitle: ax.focusedWindowTitle() ?? snap.windowTitle ?? "",
-                                   url: ax.webURL(), mode: mode, overlay: overlay, limit: maxElements)
+                                   url: ax.webURL(), mode: mode, overlay: overlay, limit: limit ?? maxElements)
                 result.observation.surface = surface?.rawValue
+                every = snap.elements
                 fromHarness = true
             } else {
-                result = observe(mode: mode, overlay: overlay, screens: screens)
+                let native = observeNative(mode: mode, overlay: overlay, screens: screens, menuBarLast: true, limit: limit)
+                (result, every) = ((native.observation, native.labels), native.all)
             }
         } else {
-            result = observe(mode: mode, overlay: overlay, screens: screens)
+            let native = observeNative(mode: mode, overlay: overlay, screens: screens, menuBarLast: true, limit: limit)
+            (result, every) = ((native.observation, native.labels), native.all)
         }
+        if let found, overlay.kindName != "labels" { result = Self.pinned(result, found: found, limit: limit ?? maxElements) }
+        // Player controls are looked for among every element found; the audio hint only when there is none.
+        result.observation.media = MediaSignal.state(elements: every, audioPlaying: audio.isPlaying)
         result.observation.harness = harnessKind
+        let browser = ax.browserWindows()
+        result.observation.browserWindows = browser?.windows
+        result.observation.browserApp = browser?.app
         result.observation.readings = readings
         return (result.observation, result.labels, fromHarness)
     }
+
+    /// The listed elements with `found` as number 1 and the rest after it in order, cut at `limit`.
+    static func pinned(_ r: (observation: ScreenObservation, labels: [Int: UIElementInfo]), found: UIElementInfo,
+                       limit: Int) -> (observation: ScreenObservation, labels: [Int: UIElementInfo]) {
+        let labels = PageFind.pinFirst(r.labels, found: found, limit: limit)
+        var observation = r.observation
+        observation.elements = labels.keys.sorted().compactMap { n in
+            guard let e = labels[n] else { return nil }
+            var role = e.role.lowercased()
+            if role.hasPrefix("ax") { role.removeFirst(2) }
+            return ObservedElement(number: n, role: role, title: e.title, value: e.value, states: e.states, near: e.near)
+        }
+        return (observation, labels)
+    }
+
+    /// The usual element cap.
+    public var elementCap: Int { maxElements }
+
+    /// The frontmost browser's windows and tabs, read again on their own (the task runner's second look at a
+    /// browser it first saw late).
+    public func browserWindows() -> (app: String, windows: [BrowserWindow])? { ax.browserWindows() }
 
     /// Whether agent-desktop can read the frontmost app right now; decides a task's harness.
     public func probe() async -> Bool {
@@ -99,8 +153,14 @@ public struct ScreenObserver: Sendable {
         return (observation, labels)
     }
 
+    /// Forgets the browser window and tab ids handed out during a task.
+    public func resetBrowserTokens() { ax.resetBrowserTokens() }
+
     /// True once right after an observation first exposed a Chromium page tree: observe again before trusting it.
     public func didJustExpose() -> Bool { ax.didJustExpose() }
+
+    /// The frontmost app and its focused window's frame, as the vision fallback's window check needs them.
+    public func frontWindow() -> (app: String, frame: CGRect?) { (ax.frontmostAppName() ?? "", ax.focusedWindowFrame()) }
 
     /// Screen rects in CG coordinates. Call on the main actor (reads NSScreen).
     public func screenRects() -> [CGRect] { ax.screenRectsCG() }
