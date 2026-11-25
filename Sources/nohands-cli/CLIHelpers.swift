@@ -6,9 +6,15 @@ import NoHandsMac
 // main.swift declares after its top-level statements from another file.
 
 /// Loads `~/.config/nohands/config.json` (plus environment) and builds the configured backend's resolver.
-func loadResolver() throws -> (config: AppConfig, resolver: any IntentResolving, model: String) {
+/// `model` and `effort` override the Claude settings for this run only (the config file is not touched).
+func loadResolver(model: String? = nil, effort: String? = nil) throws -> (config: AppConfig, resolver: any IntentResolving, model: String) {
     let cfgURL = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".config/nohands/config.json")
-    let config = try AppConfig.load(from: try? Data(contentsOf: cfgURL), environment: ProcessInfo.processInfo.environment)
+    var config = try AppConfig.load(from: try? Data(contentsOf: cfgURL), environment: ProcessInfo.processInfo.environment)
+    if config.effectiveBackend == .local, model != nil || effort != nil {
+        fail("error: --model and --effort apply to the Claude backend")
+    }
+    if let model { config.intentModel = model }
+    if let effort { config.intentEffort = effort }
     switch config.effectiveBackend {
     case .claude: return (config, ClaudeIntentResolver(config: config), config.intentModel)
     case .local: return (config, OllamaIntentResolver(config: config), config.resolvedLocalModel)

@@ -56,7 +56,9 @@ func usage() -> Never {
       nohands-cli scenarios [file] [--only name]  (waits 3 s, then runs each scripted task goal for real and scores it
                                       against a fresh screen check; takes over the screen; exits 0 only when all pass;
                                       default file scripts/task-scenarios.json; Ctrl-C stops the suite)
-      nohands-cli eval <file> [--runs N]  (scores the configured backend on a fixture set; executes nothing)
+      nohands-cli eval <file> [--runs N] [--model ID] [--effort LEVEL]
+                                     (scores the configured backend on a fixture set; executes nothing;
+                                      --model and --effort override the Claude settings for this run only)
       nohands-cli listen             (mic -> VAD -> ASR; Ctrl-C to quit)
       nohands-cli claude-check       (sends one small request to Claude with your key and prints whether commands will
                                       work; exits 0 only when connected; spends about one step's input tokens)
@@ -479,12 +481,22 @@ var exitStatus: Int32 = 0
         case "eval":
             guard let file = rest.first else { usage() }
             var runs = 1
-            if rest.count == 3, rest[1] == "--runs", let n = Int(rest[2]), n >= 1 { runs = n }
-            else if rest.count != 1 { usage() }
+            var modelOverride: String?, effortOverride: String?
+            var args = Array(rest.dropFirst())
+            while !args.isEmpty {
+                guard args.count >= 2 else { usage() }
+                let (flag, value) = (args[0], args[1])
+                args.removeFirst(2)
+                switch flag {
+                case "--runs": guard let n = Int(value), n >= 1 else { usage() }; runs = n
+                case "--model": modelOverride = value
+                case "--effort": guard AppConfig.efforts.contains(value) else { usage() }; effortOverride = value
+                default: usage()
+                }
+            }
             let cases = try JSONDecoder().decode([EvalCase].self, from: try Data(contentsOf: URL(fileURLWithPath: file)))
-            let (_, resolver, modelName) = try loadResolver()
-            var passed = 0, total = 0
-            var times: [Int] = []
+            let (config, resolver, modelName) = try loadResolver(model: modelOverride, effort: effortOverride)
+            var results: [(passed: Bool, ms: Int)] = []
             for c in cases {
                 for _ in 1...runs {
                     let t0 = ContinuousClock.now
@@ -497,18 +509,19 @@ var exitStatus: Int32 = 0
                         status = step.status
                     } catch { errText = "\(error)" }
                     let ms = Int(t0.duration(to: .now) / .milliseconds(1))
-                    times.append(ms)
-                    total += 1
-                    if errText == nil, let status, IntentEval.matches(got, status: status, anyOf: c.accept) {
-                        passed += 1
+                    let ok: Bool
+                    if errText == nil, let status { ok = IntentEval.matches(got, status: status, anyOf: c.accept) } else { ok = false }
+                    results.append((passed: ok, ms: ms))
+                    if ok {
                         print("PASS \(ms)ms  \(c.say)")
                     } else {
                         print("FAIL \(ms)ms  \(c.say)  got: \(errText.map { "error: \($0)" } ?? "\(status.map { "status=\($0.rawValue) " } ?? "")\(got)")")
                     }
                 }
             }
-            let warm = (times.count > 2 ? Array(times.dropFirst(2)) : times).sorted()
-            print("accuracy=\(total == 0 ? 0 : passed * 100 / total)% median=\(warm.isEmpty ? 0 : warm[warm.count / 2])ms (excluding first 2 calls) model=\(modelName)")
+            let isClaude = config.effectiveBackend == .claude
+            let summary = EvalSummary(results: results, dropFirst: isClaude ? 0 : 2)
+            print("\(summary.line) model=\(modelName)\(isClaude ? " effort=\(config.intentEffort)" : "")")
         case "listen":
             try await listen()
         default:
