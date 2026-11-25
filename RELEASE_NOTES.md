@@ -1,5 +1,11 @@
 # Release notes
 
+## 2026-11-25 measure the Claude tiers on the intent fixtures; eval --model/--effort and p50/p95 (NH-39) (#187)
+
+Merged 2026-11-25 1:46 am UTC.
+
+`nohands-cli eval` can now score a specific Claude model and effort (`--model`, `--effort`) and prints p50 and p95 latency. Measured on the intent fixtures, Haiku at `low` passes 73% to 81%, Sonnet 85% to 92% and Opus 88% to 92%; the default stays Haiku at `low`.
+
 ## 2026-11-24 ignore the closed Apple menu agent-desktop reports as an open menu (NH-185) (#188)
 
 Merged 2026-11-24 3:16 pm UTC.
